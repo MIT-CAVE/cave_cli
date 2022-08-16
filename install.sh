@@ -10,7 +10,7 @@ readonly CAVE_CLI_COMMAND="cave"
 readonly CAVE_CLI_VERSION="0.1.0"
 readonly BIN_DIR="/usr/local/bin"
 readonly DATA_DIR="data"
-readonly HTTPS_CLONE_URL="https://github.com/MIT-CAVE/cave_cli.git"
+readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cave_cli.git"
 readonly SSH_CLONE_URL="-b ${CAVE_CLI_VERSION} git@github.com:MIT-CAVE/cave_cli.git"
 readonly MIN_PYTHON_VERSION="3.9.0"
 
@@ -130,7 +130,7 @@ install_new() { # Copy the needed files locally
   mkdir -p "${CAVE_CLI_PATH}"
   printf "done\n"
   printf "${CHARS_LINE}\n"
-  CLONE_URL="$SSH_CLONE_URL"
+  CLONE_URL="$HTTPS_CLONE_URL"
   git clone $CLONE_URL \
     ${clone_opts} \
     "${CAVE_CLI_PATH}" > /dev/null

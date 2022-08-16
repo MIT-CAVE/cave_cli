@@ -7,7 +7,7 @@ readonly CHARS_LINE="============================"
 readonly CAVE_CLI_PATH="${HOME}/.cave_cli"
 readonly CAVE_CLI_SHORT_NAME="CAVE CLI"
 readonly CAVE_CLI_COMMAND="cave"
-readonly CAVE_CLI_VERSION="main" #TODO: Update me after version branch is created
+readonly CAVE_CLI_VERSION="0.1.0"
 readonly BIN_DIR="/usr/local/bin"
 readonly DATA_DIR="data"
 readonly HTTPS_CLONE_URL="https://github.com/MIT-CAVE/cave_cli.git"

@@ -252,7 +252,7 @@ uninstall_cli() { # Remove the CAVE CLI from system
     printf "Removing installation...\n"
     rm -rf "${CAVE_PATH}"
     if [ ! $(rm "${BIN_DIR}/cave") ]; then
-      printf "WARNING!: Super User privileges required to complete link! Using 'sudo'.\n"
+      printf "WARNING!: Super User privileges required to terminate link! Using 'sudo'.\n"
       sudo rm "${BIN_DIR}/cave"
     fi
     printf "done\n"

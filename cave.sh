@@ -169,7 +169,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   # Activate venv and install requirements
 
   source venv/bin/activate
-  python-m pip install -r requirements.txt
+  python -m pip install -r requirements.txt
 
   git add .
   git commit -m "Upgraded by CAVE CLI"

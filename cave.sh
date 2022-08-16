@@ -11,7 +11,7 @@ readonly INVALID_NAME_PATTERN_4="(_-)+"
 readonly BIN_DIR="/usr/local/bin"
 readonly TMP_DIR="/tmp"
 readonly CHAR_LINE="============================="
-readonly HTTPS_URL="git@github.com:MIT-CAVE/cave_app.git"
+readonly SSH_URL="git@github.com:MIT-CAVE/cave_app.git"
 readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
 # update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"

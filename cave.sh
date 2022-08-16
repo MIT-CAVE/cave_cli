@@ -11,7 +11,8 @@ readonly INVALID_NAME_PATTERN_4="(_-)+"
 readonly BIN_DIR="/usr/local/bin"
 readonly TMP_DIR="/tmp"
 readonly CHAR_LINE="============================="
-readonly SSH_URL="git@github.com:MIT-CAVE/cave_app.git"
+readonly HTTPS_URL="git@github.com:MIT-CAVE/cave_app.git"
+readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
 # update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 
@@ -132,7 +133,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   rm -rf .* >& /dev/null
 
   # Clone the repo
-  local CLONE_URL="${SSH_URL}"
+  local CLONE_URL="${HTTPS_URL}"
   local VERSION_IDX=$(indexof --version "$@")
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
   if [ ! "${VERSION_IDX}" = "-1" ]; then
@@ -190,7 +191,7 @@ create_cave() { # Create a cave app instance in folder $1
     printf "Cannot create app '$1': This folder already exists in the current directory\n"
     exit 1
   fi
-  local CLONE_URL="${SSH_URL}"
+  local CLONE_URL="${HTTPS_URL}"
   local VERSION_IDX=$(indexof --version "$@")
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
   # Clone the repo

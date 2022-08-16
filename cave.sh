@@ -11,8 +11,7 @@ readonly INVALID_NAME_PATTERN_4="(_-)+"
 readonly BIN_DIR="/usr/local/bin"
 readonly TMP_DIR="/tmp"
 readonly CHAR_LINE="============================="
-# TODO: Update this when the new repo is created
-readonly SSH_URL="git@github.com:MIT-CAVE/cave_app_server.git"
+readonly SSH_URL="git@github.com:MIT-CAVE/cave_app.git"
 # update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 

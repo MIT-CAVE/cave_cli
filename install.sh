@@ -70,11 +70,11 @@ check_postgress() { # Validate postgress is installed
 }
 
 check_python() { # Validate python is installed and is correct version
-  install_python="\nPlease install python version 3.9.0 or greater. \nFor more information see: 'https://www.python.org/downloads/'"
+  install_python="\nPlease install python version 3.9.0 or greater. \nFor more information see: 'https://www.python.org/downloads/'\n"
   CURRENT_PYTHON_VERSION=$($1 --version | sed 's/Python //')
   echo $(validate_version "python" "0" "$install_python" "$MIN_PYTHON_VERSION" "$CURRENT_PYTHON_VERSION")
   if [ ! "$(printf $1 -V | grep conda)" = "" ]; then
-    printf "Please ensure that you are not using Anaconda. ${CAVE_CLI_SHORT_NAME} is not compatible with Anaconda"
+    printf "Please ensure that you are not using Anaconda. ${CAVE_CLI_SHORT_NAME} is not compatible with Anaconda\n"
   fi
 }
 
@@ -117,6 +117,7 @@ choose_python() { # Choose a python bin and check that it is valid
     else
       check=$(check_python ${path})
     fi
+    printf "${check}"
   done
   if [[ "${path}" = "" ]]; then
     printf "PYTHON3_BIN=\"${default}\"\n" > "${CAVE_CLI_PATH}/CONFIG"

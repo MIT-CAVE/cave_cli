@@ -3,7 +3,7 @@ A unix based cli to simplify and streamline the creation and development process
 
 ## License Notice
 
-Copyright 2022 Massachusetts Institute of Techology, Center for Transportation & Logistics
+Copyright 2022 Massachusetts Institute of Technology (MIT), Center for Transportation & Logistics (CTL)
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
 

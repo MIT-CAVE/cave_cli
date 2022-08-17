@@ -194,6 +194,7 @@ create_cave() { # Create a cave app instance in folder $1
   local CLONE_URL="${HTTPS_URL}"
   local VERSION_IDX=$(indexof --version "$@")
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
+
   # Clone the repo
   if [ ! "${VERSION_IDX}" = "-1" ]; then
     git clone -b "${!offset}" --single-branch "${CLONE_URL}" "$1"
@@ -204,14 +205,16 @@ create_cave() { # Create a cave app instance in folder $1
     printf "Clone failed. Ensure you used a valid version.\n"
     exit 1
   fi
+
   # Install virtualenv and create venv
-  virtual=$($PYTHON3_BIN -m virtualenv --version | grep No)
-  if [[ ! "${virtual}" = "" ]]; then
+  local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
+  if [ "$virtual" = "" ]; then
     $PYTHON3_BIN -m pip install virtualenv
   fi
   cd "$1"
   git remote rm origin
   $PYTHON3_BIN -m virtualenv venv
+
   # Activate venv and install requirements
   source venv/bin/activate
   python -m pip install -r requirements.txt
@@ -219,27 +222,35 @@ create_cave() { # Create a cave app instance in folder $1
   # Setup .env file
   cp example.env .env
   local key=$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
-  local line=$(grep -n --colour=auto "SECRET_KEY" .env | sed 's/^\([0-9]\+\):.*$/\1/')
-  sed -i "${line}s/^.*$/SECRET_KEY='${key}'/" .env
+  local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
+  local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
+  echo "$newenv" > .env
   read -r -p "Please input your Mapbox Token: " key
-  line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | sed 's/^\([0-9]\+\):.*$/\1/')
-  sed -i "${line}s/^.*$/MAPBOX_TOKEN='${key}'/" .env
+  line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
+  newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
+  echo "$newenv" > .env
   read -r -p "Please input an admin email: " key
-  line=$(grep -n --colour=auto "DJANGO_ADMIN_EMAIL" .env | sed 's/^\([0-9]\+\):.*$/\1/')
-  sed -i "${line}s/^.*$/DJANGO_ADMIN_EMAIL='${key}'/" .env
+  line=$(grep -n --colour=auto "DJANGO_ADMIN_EMAIL" .env | cut -d: -f1)
+  newenv=$(awk "NR==${line} {print \"DJANGO_ADMIN_EMAIL='${key}'\"; next} {print}" .env)
+  echo "$newenv" > .env
   read -r -s -p "Please input an admin password: " key
-  line=$(grep -n --colour=auto "DJANGO_ADMIN_PASSWORD" .env | sed 's/^\([0-9]\+\):.*$/\1/')
-  sed -i "${line}s/^.*$/DJANGO_ADMIN_PASSWORD='${key}'/" .env
+  line=$(grep -n --colour=auto "DJANGO_ADMIN_PASSWORD" .env | cut -d: -f1)
+  newenv=$(awk "NR==${line} {print \"DJANGO_ADMIN_PASSWORD='${key}'\"; next} {print}" .env)
+  echo "$newenv" > .env
   printf "\n"
   read -r -s -p "Please input a database password: " key
-  line=$(grep -n --colour=auto "DATABASE_PASSWORD" .env | sed 's/^\([0-9]\+\):.*$/\1/')
-  sed -i "${line}s/^.*$/DATABASE_PASSWORD='${key}'/" .env
-  key="$1_server_db"
-  line=$(grep -n --colour=auto "DATABASE_NAME" .env | sed 's/^\([0-9]\+\):.*$/\1/')
-  sed -i "${line}s/^.*$/DATABASE_NAME='${key}'/" .env
+  line=$(grep -n --colour=auto "DATABASE_PASSWORD" .env | cut -d: -f1)
+  newenv=$(awk "NR==${line} {print \"DATABASE_PASSWORD='${key}'\"; next} {print}" .env)
+  echo "$newenv" > .env  
+  key="$1_db"
+  line=$(grep -n --colour=auto "DATABASE_NAME" .env | cut -d: -f1)
+  newenv=$(awk "NR==${line} {print \"DATABASE_NAME='${key}'\"; next} {print}" .env)
+  echo "$newenv" > .env
   key="$1_db_user"
-  line=$(grep -n --colour=auto "DATABASE_USER" .env | sed 's/^\([0-9]\+\):.*$/\1/')
-  sed -i "${line}s/^.*$/DATABASE_USER='${key}'/" .env
+  line=$(grep -n --colour=auto "DATABASE_USER" .env | cut -d: -f1)
+  newenv=$(awk "NR==${line} {print \"DATABASE_USER='${key}'\"; next} {print}" .env)
+  echo "$newenv" > .env
+
   # Setup DB
   ./utils/reset_db.sh
   printf "\nDone. Addtional configuration options availible in $1/.env\n"

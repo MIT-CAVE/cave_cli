@@ -372,7 +372,12 @@ kill_cave() { #Kill given tcp port (default 8000)
   if [ "$1" != "" ]; then
     port="$1"
   fi
-  fuser -k "${port}/tcp"
+  case "$(uname -s)" in
+    Linux*)     fuser -k "${port}/tcp";;
+    Darwin*)    lsof -P | grep ":${port}" | awk '{print $2}' | xargs kill -9;;
+    *)          printf "Error: OS not recognized."; exit 1;;
+  esac
+  printf "Activity on port ${port} ended."
   exit 0
 }
 

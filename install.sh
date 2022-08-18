@@ -130,7 +130,7 @@ choose_python() { # Choose a python bin and check that it is valid
 
 install_new() { # Copy the needed files locally
   local config_path=$(mktemp)
-  check_previous_installation
+  check_previous_installation "${config_path}"
   printf "Creating application folder at '${CAVE_CLI_PATH}'..."
   mkdir -p "${CAVE_CLI_PATH}"
   printf "done\n"
@@ -143,11 +143,12 @@ install_new() { # Copy the needed files locally
     err "Git Clone Failed. Installation Canceled"
     exit 1
   fi
-  printf "${CHARS_LINE}\n"
+  
   local config_info=$(cat ${config_path})
   if [ "${config_info}" != "" ]; then
     cp "${config_path}" "${CAVE_CLI_PATH}/CONFIG"
   else
+    printf "${CHARS_LINE}\n"
     choose_python
   fi
 }

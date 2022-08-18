@@ -232,21 +232,34 @@ create_cave() { # Create a cave app instance in folder $1
   local key=$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
+  local valid="Placeholder"
   echo "$newenv" > .env
   read -r -p "Please input your Mapbox Token: " key
   line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
-  read -r -p "Please input an admin email: " key
+  key=""
+  read -r -p "Please input an admin email. Leave blank for default(${1}@example.com): " key
+  if [ "${key}" = "" ]; then
+    key="$1@example.com"
+  fi
   line=$(grep -n --colour=auto "DJANGO_ADMIN_EMAIL" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DJANGO_ADMIN_EMAIL='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
-  read -r -s -p "Please input an admin password: " key
+  key=""
+  read -r -s -p "Please input an admin password. Leave blank to randomly generate one: " key
+  if [ "${key}" = "" ]; then
+    key=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
+  fi
   line=$(grep -n --colour=auto "DJANGO_ADMIN_PASSWORD" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DJANGO_ADMIN_PASSWORD='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
+  key=""
   printf "\n"
-  read -r -s -p "Please input a database password: " key
+  read -r -s -p "Please input a database password. Leave blank to randomly generate one: " key
+  if [ "${key}" = "" ]; then
+    key=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
+  fi
   line=$(grep -n --colour=auto "DATABASE_PASSWORD" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DATABASE_PASSWORD='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env  

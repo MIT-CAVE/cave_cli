@@ -304,11 +304,11 @@ create_cave() { # Create a cave app instance in folder $1
   line=$(grep -n --colour=auto "DATABASE_USER" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DATABASE_USER='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
-  printf "${CHAR_LINE}\n"
+  printf "\n${CHAR_LINE}\n"
   # Setup DB
   ./utils/reset_db.sh
   printf "${CHAR_LINE}\n"
-  printf "\Creation completed. Created variables and addtional configuration options availible in $1/.env\n"
+  printf "Creation completed. Created variables and addtional configuration options availible in $1/.env\n"
   exit 0
 }
 
@@ -372,7 +372,12 @@ kill_cave() { #Kill given tcp port (default 8000)
   if [ "$1" != "" ]; then
     port="$1"
   fi
-  fuser -k "${port}/tcp"
+  case "$(uname -s)" in
+    Linux*)     fuser -k "${port}/tcp";;
+    Darwin*)    lsof -P | grep ":${port}" | awk '{print $2}' | xargs kill -9;;
+    *)          printf "Error: OS not recognized."; exit 1;;
+  esac
+  printf "Activity on port ${port} ended.\n"
   exit 0
 }
 

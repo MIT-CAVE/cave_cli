@@ -97,6 +97,8 @@ print_help() { # Prints the help text for cave_cli
 
       sync <repo>                             Merges files from the given repo into the CAVE app in the
                                                 current directory.
+      kill [port]                             Kills any connections running on the given port(default 8000).
+                                                Used when a CAVE app wasn't properly shut down.
       update                                  Updates to the latest version of the CAVE CLI
 
       uninstall                               Removes the CAVE CLI
@@ -354,6 +356,15 @@ sync_cave() { # Sync files from another repo to the selected cave app
   exit 0
 }
 
+kill_cave() {
+  local port="8000"
+  if [ "$1" != "" ]; then
+    port="$1"
+  fi
+  fuser -k "${port}/tcp"
+  exit 0
+}
+
 main() {
   if [[ $# -lt 1 ]]; then
     print_help
@@ -390,6 +401,10 @@ main() {
     sync)
       shift
       sync_cave "$@"
+    ;;
+    kill)
+      shift
+      kill_cave "$@"
     ;;
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"

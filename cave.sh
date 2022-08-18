@@ -97,6 +97,13 @@ print_help() { # Prints the help text for cave_cli
 
       sync <repo>                             Merges files from the given repo into the CAVE app in the
                                                 current directory.
+      kill [port]                             Kills any connections running on the given port(default 8000).
+                                                Used when a CAVE app wasn't properly shut down.
+      reset                                   Resets the database for the CAVE app in the current directory.
+
+      prettify [--all]                        Cleans up cave_api code for the CAVE app in the current
+                                                directory using autoflake and black. If --all flag is given
+                                                also runs on cave_core and cave_app
       update                                  Updates to the latest version of the CAVE CLI
 
       uninstall                               Removes the CAVE CLI
@@ -354,6 +361,42 @@ sync_cave() { # Sync files from another repo to the selected cave app
   exit 0
 }
 
+kill_cave() { #Kill given tcp port (default 8000)
+  local port="8000"
+  if [ "$1" != "" ]; then
+    port="$1"
+  fi
+  fuser -k "${port}/tcp"
+  exit 0
+}
+
+reset_cave() { #Run reset_db.sh
+  if ! valid_app_dir; then
+    printf "Ensure you are in a valid CAVE app directory\n"
+    exit 1
+  fi
+  source venv/bin/activate
+  ./utils/reset_db.sh
+  exit 0
+}
+
+prettify_cave() { #Run api_prettify.sh and optionally prefftify.sh
+  if ! valid_app_dir; then
+      printf "Ensure you are in a valid CAVE app directory\n"
+      exit 1
+  fi
+  printf "Prettifying api..."
+  local VERSION_IDX=$(indexof --all "$@")
+  source venv/bin/activate
+  ./utils/api_prettify.sh
+  if [ ! "${VERSION_IDX}" = "-1" ]; then
+    printf "Prettifying core and app..."
+    ./utils/prettify.sh
+  fi
+  printf "Done\n"
+  exit 0
+}
+
 main() {
   if [[ $# -lt 1 ]]; then
     print_help
@@ -390,6 +433,17 @@ main() {
     sync)
       shift
       sync_cave "$@"
+    ;;
+    kill)
+      shift
+      kill_cave "$@"
+    ;;
+    reset)
+      reset_cave
+    ;;
+    prettify)
+      shift
+      prettify_cave "$@"
     ;;
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"

@@ -377,7 +377,7 @@ kill_cave() { #Kill given tcp port (default 8000)
     Darwin*)    lsof -P | grep ":${port}" | awk '{print $2}' | xargs kill -9;;
     *)          printf "Error: OS not recognized."; exit 1;;
   esac
-  printf "Activity on port ${port} ended."
+  printf "Activity on port ${port} ended.\n"
   exit 0
 }
 

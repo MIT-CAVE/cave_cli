@@ -142,7 +142,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
     git clone --single-branch "${CLONE_URL}" .
   fi
   if [[ ! -d "cave_core" ]]; then
-    printf "Clone failed. Ensure you used your GitHub PAT and a valid version.\n"
+    printf "Clone failed. Ensure you used a valid version.\n"
     exit 1
   fi
   # remove cloned cave_api and git

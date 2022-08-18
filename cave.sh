@@ -234,6 +234,7 @@ create_cave() { # Create a cave app instance in folder $1
   source venv/bin/activate
   python -m pip install -r requirements.txt
 
+  printf "${CHAR_LINE}\n"
   # Setup .env file
   cp example.env .env
   local key=$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
@@ -241,11 +242,13 @@ create_cave() { # Create a cave app instance in folder $1
   local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
   local key2=""
   echo "$newenv" > .env
-  read -r -p "Please input your Mapbox Token: " key
+  printf "Mapbox tokens can be created by making an account on 'https://mapbox.com'\n"
+  read -r -p "Please input your Mapbox Public Token: " key
   line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
   key=""
+  printf "\n"
   read -r -p "Please input an admin email. Leave blank for default(${1}@example.com): " key
   if [ "${key}" = "" ]; then
     key="$1@example.com"
@@ -255,6 +258,7 @@ create_cave() { # Create a cave app instance in folder $1
   echo "$newenv" > .env
   key=""
   while [ "${key2}" = "" ]; do
+    printf "\n"
     read -r -s -p "Please input an admin password. Leave blank to randomly generate one: " key
     if [ "${key}" = "" ]; then
       key=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
@@ -275,6 +279,7 @@ create_cave() { # Create a cave app instance in folder $1
   key2=""
   printf "\n"
   while [ "${key2}" = "" ]; do
+    printf "\n"
     read -r -s -p "Please input a database password. Leave blank to randomly generate one: " key
     if [ "${key}" = "" ]; then
       key=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
@@ -299,10 +304,11 @@ create_cave() { # Create a cave app instance in folder $1
   line=$(grep -n --colour=auto "DATABASE_USER" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DATABASE_USER='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
-
+  printf "${CHAR_LINE}\n"
   # Setup DB
   ./utils/reset_db.sh
-  printf "\nDone. Addtional configuration options availible in $1/.env\n"
+  printf "${CHAR_LINE}\n"
+  printf "\Creation completed. Created variables and addtional configuration options availible in $1/.env\n"
   exit 0
 }
 

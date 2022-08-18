@@ -79,6 +79,7 @@ check_python() { # Validate python is installed and is correct version
 }
 
 check_previous_installation() { # Check to make sure previous installations are removed before continuing
+  local config_path="$1"
   if [ -d "${CAVE_CLI_PATH}" ]; then
     LOCAL_CLI_VERSION=$(cat ${CAVE_CLI_PATH}/VERSION)
     printf "An existing installation of ${CAVE_CLI_SHORT_NAME} ($LOCAL_CLI_VERSION) was found\n"
@@ -90,6 +91,7 @@ check_previous_installation() { # Check to make sure previous installations are 
     case ${input} in
       [yY][eE][sS] | [yY])
         printf "Removing old installation... "
+        cp "${CAVE_CLI_PATH}/CONFIG" "${config_path}"
         rm -rf "${CAVE_CLI_PATH}"
         printf "done\n"
         ;;
@@ -127,6 +129,8 @@ choose_python() { # Choose a python bin and check that it is valid
 }
 
 install_new() { # Copy the needed files locally
+  local config_path=$(mktemp)
+  check_previous_installation
   printf "Creating application folder at '${CAVE_CLI_PATH}'..."
   mkdir -p "${CAVE_CLI_PATH}"
   printf "done\n"
@@ -140,7 +144,12 @@ install_new() { # Copy the needed files locally
     exit 1
   fi
   printf "${CHARS_LINE}\n"
-  choose_python
+  local config_info=$(cat ${config_path})
+  if [ "${config_info}" != "" ]; then
+    cp "${config_path}" "${CAVE_CLI_PATH}/CONFIG"
+  else
+    choose_python
+  fi
 }
 
 add_to_path() { # Add the cli to a globally accessable path
@@ -157,7 +166,6 @@ main() {
   check_os
   check_git
   check_postgress
-  check_previous_installation
   install_new
   add_to_path
   exit 0

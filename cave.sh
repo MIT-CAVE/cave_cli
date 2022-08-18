@@ -99,6 +99,8 @@ print_help() { # Prints the help text for cave_cli
                                                 current directory.
       kill [port]                             Kills any connections running on the given port(default 8000).
                                                 Used when a CAVE app wasn't properly shut down.
+      reset                                   Resets the database for the CAVE app in the current directory.
+      
       update                                  Updates to the latest version of the CAVE CLI
 
       uninstall                               Removes the CAVE CLI
@@ -356,12 +358,22 @@ sync_cave() { # Sync files from another repo to the selected cave app
   exit 0
 }
 
-kill_cave() {
+kill_cave() { #Kill given tcp port (default 8000)
   local port="8000"
   if [ "$1" != "" ]; then
     port="$1"
   fi
   fuser -k "${port}/tcp"
+  exit 0
+}
+
+reset_cave() { #Run reset_db.sh
+  if ! valid_app_dir; then
+    printf "Ensure you are in a valid CAVE app directory\n"
+    exit 1
+  fi
+  source venv/bin/activate
+  ./utils/reset_db.sh
   exit 0
 }
 
@@ -405,6 +417,9 @@ main() {
     kill)
       shift
       kill_cave "$@"
+    ;;
+    reset)
+      reset_cave
     ;;
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"

@@ -88,6 +88,8 @@ print_help() { # Prints the help text for cave_cli
       upgrade [--version v]                   Upgrades the CAVE app in the current dicrectory to the given
                                                 version. If the version flag isn't specified the latest version
                                                 is used.
+      install                                 Installs all requirements for the CAVE app in the current
+                                                directory.
       run [options]                           Runs the CAVE app in the current directory. Options are passed
                                                 to manage.py
     Utility Commands:
@@ -185,7 +187,8 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
 
   ./utils/reset_db.sh
 
-  printf "Done. Any cave_api specific requirements should be reinstalled.\n"
+  printf "${CHAR_LINE}\n"
+  printf "Upgrade complete.\n"
   exit 0
 }
 
@@ -427,6 +430,28 @@ test_cave() { # Run given file found in /cave_api/tests/
   exit 0
 }
 
+install_cave() { # (re)installs all python requirements for cave app
+  if ! valid_app_dir; then
+    printf "Ensure you are in a valid CAVE app directory\n"
+    exit 1
+  fi
+  printf "Removing old packages..."
+  rm -rf venv/
+  printf "Done\n"
+   # Install virtualenv and create venv
+  local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
+  if [ "$virtual" = "" ]; then
+    $PYTHON3_BIN -m pip install virtualenv
+  fi
+  $PYTHON3_BIN -m virtualenv venv
+
+  # Activate venv and install requirements
+  source venv/bin/activate
+  python -m pip install -r requirements.txt
+  printf "${CHAR_LINE}\n"
+  printf "Install completed.\n"
+}
+
 main() {
   if [[ $# -lt 1 ]]; then
     print_help
@@ -478,6 +503,9 @@ main() {
     test)
       shift
       test_cave "$@"
+    ;;
+    install)
+      install_cave
     ;;
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"

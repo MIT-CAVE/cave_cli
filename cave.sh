@@ -97,7 +97,8 @@ print_help() { # Prints the help text for cave_cli
 
       version                                 Prints the version of the cli.
 
-      test <test>                             Runs a test python file located in /cave_api/tests/
+      test <test | --all>                     Runs the given test python file located in /cave_api/tests/.
+                                                If --all flag is present runs all files in /cave_api/tests/.
 
       sync <repo>                             Merges files from the given repo into the CAVE app in the
                                                 current directory.
@@ -419,13 +420,20 @@ test_cave() { # Run given file found in /cave_api/tests/
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
   fi
-  if [[ ! -f "cave_api/tests/$1" ]]; then
+  local ALL_IDX=$(indexof --all "$@")
+  if [[ ! -f "cave_api/tests/$1" && "${ALL_IDX}" = "-1" ]]; then
     printf "Test $1 not found. Ensure you entered a valid test name.\n"
+    printf "Tests available in 'cave_api/tests/' include \n $(ls cave_api/tests/)\n"
     exit 1
   fi
   # Activate venv and run given test
   source venv/bin/activate
-  python "cave_api/tests/$1"
+  if [ "${ALL_IDX}" = "-1" ]; then
+    python "cave_api/tests/$1"
+  else
+    for f in cave_api/tests/*.py; do python "$f"; done
+  fi
+  printf "${CHAR_LINE}\n"
   printf "Testing completed.\n"
   exit 0
 }

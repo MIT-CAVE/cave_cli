@@ -95,6 +95,8 @@ print_help() { # Prints the help text for cave_cli
 
       version                                 Prints the version of the cli.
 
+      test <test>                             Runs a test python file located in /cave_api/tests/
+
       sync <repo>                             Merges files from the given repo into the CAVE app in the
                                                 current directory.
       kill [port]                             Kills any connections running on the given port(default 8000).
@@ -367,7 +369,7 @@ sync_cave() { # Sync files from another repo to the selected cave app
   exit 0
 }
 
-kill_cave() { #Kill given tcp port (default 8000)
+kill_cave() { # Kill given tcp port (default 8000)
   local port="8000"
   if [ "$1" != "" ]; then
     port="$1"
@@ -381,7 +383,7 @@ kill_cave() { #Kill given tcp port (default 8000)
   exit 0
 }
 
-reset_cave() { #Run reset_db.sh
+reset_cave() { # Run reset_db.sh
   if ! valid_app_dir; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
@@ -391,7 +393,7 @@ reset_cave() { #Run reset_db.sh
   exit 0
 }
 
-prettify_cave() { #Run api_prettify.sh and optionally prefftify.sh
+prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
   if ! valid_app_dir; then
       printf "Ensure you are in a valid CAVE app directory\n"
       exit 1
@@ -405,6 +407,23 @@ prettify_cave() { #Run api_prettify.sh and optionally prefftify.sh
     ./utils/prettify.sh
   fi
   printf "Done\n"
+  exit 0
+}
+
+test_cave() { # Run given file found in /cave_api/tests/
+  # Check directory and files
+  if ! valid_app_dir; then
+    printf "Ensure you are in a valid CAVE app directory\n"
+    exit 1
+  fi
+  if [[ ! -f "cave_api/tests/$1" ]]; then
+    printf "Test $1 not found. Ensure you entered a valid test name.\n"
+    exit 1
+  fi
+  # Activate venv and run given test
+  source venv/bin/activate
+  python "cave_api/tests/$1"
+  printf "Testing completed.\n"
   exit 0
 }
 
@@ -455,6 +474,10 @@ main() {
     prettify)
       shift
       prettify_cave "$@"
+    ;;
+    test)
+      shift
+      test_cave "$@"
     ;;
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"

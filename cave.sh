@@ -88,7 +88,7 @@ print_help() { # Prints the help text for cave_cli
       upgrade [--version v]                   Upgrades the CAVE app in the current dicrectory to the given
                                                 version. If the version flag isn't specified the latest version
                                                 is used.
-      install                                 Installs all requirements for the CAVE app in the current
+      reinstall-pkgs                          Installs all requirements for the CAVE app in the current
                                                 directory.
       run [options]                           Runs the CAVE app in the current directory. Options are passed
                                                 to manage.py
@@ -457,7 +457,7 @@ install_cave() { # (re)installs all python requirements for cave app
   source venv/bin/activate
   python -m pip install -r requirements.txt
   printf "${CHAR_LINE}\n"
-  printf "Install completed.\n"
+  printf "Package reinstall completed.\n"
 }
 
 main() {
@@ -512,7 +512,7 @@ main() {
       shift
       test_cave "$@"
     ;;
-    install)
+    reinstall-pkgs)
       install_cave
     ;;
     --version | version)

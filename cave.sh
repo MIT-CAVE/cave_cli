@@ -79,39 +79,13 @@ valid_app_dir() { # Checks if current directory is the an instance of the cave a
 }
 
 print_help() { # Prints the help text for cave_cli
+  VERSION="$(cat ${CAVE_PATH}/VERSION)"
+  HELP="$(cat ${CAVE_PATH}/help.txt))"
   cat 1>&2 <<EOF
-    CAVE CLI
-    ${CHAR_LINE}
-    Core Commands:
-      create <app-name> [--version v]         Creates a new CAVE app in the specified directory. If
-                                                the version flag isn't specified the latest version is used.
-      upgrade [--version v]                   Upgrades the CAVE app in the current dicrectory to the given
-                                                version. If the version flag isn't specified the latest version
-                                                is used.
-      reinstall-pkgs                          Installs all requirements for the CAVE app in the current
-                                                directory.
-      run [options]                           Runs the CAVE app in the current directory. Options are passed
-                                                to manage.py
-    Utility Commands:
-      help                                    Prints this help text.
+CAVE CLI ($VERSION)
+${CHAR_LINE}
 
-      version                                 Prints the version of the cli.
-
-      test <test | --all>                     Runs the given test python file located in /cave_api/tests/.
-                                                If --all flag is present runs all files in /cave_api/tests/.
-
-      sync <repo>                             Merges files from the given repo into the CAVE app in the
-                                                current directory.
-      kill [port]                             Kills any connections running on the given port(default 8000).
-                                                Used when a CAVE app wasn't properly shut down.
-      reset                                   Resets the database for the CAVE app in the current directory.
-
-      prettify [--all]                        Cleans up cave_api code for the CAVE app in the current
-                                                directory using autoflake and black. If --all flag is given
-                                                also runs on cave_core and cave_app
-      update                                  Updates to the latest version of the CAVE CLI
-
-      uninstall                               Removes the CAVE CLI
+${HELP}
 
 EOF
   exit 0

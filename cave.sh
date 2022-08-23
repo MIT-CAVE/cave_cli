@@ -155,7 +155,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   # Activate venv and install requirements
 
   source venv/bin/activate
-  python -m pip install -r requirements.txt
+  python -m pip install --require-virtualenv -r requirements.txt
 
   git add .
   git commit -m "Upgraded by CAVE CLI"
@@ -212,7 +212,7 @@ create_cave() { # Create a cave app instance in folder $1
 
   # Activate venv and install requirements
   source venv/bin/activate
-  python -m pip install -r requirements.txt
+  python -m pip install --require-virtualenv -r requirements.txt
 
   printf "${CHAR_LINE}\n"
   # Setup .env file
@@ -429,7 +429,7 @@ install_cave() { # (re)installs all python requirements for cave app
 
   # Activate venv and install requirements
   source venv/bin/activate
-  python -m pip install -r requirements.txt
+  python -m pip install --require-virtualenv -r requirements.txt
   printf "${CHAR_LINE}\n"
   printf "Package reinstall completed.\n"
 }

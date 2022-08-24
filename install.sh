@@ -7,7 +7,7 @@ readonly CHARS_LINE="============================"
 readonly CAVE_CLI_PATH="${HOME}/.cave_cli"
 readonly CAVE_CLI_SHORT_NAME="CAVE CLI"
 readonly CAVE_CLI_COMMAND="cave"
-readonly CAVE_CLI_VERSION="0.2.0"
+readonly CAVE_CLI_VERSION="0.2.0-dev"
 readonly BIN_DIR="/usr/local/bin"
 readonly DATA_DIR="data"
 readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cave_cli.git"
@@ -156,9 +156,13 @@ install_new() { # Copy the needed files locally
 add_to_path() { # Add the cli to a globally accessable path
   printf "${CHARS_LINE}\n"
   printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}':\n"
-  if [ ! $(ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}") ]; then
-    printf "WARNING!: Super User priviledges required to complete link! Using 'sudo'.\n"
-    sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}"
+  if [ $(realpath "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
+    printf "Link already present... skipping. \n"
+  else
+    if [ ! $(ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}") ]; then
+      printf "WARNING!: Super User priviledges required to complete link! Using 'sudo'.\n"
+      sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}"
+    fi
   fi
   printf "Done\n"
 }
@@ -169,6 +173,8 @@ main() {
   check_postgress
   install_new
   add_to_path
+  printf "${CHARS_LINE}\n"
+  printf "Install completed.\n"
   exit 0
 }
 

@@ -156,7 +156,7 @@ install_new() { # Copy the needed files locally
 add_to_path() { # Add the cli to a globally accessable path
   printf "${CHARS_LINE}\n"
   printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}':\n"
-  if [ $(realpath "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
+  if [ $(readlink "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
     printf "Link already present... skipping. \n"
   else
     if [ ! $(ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}") ]; then

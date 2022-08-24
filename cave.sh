@@ -68,14 +68,25 @@ valid_app_name() {
   fi
 }
 
-valid_app_dir() { # Checks if current directory is the an instance of the cave app
-  [[
-    -f manage.py && \
-    -f requirements.txt && \
-    -d cave_api && \
-    -d cave_app && \
-    -d cave_core
- ]]
+valid_app_dir() { # 
+  [[  -f manage.py && \
+      -f requirements.txt && \
+      -d cave_api && \
+      -d cave_app && \
+      -d cave_core ]]
+}
+
+find_app_dir() { # Checks if current directory is the an instance of the cave app
+  path="./"
+  while ! valid_app_dir; do
+    cd ../
+    path="${path}../"
+    if [ "${PWD}" = "/" ]; then
+      echo "-1"
+      exit 1
+    fi
+  done
+  echo "${path}"
 }
 
 print_help() { # Prints the help text for cave_cli
@@ -92,9 +103,12 @@ EOF
 }
 
 run_cave() { # Runs the cave app in the current directory
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
   source venv/bin/activate &&
   python manage.py runserver "$@"
@@ -102,9 +116,12 @@ run_cave() { # Runs the cave app in the current directory
 }
 
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
   # copy kept files to temp directory
   printf "Backing up cave_api and .env..."
@@ -313,9 +330,12 @@ uninstall_cli() { # Remove the CAVE CLI from system
 }
 
 sync_cave() { # Sync files from another repo to the selected cave app
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
 
   if [[ "$1" = "" ]]; then
@@ -362,9 +382,12 @@ kill_cave() { # Kill given tcp port (default 8000)
 }
 
 reset_cave() { # Run reset_db.sh
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
   source venv/bin/activate
   ./utils/reset_db.sh
@@ -390,9 +413,12 @@ prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
 
 test_cave() { # Run given file found in /cave_api/tests/
   # Check directory and files
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
   local ALL_IDX=$(indexof --all "$@")
   if [[ ! -f "cave_api/tests/$1" && "${ALL_IDX}" = "-1" ]]; then
@@ -413,9 +439,12 @@ test_cave() { # Run given file found in /cave_api/tests/
 }
 
 install_cave() { # (re)installs all python requirements for cave app
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
   printf "Removing old packages..."
   rm -rf venv/

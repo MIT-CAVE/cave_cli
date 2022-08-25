@@ -90,6 +90,16 @@ find_app_dir() { # Finds path to parent app folder if present
   echo "${path}"
 }
 
+purge_mac_db() { # Removes db and db user on mac
+  psql postgres -c "DROP DATABASE IF EXISTS ${DATABASE_NAME}"
+  psql postgres -c "DROP USER IF EXISTS ${DATABASE_USER}"
+}
+
+purge_linux_db(){ # Removes db and db user on linux
+  sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${DATABASE_NAME}"
+  sudo -u postgres psql -c "DROP USER IF EXISTS ${DATABASE_USER}"
+}
+
 print_help() { # Prints the help text for cave_cli
   VERSION="$(cat ${CAVE_PATH}/VERSION)"
   HELP="$(cat ${CAVE_PATH}/help.txt))"
@@ -494,8 +504,11 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   rm -rf "${app_name}"
   printf "Done\n"
   printf "Removing DB\n"
-  sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${DATABASE_NAME}"
-  sudo -u postgres psql -c "DROP USER IF EXISTS ${DATABASE_USER}"
+  case "$(uname -s)" in
+    Linux*)     purge_linux_db;;
+    Darwin*)    purge_mac_db;;
+    *)          printf "Error: OS not recognized."; exit 1;;
+  esac
   printf "${CHAR_LINE}\n"
   printf "${app_name} purge complete.\n"
   exit 0

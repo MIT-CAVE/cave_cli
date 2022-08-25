@@ -68,15 +68,16 @@ valid_app_name() {
   fi
 }
 
-valid_app_dir() { # 
-  [[  -f manage.py && \
+valid_app_dir() { # Checks if current directory is the an instance of the cave app
+  [[  -f .env && \
+      -f manage.py && \
       -f requirements.txt && \
       -d cave_api && \
       -d cave_app && \
       -d cave_core ]]
 }
 
-find_app_dir() { # Checks if current directory is the an instance of the cave app
+find_app_dir() { # Finds path to parent app folder if present
   path="./"
   while ! valid_app_dir; do
     cd ../
@@ -463,6 +464,43 @@ install_cave() { # (re)installs all python requirements for cave app
   printf "Package reinstall completed.\n"
 }
 
+purge_cave() { # Removes cave app in specified dir and db/db user
+  local app_name=$1
+  cd "${app_name}"
+  if ! valid_app_dir; then
+    printf "Ensure you specified a valid CAVE app directory\n"
+    exit 1
+  fi
+  cd ../
+  local confirmed=$(indexof -y "$@")
+  if [[ "${confirmed}" = "-1" ]]; then
+    read -r -p "This will permanently remove all data associated with ${app_name}. Would you like to continue? [y/N] " input
+        case ${input} in
+      [yY][eE][sS] | [yY])
+        printf "Purging ${app_name}\n"
+        ;;
+      [nN][oO] | [nN] | "")
+        err "Purge canceled"
+        exit 1
+        ;;
+      *)
+        err "Invalid input: Purge canceled."
+        exit 1
+        ;;
+    esac
+  fi
+  source "${app_name}/.env"
+  printf "Removing files..."
+  rm -rf "${app_name}"
+  printf "Done\n"
+  printf "Removing DB\n"
+  sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${DATABASE_NAME}"
+  sudo -u postgres psql -c "DROP USER IF EXISTS ${DATABASE_USER}"
+  printf "${CHAR_LINE}\n"
+  printf "${app_name} purge complete.\n"
+  exit 0
+}
+
 main() {
   if [[ $# -lt 1 ]]; then
     print_help
@@ -517,6 +555,10 @@ main() {
     ;;
     reinstall-pkgs)
       install_cave
+    ;;
+    purge)
+      shift
+      purge_cave "$@"
     ;;
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"

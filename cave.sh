@@ -100,6 +100,24 @@ purge_linux_db(){ # Removes db and db user on linux
   sudo -u postgres psql -c "DROP USER IF EXISTS ${DATABASE_USER}"
 }
 
+confirm_action() { # Checks user input for an action
+  local confirm_text="$1"
+    read -r -p "${confirm_text}. Would you like to continue? [y/N] " input
+        case ${input} in
+      [yY][eE][sS] | [yY])
+        :
+        ;;
+      [nN][oO] | [nN] | "")
+        printf "Operation canceled.\n"
+        exit 1
+        ;;
+      *)
+        printf "Invalid input: Operation canceled.\n"
+        exit 1
+        ;;
+    esac
+}
+
 print_help() { # Prints the help text for cave_cli
   VERSION="$(cat ${CAVE_PATH}/VERSION)"
   HELP="$(cat ${CAVE_PATH}/help.txt))"
@@ -133,6 +151,10 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
     exit 1
   else
     cd "${app_dir}"
+  fi
+  local confirmed=$(indexof -y "$@")
+  if [[ "${confirmed}" = "-1" ]]; then
+    confirm_action "This will replace all files not in 'cave_api/'"
   fi
   # copy kept files to temp directory
   printf "Backing up cave_api and .env..."
@@ -353,7 +375,10 @@ sync_cave() { # Sync files from another repo to the selected cave app
     printf "Ensure you include a repository link when syncing\n"
     exit 1
   fi
-
+  local confirmed=$(indexof -y "$@")
+  if [[ "${confirmed}" = "-1" ]]; then
+    confirm_action "This may overwrite some of the files in your CAVE app"
+  fi
   local path=$(mktemp -d)
   local VERSION_IDX=$(indexof --branch "$@")
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
@@ -399,6 +424,10 @@ reset_cave() { # Run reset_db.sh
     exit 1
   else
     cd "${app_dir}"
+  fi
+  local confirmed=$(indexof -y "$@")
+  if [[ "${confirmed}" = "-1" ]]; then
+    confirm_action "This will permanently remove all data stored in the app database"
   fi
   source venv/bin/activate
   ./utils/reset_db.sh
@@ -482,22 +511,10 @@ purge_cave() { # Removes cave app in specified dir and db/db user
     exit 1
   fi
   cd ../
+
   local confirmed=$(indexof -y "$@")
   if [[ "${confirmed}" = "-1" ]]; then
-    read -r -p "This will permanently remove all data associated with ${app_name}. Would you like to continue? [y/N] " input
-        case ${input} in
-      [yY][eE][sS] | [yY])
-        printf "Purging ${app_name}\n"
-        ;;
-      [nN][oO] | [nN] | "")
-        err "Purge canceled"
-        exit 1
-        ;;
-      *)
-        err "Invalid input: Purge canceled."
-        exit 1
-        ;;
-    esac
+    confirm_action "This will permanently remove all data associated with ${app_name}"
   fi
   source "${app_name}/.env"
   printf "Removing files..."

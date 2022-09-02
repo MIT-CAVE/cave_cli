@@ -122,9 +122,9 @@ choose_python() { # Choose a python bin and check that it is valid
     printf "${check}"
   done
   if [[ "${path}" = "" ]]; then
-    printf "PYTHON3_BIN=\"${default}\"\n" > "${CAVE_CLI_PATH}/CONFIG"
+    printf "PYTHON3_BIN=\"${default}\"\n\n\n" > "${CAVE_CLI_PATH}/CONFIG"
   else
-    printf "PYTHON3_BIN=\"${path}\"\n" > "${CAVE_CLI_PATH}/CONFIG"
+    printf "PYTHON3_BIN=\"${path}\"\n\n\n" > "${CAVE_CLI_PATH}/CONFIG"
   fi
 }
 

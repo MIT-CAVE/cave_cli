@@ -217,71 +217,39 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   exit 0
 }
 
-create_cave() { # Create a cave app instance in folder $1
-  local valid=$(valid_app_name "$1")
-
-  if [[ ! "${valid}" = "" ]]; then
-    printf "${valid}\n"
-    exit 1
-  fi
-  if [[ -d "$1" ]]; then
-    printf "Cannot create app '$1': This folder already exists in the current directory\n"
-    exit 1
-  fi
-  local DEV_IDX=$(indexof --dev "$@")
-  if [ ! "${DEV_IDX}" = "-1" ]; then
-    local CLONE_URL="${SSH_URL}"
-  else
-    local CLONE_URL="${HTTPS_URL}"
-  fi
-
-  local VERSION_IDX=$(indexof --version "$@")
-  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
-
-  # Clone the repo
-  if [ ! "${VERSION_IDX}" = "-1" ]; then
-    git clone -b "${!offset}" --single-branch "${CLONE_URL}" "$1"
-  else
-    git clone --single-branch "${CLONE_URL}" "$1"
-  fi
-  if [[ ! -d "$1" ]]; then
-    printf "Clone failed. Ensure you used a valid version.\n"
-    exit 1
-  fi
-
-  # Install virtualenv and create venv
-  local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
-  if [ "$virtual" = "" ]; then
-    $PYTHON3_BIN -m pip install virtualenv
-  fi
-  cd "$1"
-  if [ "${DEV_IDX}" = "-1" ]; then
-    git remote rm origin
-  fi
-  $PYTHON3_BIN -m virtualenv venv
-
-  # Activate venv and install requirements
-  source venv/bin/activate
-  python -m pip install --require-virtualenv -r requirements.txt
-
-  printf "${CHAR_LINE}\n"
-  # Setup .env file
+env_create() { # creates .env file for create_cave
+  local save_inputs=$2
+  
   cp example.env .env
   local key=$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
   local key2=""
+  if [ "${ADMIN_EMAIL}" = "" ]; then
+    ADMIN_EMAIL="$1@example.com"
+  fi
   echo "$newenv" > .env
   printf "Mapbox tokens can be created by making an account on 'https://mapbox.com'\n"
-  read -r -p "Please input your Mapbox Public Token: " key
+  if [ "${MAPBOX_TOKEN}" = "" ]; then
+    read -r -p "Please input your Mapbox Public Token: " key
+  else
+    read -r -p "Please input your Mapbox Public Token. Leave blank to use default: " key
+  fi
+  if [ "${key}" = "" ]; then
+    key="${MAPBOX_TOKEN}"
+  elif [ "${save_inputs}" != "-1" ]; then
+    MAPBOX_TOKEN="${key}"
+  fi
   line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
   key=""
   printf "\n"
-  read -r -p "Please input an admin email. Leave blank for default(${1}@example.com): " key
+  read -r -p "Please input an admin email. Leave blank for default(${ADMIN_EMAIL}): " key
   if [ "${key}" = "" ]; then
-    key="$1@example.com"
+    key="${ADMIN_EMAIL}"
+  elif [ "${save_inputs}" != "-1" ]; then
+    ADMIN_EMAIL="${key}"
   fi
   line=$(grep -n --colour=auto "DJANGO_ADMIN_EMAIL" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DJANGO_ADMIN_EMAIL='${key}'\"; next} {print}" .env)
@@ -334,6 +302,68 @@ create_cave() { # Create a cave app instance in folder $1
   line=$(grep -n --colour=auto "DATABASE_USER" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DATABASE_USER='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
+
+  # Save inputs
+  if [ "${save_inputs}" != "-1" ]; then
+    # Write MAPBOX_TOKEN to config line 2 and ADMIN_EMAIL to config line 3
+    local inputs="MAPBOX_TOKEN='${MAPBOX_TOKEN}'\nADMIN_EMAIL='${ADMIN_EMAIL}'\n"
+    local newConfig=$(awk "NR==2 {print \"${inputs}\"; next} NR==3 {next} {print}" "${CAVE_PATH}/CONFIG")
+    echo "$newConfig" > "${CAVE_PATH}/CONFIG"
+  fi
+
+}
+
+create_cave() { # Create a cave app instance in folder $1
+  local valid=$(valid_app_name "$1")
+
+  if [[ ! "${valid}" = "" ]]; then
+    printf "${valid}\n"
+    exit 1
+  fi
+  if [[ -d "$1" ]]; then
+    printf "Cannot create app '$1': This folder already exists in the current directory\n"
+    exit 1
+  fi
+  local DEV_IDX=$(indexof --dev "$@")
+  if [ ! "${DEV_IDX}" = "-1" ]; then
+    local CLONE_URL="${SSH_URL}"
+  else
+    local CLONE_URL="${HTTPS_URL}"
+  fi
+
+  local VERSION_IDX=$(indexof --version "$@")
+  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
+
+  # Clone the repo
+  if [ ! "${VERSION_IDX}" = "-1" ]; then
+    git clone -b "${!offset}" --single-branch "${CLONE_URL}" "$1"
+  else
+    git clone --single-branch "${CLONE_URL}" "$1"
+  fi
+  if [[ ! -d "$1" ]]; then
+    printf "Clone failed. Ensure you used a valid version.\n"
+    exit 1
+  fi
+
+  # Install virtualenv and create venv
+  local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
+  if [ "$virtual" = "" ]; then
+    $PYTHON3_BIN -m pip install virtualenv
+  fi
+  cd "$1"
+  if [ "${DEV_IDX}" = "-1" ]; then
+    git remote rm origin
+  fi
+  $PYTHON3_BIN -m virtualenv venv
+
+  # Activate venv and install requirements
+  source venv/bin/activate
+  python -m pip install --require-virtualenv -r requirements.txt
+
+  printf "${CHAR_LINE}\n"
+  # Setup .env file
+  local save_inputs=$(indexof --save-inputs "$@")
+  env_create "$1" "${save_inputs}"
   printf "\n${CHAR_LINE}\n"
   # Setup DB
   ./utils/reset_db.sh

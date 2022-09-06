@@ -1,5 +1,5 @@
 # cave_cli
-A unix based cli to simplify and streamline the creation and development process for `cave_app`s
+A unix based Command Line Interface (CLI) to simplify and streamline the creation and development process for `cave_app`s
 
 ## Development Prerequisites
 

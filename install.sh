@@ -7,7 +7,7 @@ readonly CHARS_LINE="============================"
 readonly CAVE_CLI_PATH="${HOME}/.cave_cli"
 readonly CAVE_CLI_SHORT_NAME="CAVE CLI"
 readonly CAVE_CLI_COMMAND="cave"
-readonly CAVE_CLI_VERSION="0.2.0-dev"
+readonly CAVE_CLI_VERSION="0.2.0"
 readonly BIN_DIR="/usr/local/bin"
 readonly DATA_DIR="data"
 readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cave_cli.git"
@@ -143,7 +143,7 @@ install_new() { # Copy the needed files locally
     err "Git Clone Failed. Installation Canceled"
     exit 1
   fi
-  
+
   local config_info=$(cat ${config_path})
   if [ "${config_info}" != "" ]; then
     cp "${config_path}" "${CAVE_CLI_PATH}/CONFIG"

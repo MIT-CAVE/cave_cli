@@ -69,13 +69,53 @@ valid_app_name() {
 }
 
 valid_app_dir() { # Checks if current directory is the an instance of the cave app
-  [[
-    -f manage.py && \
-    -f requirements.txt && \
-    -d cave_api && \
-    -d cave_app && \
-    -d cave_core
- ]]
+  [[  -f .env && \
+      -f manage.py && \
+      -f requirements.txt && \
+      -d cave_api && \
+      -d cave_app && \
+      -d cave_core ]]
+}
+
+find_app_dir() { # Finds path to parent app folder if present
+  path="./"
+  while ! valid_app_dir; do
+    cd ../
+    path="${path}../"
+    if [ "${PWD}" = "/" ]; then
+      echo "-1"
+      exit 1
+    fi
+  done
+  echo "${path}"
+}
+
+purge_mac_db() { # Removes db and db user on mac
+  psql postgres -c "DROP DATABASE IF EXISTS ${DATABASE_NAME}"
+  psql postgres -c "DROP USER IF EXISTS ${DATABASE_USER}"
+}
+
+purge_linux_db(){ # Removes db and db user on linux
+  sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${DATABASE_NAME}"
+  sudo -u postgres psql -c "DROP USER IF EXISTS ${DATABASE_USER}"
+}
+
+confirm_action() { # Checks user input for an action
+  local confirm_text="$1"
+    read -r -p "${confirm_text}. Would you like to continue? [y/N] " input
+        case ${input} in
+      [yY][eE][sS] | [yY])
+        :
+        ;;
+      [nN][oO] | [nN] | "")
+        printf "Operation canceled.\n"
+        exit 1
+        ;;
+      *)
+        printf "Invalid input: Operation canceled.\n"
+        exit 1
+        ;;
+    esac
 }
 
 print_help() { # Prints the help text for cave_cli
@@ -92,9 +132,12 @@ EOF
 }
 
 run_cave() { # Runs the cave app in the current directory
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
   source venv/bin/activate &&
   python manage.py runserver "$@"
@@ -102,9 +145,16 @@ run_cave() { # Runs the cave app in the current directory
 }
 
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
+  fi
+  local confirmed=$(indexof -y "$@")
+  if [[ "${confirmed}" = "-1" ]]; then
+    confirm_action "This will replace all files not in 'cave_api/'"
   fi
   # copy kept files to temp directory
   printf "Backing up cave_api and .env..."
@@ -155,7 +205,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   # Activate venv and install requirements
 
   source venv/bin/activate
-  python -m pip install -r requirements.txt
+  python -m pip install --require-virtualenv -r requirements.txt
 
   git add .
   git commit -m "Upgraded by CAVE CLI"
@@ -167,71 +217,39 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   exit 0
 }
 
-create_cave() { # Create a cave app instance in folder $1
-  local valid=$(valid_app_name "$1")
-
-  if [[ ! "${valid}" = "" ]]; then
-    printf "${valid}\n"
-    exit 1
-  fi
-  if [[ -d "$1" ]]; then
-    printf "Cannot create app '$1': This folder already exists in the current directory\n"
-    exit 1
-  fi
-  local DEV_IDX=$(indexof --dev "$@")
-  if [ ! "${DEV_IDX}" = "-1" ]; then
-    local CLONE_URL="${SSH_URL}"
-  else
-    local CLONE_URL="${HTTPS_URL}"
-  fi
-
-  local VERSION_IDX=$(indexof --version "$@")
-  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
-
-  # Clone the repo
-  if [ ! "${VERSION_IDX}" = "-1" ]; then
-    git clone -b "${!offset}" --single-branch "${CLONE_URL}" "$1"
-  else
-    git clone --single-branch "${CLONE_URL}" "$1"
-  fi
-  if [[ ! -d "$1" ]]; then
-    printf "Clone failed. Ensure you used a valid version.\n"
-    exit 1
-  fi
-
-  # Install virtualenv and create venv
-  local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
-  if [ "$virtual" = "" ]; then
-    $PYTHON3_BIN -m pip install virtualenv
-  fi
-  cd "$1"
-  if [ "${DEV_IDX}" = "-1" ]; then
-    git remote rm origin
-  fi
-  $PYTHON3_BIN -m virtualenv venv
-
-  # Activate venv and install requirements
-  source venv/bin/activate
-  python -m pip install -r requirements.txt
-
-  printf "${CHAR_LINE}\n"
-  # Setup .env file
+env_create() { # creates .env file for create_cave
+  local save_inputs=$2
+  
   cp example.env .env
   local key=$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
   local key2=""
+  if [ "${ADMIN_EMAIL}" = "" ]; then
+    ADMIN_EMAIL="$1@example.com"
+  fi
   echo "$newenv" > .env
   printf "Mapbox tokens can be created by making an account on 'https://mapbox.com'\n"
-  read -r -p "Please input your Mapbox Public Token: " key
+  if [ "${MAPBOX_TOKEN}" = "" ]; then
+    read -r -p "Please input your Mapbox Public Token: " key
+  else
+    read -r -p "Please input your Mapbox Public Token. Leave blank to use default: " key
+  fi
+  if [ "${key}" = "" ]; then
+    key="${MAPBOX_TOKEN}"
+  elif [ "${save_inputs}" != "-1" ]; then
+    MAPBOX_TOKEN="${key}"
+  fi
   line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
   key=""
   printf "\n"
-  read -r -p "Please input an admin email. Leave blank for default(${1}@example.com): " key
+  read -r -p "Please input an admin email. Leave blank for default(${ADMIN_EMAIL}): " key
   if [ "${key}" = "" ]; then
-    key="$1@example.com"
+    key="${ADMIN_EMAIL}"
+  elif [ "${save_inputs}" != "-1" ]; then
+    ADMIN_EMAIL="${key}"
   fi
   line=$(grep -n --colour=auto "DJANGO_ADMIN_EMAIL" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DJANGO_ADMIN_EMAIL='${key}'\"; next} {print}" .env)
@@ -284,6 +302,68 @@ create_cave() { # Create a cave app instance in folder $1
   line=$(grep -n --colour=auto "DATABASE_USER" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DATABASE_USER='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
+
+  # Save inputs
+  if [ "${save_inputs}" != "-1" ]; then
+    # Write MAPBOX_TOKEN to config line 2 and ADMIN_EMAIL to config line 3
+    local inputs="MAPBOX_TOKEN='${MAPBOX_TOKEN}'\nADMIN_EMAIL='${ADMIN_EMAIL}'\n"
+    local newConfig=$(awk "NR==2 {print \"${inputs}\"; next} NR==3 {next} {print}" "${CAVE_PATH}/CONFIG")
+    echo "$newConfig" > "${CAVE_PATH}/CONFIG"
+  fi
+
+}
+
+create_cave() { # Create a cave app instance in folder $1
+  local valid=$(valid_app_name "$1")
+
+  if [[ ! "${valid}" = "" ]]; then
+    printf "${valid}\n"
+    exit 1
+  fi
+  if [[ -d "$1" ]]; then
+    printf "Cannot create app '$1': This folder already exists in the current directory\n"
+    exit 1
+  fi
+  local DEV_IDX=$(indexof --dev "$@")
+  if [ ! "${DEV_IDX}" = "-1" ]; then
+    local CLONE_URL="${SSH_URL}"
+  else
+    local CLONE_URL="${HTTPS_URL}"
+  fi
+
+  local VERSION_IDX=$(indexof --version "$@")
+  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
+
+  # Clone the repo
+  if [ ! "${VERSION_IDX}" = "-1" ]; then
+    git clone -b "${!offset}" --single-branch "${CLONE_URL}" "$1"
+  else
+    git clone --single-branch "${CLONE_URL}" "$1"
+  fi
+  if [[ ! -d "$1" ]]; then
+    printf "Clone failed. Ensure you used a valid version.\n"
+    exit 1
+  fi
+
+  # Install virtualenv and create venv
+  local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
+  if [ "$virtual" = "" ]; then
+    $PYTHON3_BIN -m pip install virtualenv
+  fi
+  cd "$1"
+  if [ "${DEV_IDX}" = "-1" ]; then
+    git remote rm origin
+  fi
+  $PYTHON3_BIN -m virtualenv venv
+
+  # Activate venv and install requirements
+  source venv/bin/activate
+  python -m pip install --require-virtualenv -r requirements.txt
+
+  printf "${CHAR_LINE}\n"
+  # Setup .env file
+  local save_inputs=$(indexof --save-inputs "$@")
+  env_create "$1" "${save_inputs}"
   printf "\n${CHAR_LINE}\n"
   # Setup DB
   ./utils/reset_db.sh
@@ -313,16 +393,22 @@ uninstall_cli() { # Remove the CAVE CLI from system
 }
 
 sync_cave() { # Sync files from another repo to the selected cave app
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
 
   if [[ "$1" = "" ]]; then
     printf "Ensure you include a repository link when syncing\n"
     exit 1
   fi
-
+  local confirmed=$(indexof -y "$@")
+  if [[ "${confirmed}" = "-1" ]]; then
+    confirm_action "This may overwrite some of the files in your CAVE app"
+  fi
   local path=$(mktemp -d)
   local VERSION_IDX=$(indexof --branch "$@")
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
@@ -362,9 +448,16 @@ kill_cave() { # Kill given tcp port (default 8000)
 }
 
 reset_cave() { # Run reset_db.sh
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
+  fi
+  local confirmed=$(indexof -y "$@")
+  if [[ "${confirmed}" = "-1" ]]; then
+    confirm_action "This will permanently remove all data stored in the app database"
   fi
   source venv/bin/activate
   ./utils/reset_db.sh
@@ -390,9 +483,12 @@ prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
 
 test_cave() { # Run given file found in /cave_api/tests/
   # Check directory and files
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
   local ALL_IDX=$(indexof --all "$@")
   if [[ ! -f "cave_api/tests/$1" && "${ALL_IDX}" = "-1" ]]; then
@@ -413,9 +509,12 @@ test_cave() { # Run given file found in /cave_api/tests/
 }
 
 install_cave() { # (re)installs all python requirements for cave app
-  if ! valid_app_dir; then
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
     printf "Ensure you are in a valid CAVE app directory\n"
     exit 1
+  else
+    cd "${app_dir}"
   fi
   printf "Removing old packages..."
   rm -rf venv/
@@ -429,9 +528,37 @@ install_cave() { # (re)installs all python requirements for cave app
 
   # Activate venv and install requirements
   source venv/bin/activate
-  python -m pip install -r requirements.txt
+  python -m pip install --require-virtualenv -r requirements.txt
   printf "${CHAR_LINE}\n"
   printf "Package reinstall completed.\n"
+}
+
+purge_cave() { # Removes cave app in specified dir and db/db user
+  local app_name=$1
+  cd "${app_name}"
+  if ! valid_app_dir; then
+    printf "Ensure you specified a valid CAVE app directory\n"
+    exit 1
+  fi
+  cd ../
+
+  local confirmed=$(indexof -y "$@")
+  if [[ "${confirmed}" = "-1" ]]; then
+    confirm_action "This will permanently remove all data associated with ${app_name}"
+  fi
+  source "${app_name}/.env"
+  printf "Removing files..."
+  rm -rf "${app_name}"
+  printf "Done\n"
+  printf "Removing DB\n"
+  case "$(uname -s)" in
+    Linux*)     purge_linux_db;;
+    Darwin*)    purge_mac_db;;
+    *)          printf "Error: OS not recognized."; exit 1;;
+  esac
+  printf "${CHAR_LINE}\n"
+  printf "${app_name} purge complete.\n"
+  exit 0
 }
 
 main() {
@@ -488,6 +615,10 @@ main() {
     ;;
     reinstall-pkgs)
       install_cave
+    ;;
+    purge)
+      shift
+      purge_cave "$@"
     ;;
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"

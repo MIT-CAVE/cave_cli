@@ -1,6 +1,8 @@
 Core Commands:
-  create <app-name> [--version v]         Creates a new CAVE app in the specified directory. If
+  create <app-name> [--version v --save-inputs] Creates a new CAVE app in the specified directory. If
                                             the version flag isn't specified the latest version is used.
+                                            --save-inputs stores all inputs to be the defaults for future
+                                            creation.
   run [options]                           Runs the CAVE app in the current directory. Options are passed
                                             to manage.py
 
@@ -18,6 +20,8 @@ Peripheral Commands:
   upgrade [--version v]                   Upgrades the CAVE app in the current dicrectory to the given
                                             version. If the version flag isn't specified the latest version
                                             is used.
+  purge <app-name>                        Removes the app in the specified directory, as well as removing
+                                            its associated database and database user.
 
 
 Utility Commands:

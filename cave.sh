@@ -208,7 +208,6 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   python -m pip install --require-virtualenv -r requirements.txt
 
   git add .
-  git commit -m "Upgraded by CAVE CLI"
 
   ./utils/reset_db.sh
 
@@ -329,6 +328,8 @@ create_cave() { # Create a cave app instance in folder $1
     local CLONE_URL="${SSH_URL}"
   else
     local CLONE_URL="${HTTPS_URL}"
+    rm -rf .git
+    git init
   fi
 
   local VERSION_IDX=$(indexof --version "$@")

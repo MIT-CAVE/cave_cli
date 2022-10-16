@@ -163,7 +163,7 @@ run_cave() { # Runs the cave app in the current directory
     local offset_open=$(find_open_port ${offset_port})
     if [[ "${open}" = "1" && "${offset_open}" != "-1" ]]; then
       python manage.py collectstatic
-      daphne -e ssl:$offset_open:privateKey=utils/lan_hosting/LAN.key:certKey=utils/lan_hosting/LAN.crt cave_app.asgi:application -p $port -b $ip
+      daphne -e ssl:$port:privateKey=utils/lan_hosting/LAN.key:certKey=utils/lan_hosting/LAN.crt cave_app.asgi:application -p $offset_open -b $ip
     else
       printf "The specified port is in use. Please try another."
       exit 1

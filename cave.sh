@@ -13,6 +13,7 @@ readonly TMP_DIR="/tmp"
 readonly CHAR_LINE="============================="
 readonly SSH_URL="git@github.com:MIT-CAVE/cave_app.git"
 readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
+readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
 # update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 
@@ -90,6 +91,20 @@ find_app_dir() { # Finds path to parent app folder if present
   echo "${path}"
 }
 
+find_open_port() { # Finds an open port above the specified one
+  port="$1"
+  open=$(nc -z 127.0.0.1 ${port}; echo $?)
+  while [ "$open" != "1" ]; do
+    port=$(echo "${port} + 1" | bc -l)
+    open=$(nc -z 127.0.0.1 ${port}; echo $?)
+    if [ "${port}" = "65535" ]; then
+      echo "-1"
+      exit 1
+    fi
+  done
+  echo "${port}"
+}
+
 purge_mac_db() { # Removes db and db user on mac
   psql postgres -c "DROP DATABASE IF EXISTS ${DATABASE_NAME}"
   psql postgres -c "DROP USER IF EXISTS ${DATABASE_USER}"
@@ -139,8 +154,22 @@ run_cave() { # Runs the cave app in the current directory
   else
     cd "${app_dir}"
   fi
-  source venv/bin/activate &&
-  python manage.py runserver "$@"
+  source venv/bin/activate
+  if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
+    local ip=$(echo "$1" | perl -nle'print $& while m{([0-9]{1,3}\.)+([0-9]{1,3})}g')
+    local port=$(echo "$1" | perl -nle'print $& while m{(?<=:)\d\d\d[0-9]+}g')
+    local offset_port=$(echo "${port} + 1" | bc -l)
+    local open=$(nc -z 127.0.0.1 ${port}; echo $?)
+    local offset_open=$(find_open_port ${offset_port})
+    if [[ "${open}" = "1" && "${offset_open}" != "-1" ]]; then
+      daphne -e ssl:$offset_open:privateKey=utils/lan_hosting/LAN.key:certKey=utils/lan_hosting/LAN.crt cave_app.asgi:application -p $port -b $ip
+    else
+      printf "The specified port is in use. Please try another."
+      exit 1
+    fi
+  else
+    python manage.py runserver "$@"
+  fi
   exit 0
 }
 

@@ -381,7 +381,7 @@ create_cave() { # Create a cave app instance in folder $1
   fi
   cd "$1"
   if [ "${DEV_IDX}" = "-1" ]; then
-    sudo rm -r .git
+    rm -rf .git
     git init
     git add .
     git commit -m "Initialize CAVE App"

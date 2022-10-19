@@ -248,7 +248,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
 
 env_create() { # creates .env file for create_cave
   local save_inputs=$2
-  
+
   cp example.env .env
   local key=$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
@@ -322,7 +322,7 @@ env_create() { # creates .env file for create_cave
   done
   line=$(grep -n --colour=auto "DATABASE_PASSWORD" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DATABASE_PASSWORD='${key}'\"; next} {print}" .env)
-  echo "$newenv" > .env  
+  echo "$newenv" > .env
   key="$1_db"
   line=$(grep -n --colour=auto "DATABASE_NAME" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DATABASE_NAME='${key}'\"; next} {print}" .env)
@@ -358,8 +358,6 @@ create_cave() { # Create a cave app instance in folder $1
     local CLONE_URL="${SSH_URL}"
   else
     local CLONE_URL="${HTTPS_URL}"
-    rm -rf .git
-    git init
   fi
 
   local VERSION_IDX=$(indexof --version "$@")
@@ -383,7 +381,11 @@ create_cave() { # Create a cave app instance in folder $1
   fi
   cd "$1"
   if [ "${DEV_IDX}" = "-1" ]; then
-    git remote rm origin
+    sudo rm -r .git
+    git init
+    git add .
+    git commit -m "Initialize CAVE App"
+    git branch -M main
   fi
   $PYTHON3_BIN -m virtualenv venv
 

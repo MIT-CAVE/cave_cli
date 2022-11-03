@@ -3,8 +3,9 @@ Core Commands:
                                             the version flag isn't specified the latest version is used.
                                             --save-inputs stores all inputs to be the defaults for future
                                             creation.
-  run [options]                           Runs the CAVE app in the current directory. Options are passed
-                                            to manage.py
+  run [options]                           Runs the CAVE app in the current directory. If options includes
+                                            an ip address with port the app is run using daphne available
+                                            at the given port. Otherwise options are passed to manage.py
 
 
 Peripheral Commands:

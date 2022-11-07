@@ -649,6 +649,10 @@ main() {
     reinstall-pkgs)
       install_cave
     ;;
+    setup)
+      install_cave
+      reset_cave
+    ;;
     purge)
       shift
       purge_cave "$@"

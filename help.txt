@@ -16,6 +16,8 @@ Peripheral Commands:
                                             directory.
   reset                                   Resets the database for the CAVE app in the current directory.
 
+  setup                                   Execute an initial setup on a cloned repo. Installs all requirements
+                                            and resets the database for the CAVE app in the current directory.
   test [--all]                            Runs the given test python file located in /cave_api/tests/.
                                             If --all flag is present runs all files in /cave_api/tests/.
   upgrade [--version v]                   Upgrades the CAVE app in the current dicrectory to the given

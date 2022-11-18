@@ -60,7 +60,8 @@ A unix based Command Line Interface (CLI) to streamline the creation and develop
 ```
 bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"
 ```
-- **Note**: During installation you will be asked to choose your default python installation path. In a new terminal this can be found with: `which python3.10`
+- **Note**: During installation you will be asked to choose your default python installation path.
+    - This can be found with: `which python3.10` in a new terminal.
 - Validate Installation:
     ```
     cave --version

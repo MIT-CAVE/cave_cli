@@ -7,53 +7,57 @@ A unix based Command Line Interface (CLI) to streamline the creation and develop
     - If you are using Windows, you can use Ubuntu20.04 (via WSL2).
         - While using WSL2, make sure to follow all instructions in your WSL2 terminal
 - **Note**: Only `python` is supported (and not python derivatives like anaconda)
+
 ## Ubuntu Setup:
+
+```sh
+# Update your package list and current packages
+sudo apt-get update && sudo apt-get upgrade -y
+# Install software to add external PPAs
+sudo apt install software-properties-common -y
+# Add the deadsnakes python PPA
+sudo add-apt-repository ppa:deadsnakes/ppa
+# Install python3.10 from the deadsnakes PPA
+sudo apt-get install python3.10 -y
+# Install pip
+curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+# Install virtualenv
+python3.10 -m pip install virtualenv
+# Install Postgres
+sudo apt-get install postgresql postgresql-contrib
+```
+
+## Mac Setup:
+
+- Install `Command Line Tools`
+    - Install `XCode` from the `App Store`
+    - Once `XCode` is installed, install the XCode `Command Line Tools`
+        - `menu` -> `preferences` -> `downloads` -> `command line tools`
+- Install `brew`:
     ```sh
-    # Update your package list and current packages
-    sudo apt-get update && sudo apt-get upgrade -y
-    # Install software to add external PPAs
-    sudo apt install software-properties-common -y
-    # Add the deadsnakes python PPA
-    sudo add-apt-repository ppa:deadsnakes/ppa
-    # Install python3.10 from the deadsnakes PPA
-    sudo apt-get install python3.10 -y
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    ```
+    - **Note**: Remember to execute any requested follow up commands listed at the end of the brew installation process
+- Install `python3.10+`
+    ```sh
+    brew install python@3.10
+    ```
+- Install `pip` and `virtualenv`:
+    ```sh
     # Install pip
     curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
     # Install virtualenv
     python3.10 -m pip install virtualenv
-    # Install Postgres
-    sudo apt-get install postgresql postgresql-contrib
     ```
-## Mac Setup:
-    - Install `Command Line Tools`
-        - Install `XCode` from the `App Store`
-        - Once `XCode` is installed, install the XCode `Command Line Tools`
-            - `menu` -> `preferences` -> `downloads` -> `command line tools`
-    - Install `brew`:
-        ```sh
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        ```
-        - **Note**: Remember to execute any requested follow up commands listed at the end of the brew installation process
-    - Install `python3.10+`
-        ```sh
-        brew install python@3.10
-        ```
-    - Install `pip` and `virtualenv`:
-        ```sh
-        # Install pip
-        curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
-        # Install virtualenv
-        python3.10 -m pip install virtualenv
-        ```
-    - Install `postgresql`:
-        ```sh
-        brew install postgresql@14
-        brew services start postgresql@14
-        ```
-        - **Note**: After rebooting your machine you will need to start postgres each time using:
-          ```sh
-          brew services start postgresql@14
-          ```
+- Install `postgresql`:
+    ```sh
+    brew install postgresql@14
+    brew services start postgresql@14
+    ```
+    - **Note**: After rebooting your machine you will need to start postgres each time using:
+      ```sh
+      brew services start postgresql@14
+      ```
 
 ## CLI Installation
 

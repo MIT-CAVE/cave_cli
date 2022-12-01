@@ -144,13 +144,8 @@ install_new() { # Copy the needed files locally
     exit 1
   fi
 
-  local config_info=$(cat ${config_path})
-  if [ "${config_info}" != "" ]; then
-    cp "${config_path}" "${CAVE_CLI_PATH}/CONFIG"
-  else
-    printf "${CHARS_LINE}\n"
-    choose_python
-  fi
+  printf "${CHARS_LINE}\n"
+  choose_python
 }
 
 add_to_path() { # Add the cli to a globally accessable path

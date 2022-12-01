@@ -12,7 +12,7 @@ readonly BIN_DIR="/usr/local/bin"
 readonly DATA_DIR="data"
 readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cave_cli.git"
 readonly SSH_CLONE_URL="-b ${CAVE_CLI_VERSION} git@github.com:MIT-CAVE/cave_cli.git"
-readonly MIN_PYTHON_VERSION="3.9.0"
+readonly MIN_PYTHON_VERSION="3.10.0"
 
 err() { # Display an error message
   printf "$0: $1\n" >&2
@@ -70,7 +70,7 @@ check_postgress() { # Validate postgress is installed
 }
 
 check_python() { # Validate python is installed and is correct version
-  install_python="\nPlease install python version 3.9.0 or greater. \nFor more information see: 'https://www.python.org/downloads/'\n"
+  install_python="\nPlease install python version 3.10.0 or greater. \nFor more information see: 'https://www.python.org/downloads/'\n"
   CURRENT_PYTHON_VERSION=$($1 --version | sed 's/Python //')
   echo $(validate_version "python" "0" "$install_python" "$MIN_PYTHON_VERSION" "$CURRENT_PYTHON_VERSION")
   if [ ! "$(printf $1 -V | grep conda)" = "" ]; then
@@ -109,7 +109,7 @@ check_previous_installation() { # Check to make sure previous installations are 
 
 choose_python() { # Choose a python bin and check that it is valid
   local path=""
-  local default=$(which python)
+  local default=$(which python3)
   local check="Placeholder"
   #Ask for python path until valid version is given
   while [[ ! "${check}" = "" ]]; do

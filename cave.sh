@@ -353,13 +353,18 @@ create_cave() { # Create a cave app instance in folder $1
     printf "Cannot create app '$1': This folder already exists in the current directory\n"
     exit 1
   fi
+  
   local DEV_IDX=$(indexof --dev "$@")
   if [ ! "${DEV_IDX}" = "-1" ]; then
     local CLONE_URL="${SSH_URL}"
   else
     local CLONE_URL="${HTTPS_URL}"
   fi
-
+  local URL_IDX=$(indexof --url "$@")
+  local offset=$(echo "${URL_IDX} + 2" | bc -l)
+  if [ ! "${URL_IDX}" = "-1" ]; then
+    local CLONE_URL="${!offset}"
+  fi
   local VERSION_IDX=$(indexof --version "$@")
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
 

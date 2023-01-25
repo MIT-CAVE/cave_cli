@@ -70,12 +70,36 @@ valid_app_name() {
 }
 
 valid_app_dir() { # Checks if current directory is the an instance of the cave app
-  [[  -f .env && \
-      -f manage.py && \
-      -f requirements.txt && \
-      -d cave_api && \
-      -d cave_app && \
-      -d cave_core ]]
+
+#Checking the folder
+for folder in cave_api cave_app cave_core;
+do
+  echo "$folder"
+  if ! [ -d ${folder} ] ; then
+    echo "Folder ${folder} is missing in current director."
+  fi
+done
+
+#If all folders exist, check the files.
+if [[ -d cave_api && \
+    -d cave_app && \
+    -d cave_core ]]; then
+  for file in .env manage.py requirements.txt;
+  do
+    echo "$file"
+    if ! [ -f ${file} ]; then
+      echo "File ${file} is missing in the current directory."
+    fi
+  done
+fi
+
+# Global check to return a boolean
+[[  -f .env && \
+    -f manage.py && \
+    -f requirements.txt && \
+    -d cave_api && \
+    -d cave_app && \
+    -d cave_core ]]
 }
 
 find_app_dir() { # Finds path to parent app folder if present

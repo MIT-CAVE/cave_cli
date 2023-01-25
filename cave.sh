@@ -344,6 +344,7 @@ env_create() { # creates .env file for create_cave
 
 create_cave() { # Create a cave app instance in folder $1
   local valid=$(valid_app_name "$1")
+  local app_dir=$(find_app_dir)
 
   if [[ ! "${valid}" = "" ]]; then
     printf "${valid}\n"
@@ -379,6 +380,12 @@ create_cave() { # Create a cave app instance in folder $1
     exit 1
   fi
 
+  printf "${CHAR_LINE}\n"
+# Setup .env file
+  local save_inputs=$(indexof --save-inputs "$@")
+  env_create "$1" "${save_inputs}"
+  printf "\n${CHAR_LINE}\n"
+
   # Install virtualenv and create venv
   local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
   if [ "$virtual" = "" ]; then
@@ -386,8 +393,10 @@ create_cave() { # Create a cave app instance in folder $1
   fi
   cd "$1"
   if [ "${DEV_IDX}" = "-1" ]; then
-    rm -rf .git
+    rm -rf .git            
     git init
+    git add -f ${app_dir}/.env
+    sed -i.bak "s/.env//" ${app_dir}/.env
     git add .
     git commit -m "Initialize CAVE App"
     git branch -M main
@@ -398,11 +407,7 @@ create_cave() { # Create a cave app instance in folder $1
   source venv/bin/activate
   python -m pip install --require-virtualenv -r requirements.txt
 
-  printf "${CHAR_LINE}\n"
-  # Setup .env file
-  local save_inputs=$(indexof --save-inputs "$@")
-  env_create "$1" "${save_inputs}"
-  printf "\n${CHAR_LINE}\n"
+  
   # Setup DB
   ./utils/reset_db.sh
   printf "${CHAR_LINE}\n"

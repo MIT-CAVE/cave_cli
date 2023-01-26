@@ -263,7 +263,8 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   # Activate venv and install requirements
 
   source venv/bin/activate
-  python -m pip install --require-virtualenv -r requirements.txt
+  # Since the virtualenv has been activated we use python3 instead of the bin location
+  python3 -m pip install --require-virtualenv -r requirements.txt
 
   git add .
 
@@ -276,10 +277,9 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
 
 env_create() { # creates .env file for create_cave
   local save_inputs=$2
-  local PYTHON3_BIN=$3
   rm .env >& /dev/null
   cp example.env .env
-  local key=$(${PYTHON3_BIN} -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
+  local key=$(source venv/bin/activate && python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
   local key2=""
@@ -419,14 +419,14 @@ create_cave() { # Create a cave app instance in folder $1
 
   # Setup .env file
   local save_inputs=$(indexof --save-inputs "$@")
-  env_create "$1" "${save_inputs}" "$PYTHON3_BIN"
+  env_create "$1" "${save_inputs}"
   printf "\n${CHAR_LINE}\n"
   
   # Setup DB
   ./utils/reset_db.sh
 
   # Prep git repo
-  printf "${CHAR_LINE}\nInitializing your project as a local git repository...\n"
+  printf "\n${CHAR_LINE}\nInitializing your project as a local git repository...\n"
   if [ "${DEV_IDX}" = "-1" ]; then
     rm -rf .git        
     git init
@@ -435,7 +435,7 @@ create_cave() { # Create a cave app instance in folder $1
       Darwin*)    sed -i '' 's/.env//g' .gitignore;;
       *)          printf "Error: OS not recognized."; exit 1;;
     esac
-    git add . &> /dev/null
+    git add .
     git commit -m "Initialize CAVE App"
     git branch -M main
   fi
@@ -610,7 +610,8 @@ install_cave() { # (re)installs all python requirements for cave app
 
   # Activate venv and install requirements
   source venv/bin/activate
-  python -m pip install --require-virtualenv -r requirements.txt
+  # Since the virtualenv has been activated we use python3 instead of the bin location
+  python3 -m pip install --require-virtualenv -r requirements.txt
   printf "${CHAR_LINE}\n"
   printf "Package reinstall completed.\n"
   printf "${CHAR_LINE}\n"

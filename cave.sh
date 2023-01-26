@@ -70,34 +70,28 @@ valid_app_name() {
 }
 
 valid_app_dir() { # Checks if current directory is the an instance of the cave app
-
-#Checking the folder
-for folder in cave_api cave_app cave_core;
-do
-  if ! [ -d ${folder} ] ; then
-    echo "Folder ${folder} is missing in the current directory."
+  # Check to see if this is a cave app folder with manage.py and cave_core
+  if ! [[ -f manage.py && -d cave_core ]]; then
+    return 1
   fi
-done
-
-#If all folders exist, check the files.
-if [[ -d cave_api && \
-    -d cave_app && \
-    -d cave_core ]]; then
-  for file in .env manage.py requirements.txt;
-  do
-    if ! [ -f ${file} ]; then
-      echo "File ${file} is missing in the current directory."
+  # Check the folders
+  for folder in cave_api cave_app cave_core; do
+    if ! [ -d ${folder} ] ; then
+      printf "The folder '${folder}' is missing in the root project directory.\n" >&2
     fi
   done
-fi
-
-# Global check to return a boolean
-[[  -f .env && \
-    -f manage.py && \
-    -f requirements.txt && \
-    -d cave_api && \
-    -d cave_app && \
-    -d cave_core ]]
+  # Check the files
+  for file in .env manage.py requirements.txt; do
+      if ! [ -f ${file} ]; then
+        printf "The file '${file}' is missing in the root project directory.\n" >&2
+      fi
+  done
+  [[  -f .env && \
+      -f manage.py && \
+      -f requirements.txt && \
+      -d cave_api && \
+      -d cave_app && \
+      -d cave_core ]]
 }
 
 find_app_dir() { # Finds path to parent app folder if present
@@ -168,16 +162,12 @@ EOF
   exit 0
 }
 
-is_setup(){
-  local app_dir=$(find_app_dir)
-  source "${app_dir}/.env"
-  if psql ${DATABASE_NAME} -c '\q' 2>&1; then
-    echo "${DATABASE_NAME} already exists"
-  else
-    echo "${DATABASE_NAME} does not exist"
-fi
-[[  psql ${DATABASE_NAME} -c '\q' 2>&1 &&\
-    -d venv ]]
+force_venv_setup() {
+  if ! [[ -d venv ]]; then
+    confirm_action "Your app python virtual environment has not been set up. You must set it up and reset your database before proceeding"
+    install_cave
+    reset_cave
+  fi
 }
 
 
@@ -190,13 +180,7 @@ run_cave() { # Runs the cave app in the current directory
     cd "${app_dir}"
   fi
 
-  if ! is_setup;then
-    printf 'Your app has not been set up. Do you want to set it up now? (y/n)? '
-    read answer
-    if [ "$answer" != "${answer#[Yy]}" ] ;then 
-    install_cave
-    reset_cave
-  fi
+  force_venv_setup
 
   source venv/bin/activate
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
@@ -388,7 +372,6 @@ env_create() { # creates .env file for create_cave
 
 create_cave() { # Create a cave app instance in folder $1
   local valid=$(valid_app_name "$1")
-  local app_dir=$(find_app_dir)
 
   if [[ ! "${valid}" = "" ]]; then
     printf "${valid}\n"
@@ -425,7 +408,9 @@ create_cave() { # Create a cave app instance in folder $1
   fi
 
   printf "${CHAR_LINE}\n"
-# Setup .env file
+  # cd into the created app
+  cd "$1"
+  # Setup .env file
   local save_inputs=$(indexof --save-inputs "$@")
   env_create "$1" "${save_inputs}"
   printf "\n${CHAR_LINE}\n"
@@ -435,12 +420,14 @@ create_cave() { # Create a cave app instance in folder $1
   if [ "$virtual" = "" ]; then
     $PYTHON3_BIN -m pip install virtualenv
   fi
-  cd "$1"
   if [ "${DEV_IDX}" = "-1" ]; then
-    rm -rf .git            
+    rm -rf .git        
     git init
-    git add -f ${app_dir}/.env
-    sed -i.bak "s/.env//" ${app_dir}/.env
+    case "$(uname -s)" in
+      Linux*)     sed -i 's/.env//g' .gitignore;;
+      Darwin*)    sed -i '' 's/.env//g' .gitignore;;
+      *)          printf "Error: OS not recognized."; exit 1;;
+    esac
     git add .
     git commit -m "Initialize CAVE App"
     git branch -M main
@@ -541,12 +528,18 @@ reset_cave() { # Run reset_db.sh
   else
     cd "${app_dir}"
   fi
+  printf "${CHAR_LINE}\n"
+  printf "Resetting your app database:\n"
+  printf "${CHAR_LINE}\n"
   local confirmed=$(indexof -y "$@")
   if [[ "${confirmed}" = "-1" ]]; then
     confirm_action "This will permanently remove all data stored in the app database"
   fi
   source venv/bin/activate
   ./utils/reset_db.sh
+  printf "${CHAR_LINE}\n"
+  printf "Your app database has been reset.\n"
+  printf "${CHAR_LINE}\n"
   exit 0
 }
 
@@ -602,6 +595,9 @@ install_cave() { # (re)installs all python requirements for cave app
   else
     cd "${app_dir}"
   fi
+  printf "${CHAR_LINE}\n"
+  printf "Setting up your python virtual environment:\n"
+  printf "${CHAR_LINE}\n"
   printf "Removing old packages..."
   rm -rf venv/
   printf "Done\n"
@@ -617,6 +613,7 @@ install_cave() { # (re)installs all python requirements for cave app
   python -m pip install --require-virtualenv -r requirements.txt
   printf "${CHAR_LINE}\n"
   printf "Package reinstall completed.\n"
+  printf "${CHAR_LINE}\n"
 }
 
 purge_cave() { # Removes cave app in specified dir and db/db user

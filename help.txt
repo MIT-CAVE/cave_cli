@@ -2,11 +2,14 @@ Core Commands:
   create <app-name> [--version v --save-inputs] 
                             Creates a new CAVE app in the specified directory. If
                              the version flag isn't specified the latest version is used.
-                             --save-inputs stores all inputs to be the defaults for future
+                             `--save-inputs` stores all inputs to be the defaults for future
                              creation.
-  run [options]             Runs the CAVE app in the current directory. If options includes
-                             an ip address with port the app is run using daphne available
-                             at the given port. Otherwise options are passed to manage.py
+                             `--version` can be used to specify which cave app version (github branch name)
+                             to use.
+  run [options]             Runs the CAVE app in the current directory. 
+                             `options` includes:
+                              - The ip and port to host the app <ip address>:<port> (EG 192.168.1.100:8000)
+                              - All options available to `python manage.py runserver`
 
 
 Peripheral Commands:
@@ -21,9 +24,9 @@ Peripheral Commands:
                              and resets the database for the CAVE app in the current directory.
   test [--all]              Runs the given test python file located in /cave_api/tests/.
                              If --all flag is present runs all files in /cave_api/tests/.
-  upgrade [--version v]     Upgrades the CAVE app in the current dicrectory to the given
-                             version. If the version flag isn't specified the latest version
-                             is used.
+  upgrade [--version v]     Upgrades the CAVE app in the current dicrectory to the provided
+                             version (github branch name). 
+                             If the version flag isn't specified the latest version is used.
   purge <app-name>          Removes the app in the specified directory, as well as removing
                              its associated database and database user.
 
@@ -35,8 +38,8 @@ Utility Commands:
                              Used when a CAVE app wasn't properly shut down.
   sync <repo>               Merges files from the given repo into the CAVE app in the
                              current directory.
-  uninstall                 Removes the CAVE CLI
+  uninstall                 Removes the CAVE CLI.
 
-  update                    Updates to the latest version of the CAVE CLI
+  update                    Updates to the latest version of the CAVE CLI.
 
   version                   Prints the version of the cli.

@@ -276,9 +276,10 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
 
 env_create() { # creates .env file for create_cave
   local save_inputs=$2
-
+  local PYTHON3_BIN=$3
+  rm .env >& /dev/null
   cp example.env .env
-  local key=$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
+  local key=$(${PYTHON3_BIN} -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
   local key2=""
@@ -410,16 +411,22 @@ create_cave() { # Create a cave app instance in folder $1
   printf "${CHAR_LINE}\n"
   # cd into the created app
   cd "$1"
+  # Create a fake .env file to allow installation to proceed
+  touch .env
+
+  # Setup python virtual environment
+  install_cave
+
   # Setup .env file
   local save_inputs=$(indexof --save-inputs "$@")
-  env_create "$1" "${save_inputs}"
+  env_create "$1" "${save_inputs}" "$PYTHON3_BIN"
   printf "\n${CHAR_LINE}\n"
+  
+  # Setup DB
+  ./utils/reset_db.sh
 
-  # Install virtualenv and create venv
-  local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
-  if [ "$virtual" = "" ]; then
-    $PYTHON3_BIN -m pip install virtualenv
-  fi
+  # Prep git repo
+  printf "${CHAR_LINE}\nInitializing your project as a local git repository...\n"
   if [ "${DEV_IDX}" = "-1" ]; then
     rm -rf .git        
     git init
@@ -428,18 +435,11 @@ create_cave() { # Create a cave app instance in folder $1
       Darwin*)    sed -i '' 's/.env//g' .gitignore;;
       *)          printf "Error: OS not recognized."; exit 1;;
     esac
-    git add .
+    git add . &> /dev/null
     git commit -m "Initialize CAVE App"
     git branch -M main
   fi
-  $PYTHON3_BIN -m virtualenv venv
-
-  # Activate venv and install requirements
-  source venv/bin/activate
-  python -m pip install --require-virtualenv -r requirements.txt
-  
-  # Setup DB
-  ./utils/reset_db.sh
+  printf "Git repository initialized.\n"
   printf "${CHAR_LINE}\n"
   printf "Creation completed. Created variables and addtional configuration options availible in $1/.env\n"
   exit 0
@@ -598,7 +598,7 @@ install_cave() { # (re)installs all python requirements for cave app
   printf "${CHAR_LINE}\n"
   printf "Setting up your python virtual environment:\n"
   printf "${CHAR_LINE}\n"
-  printf "Removing old packages..."
+  printf "Removing old packages if they exist..."
   rm -rf venv/
   printf "Done\n"
   # Install virtualenv and create venv

@@ -168,7 +168,7 @@ EOF
   exit 0
 }
 
-database_exists(){
+is_setup(){
   local app_dir=$(find_app_dir)
   source "${app_dir}/.env"
   if psql ${DATABASE_NAME} -c '\q' 2>&1; then
@@ -176,7 +176,8 @@ database_exists(){
   else
     echo "${DATABASE_NAME} does not exist"
 fi
-[ psql ${DATABASE_NAME} -c '\q' 2>&1 ]
+[[  psql ${DATABASE_NAME} -c '\q' 2>&1 &&\
+    -d venv ]]
 }
 
 
@@ -189,7 +190,7 @@ run_cave() { # Runs the cave app in the current directory
     cd "${app_dir}"
   fi
 
-  if ! database_exists;then
+  if ! is_setup;then
     printf 'Your app has not been set up. Do you want to set it up now? (y/n)? '
     read answer
     if [ "$answer" != "${answer#[Yy]}" ] ;then 

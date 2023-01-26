@@ -168,6 +168,18 @@ EOF
   exit 0
 }
 
+database_exists(){
+  local app_dir=$(find_app_dir)
+  source "${app_dir}/.env"
+  if psql ${DATABASE_NAME} -c '\q' 2>&1; then
+    echo "${DATABASE_NAME} already exists"
+  else
+    echo "${DATABASE_NAME} does not exist"
+fi
+[ psql ${DATABASE_NAME} -c '\q' 2>&1 ]
+}
+
+
 run_cave() { # Runs the cave app in the current directory
   local app_dir=$(find_app_dir)
   if [ "${app_dir}" = "-1" ]; then
@@ -176,6 +188,15 @@ run_cave() { # Runs the cave app in the current directory
   else
     cd "${app_dir}"
   fi
+
+  if ! database_exists;then
+    printf 'Your app has not been set up. Do you want to set it up now? (y/n)? '
+    read answer
+    if [ "$answer" != "${answer#[Yy]}" ] ;then 
+    install_cave
+    reset_cave
+  fi
+
   source venv/bin/activate
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
     local ip=$(echo "$1" | perl -nle'print $& while m{([0-9]{1,3}\.)+([0-9]{1,3})}g')
@@ -428,7 +449,6 @@ create_cave() { # Create a cave app instance in folder $1
   # Activate venv and install requirements
   source venv/bin/activate
   python -m pip install --require-virtualenv -r requirements.txt
-
   
   # Setup DB
   ./utils/reset_db.sh
@@ -584,7 +604,7 @@ install_cave() { # (re)installs all python requirements for cave app
   printf "Removing old packages..."
   rm -rf venv/
   printf "Done\n"
-   # Install virtualenv and create venv
+  # Install virtualenv and create venv
   local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
   if [ "$virtual" = "" ]; then
     $PYTHON3_BIN -m pip install virtualenv
@@ -625,6 +645,8 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   printf "${app_name} purge complete.\n"
   exit 0
 }
+
+
 
 main() {
   if [[ $# -lt 1 ]]; then
@@ -688,7 +710,7 @@ main() {
     purge)
       shift
       purge_cave "$@"
-    ;;
+    ;; 
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"
     ;;

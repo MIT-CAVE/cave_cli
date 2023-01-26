@@ -1,41 +1,45 @@
 Core Commands:
-  create <app-name> [--version v --save-inputs] Creates a new CAVE app in the specified directory. If
-                                            the version flag isn't specified the latest version is used.
-                                            --save-inputs stores all inputs to be the defaults for future
-                                            creation.
-  run [options]                           Runs the CAVE app in the current directory. If options includes
-                                            an ip address with port the app is run using daphne available
-                                            at the given port. Otherwise options are passed to manage.py
+  create <app-name> [--version v --save-inputs] 
+                            Creates a new CAVE app in the specified directory. If
+                             the version flag isn't specified the latest version is used.
+                             `--save-inputs` stores all inputs to be the defaults for future
+                             creation.
+                             `--version` can be used to specify which cave app version (github branch name)
+                             to use.
+  run [options]             Runs the CAVE app in the current directory. 
+                             `options` includes:
+                              - The ip and port to host the app <ip address>:<port> (EG 192.168.1.100:8000)
+                              - All options available to `python manage.py runserver`
 
 
 Peripheral Commands:
-  prettify [--all]                        Cleans up cave_api code for the CAVE app in the current
-                                            directory using autoflake and black. If --all flag is given
-                                            also runs on cave_core and cave_app
-  reinstall-pkgs                          Installs all requirements for the CAVE app in the current
-                                            directory.
-  reset                                   Resets the database for the CAVE app in the current directory.
+  prettify [--all]          Cleans up cave_api code for the CAVE app in the current
+                             directory using autoflake and black. If --all flag is given
+                             also runs on cave_core and cave_app
+  reinstall-pkgs            Installs all requirements for the CAVE app in the current
+                             directory.
+  reset                     Resets the database for the CAVE app in the current directory.
 
-  setup                                   Execute an initial setup on a cloned repo. Installs all requirements
-                                            and resets the database for the CAVE app in the current directory.
-  test [--all]                            Runs the given test python file located in /cave_api/tests/.
-                                            If --all flag is present runs all files in /cave_api/tests/.
-  upgrade [--version v]                   Upgrades the CAVE app in the current dicrectory to the given
-                                            version. If the version flag isn't specified the latest version
-                                            is used.
-  purge <app-name>                        Removes the app in the specified directory, as well as removing
-                                            its associated database and database user.
+  setup                     Execute an initial setup on a cloned repo. Installs all requirements
+                             and resets the database for the CAVE app in the current directory.
+  test [--all]              Runs the given test python file located in /cave_api/tests/.
+                             If --all flag is present runs all files in /cave_api/tests/.
+  upgrade [--version v]     Upgrades the CAVE app in the current dicrectory to the provided
+                             version (github branch name). 
+                             If the version flag isn't specified the latest version is used.
+  purge <app-name>          Removes the app in the specified directory, as well as removing
+                             its associated database and database user.
 
 
 Utility Commands:
-  help                                    Prints this help text.
+  help                      Prints this help text.
 
-  kill [port]                             Kills any connections running on the given port(default 8000).
-                                            Used when a CAVE app wasn't properly shut down.
-  sync <repo>                             Merges files from the given repo into the CAVE app in the
-                                            current directory.
-  uninstall                               Removes the CAVE CLI
+  kill [port]               Kills any connections running on the given port(default 8000).
+                             Used when a CAVE app wasn't properly shut down.
+  sync <repo>               Merges files from the given repo into the CAVE app in the
+                             current directory.
+  uninstall                 Removes the CAVE CLI.
 
-  update                                  Updates to the latest version of the CAVE CLI
+  update                    Updates to the latest version of the CAVE CLI.
 
-  version                                 Prints the version of the cli.
+  version                   Prints the version of the cli.

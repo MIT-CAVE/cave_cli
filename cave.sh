@@ -166,7 +166,7 @@ force_venv_setup() {
   if ! [[ -d venv ]]; then
     confirm_action "Your app python virtual environment has not been set up. You must set it up and reset your database before proceeding"
     install_cave
-    reset_cave
+    reset_cave -y
   fi
 }
 
@@ -212,7 +212,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   fi
   local confirmed=$(indexof -y "$@")
   if [[ "${confirmed}" = "-1" ]]; then
-    confirm_action "This will replace all files not in 'cave_api/'"
+    confirm_action "This will replace all files not in 'cave_api/' and reset your database"
   fi
   # copy kept files to temp directory
   printf "Backing up cave_api and .env..."
@@ -224,16 +224,16 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
 
   # remove current files
   rm -rf *
-  rm -rf .* >& /dev/null
+  rm -rf .* &> /dev/null
 
   # Clone the repo
   local CLONE_URL="${HTTPS_URL}"
   local VERSION_IDX=$(indexof --version "$@")
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
   if [ ! "${VERSION_IDX}" = "-1" ]; then
-    git clone -b "${!offset}" --single-branch "${CLONE_URL}" .
+    git clone -b "${!offset}" --single-branch "${CLONE_URL}" . &> /dev/null
   else
-    git clone --single-branch "${CLONE_URL}" .
+    git clone --single-branch "${CLONE_URL}" . &> /dev/null
   fi
   if [[ ! -d "cave_core" ]]; then
     printf "Clone failed. Ensure you used a valid version.\n"
@@ -252,33 +252,19 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   # clean up temp files
   rm -rf "${path}"
 
-  # Install virtualenv and create venv
-  virtual=$($PYTHON3_BIN -m virtualenv --version | grep No)
-  if [[ ! "${virtual}" = "" ]]; then
-    $PYTHON3_BIN -m pip install virtualenv
-  fi
+  # Setup venv and db again
+  install_cave
+  reset_cave -y
 
-  $PYTHON3_BIN -m virtualenv venv
-
-  # Activate venv and install requirements
-
-  source venv/bin/activate
-  # Since the virtualenv has been activated we use python3 instead of the bin location
-  python3 -m pip install --require-virtualenv -r requirements.txt
-
-  git add .
-
-  ./utils/reset_db.sh
-
-  printf "${CHAR_LINE}\n"
+  git add . &> /dev/null
   printf "Upgrade complete.\n"
   exit 0
 }
 
 env_create() { # creates .env file for create_cave
   local save_inputs=$2
-  rm .env >& /dev/null
-  cp example.env .env
+  rm .env &> /dev/null
+  cp example.env .env &> /dev/null
   local key=$(source venv/bin/activate && python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
@@ -286,6 +272,7 @@ env_create() { # creates .env file for create_cave
   if [ "${ADMIN_EMAIL}" = "" ]; then
     ADMIN_EMAIL="$1@example.com"
   fi
+  printf "Set up your new app environment (.env) variables:\n"
   echo "$newenv" > .env
   printf "Mapbox tokens can be created by making an account on 'https://mapbox.com'\n"
   if [ "${MAPBOX_TOKEN}" = "" ]; then
@@ -368,7 +355,7 @@ env_create() { # creates .env file for create_cave
     local newConfig=$(awk "NR==2 {print \"${inputs}\"; next} NR==3 {next} {print}" "${CAVE_PATH}/CONFIG")
     echo "$newConfig" > "${CAVE_PATH}/CONFIG"
   fi
-
+  printf "\n"
 }
 
 create_cave() { # Create a cave app instance in folder $1
@@ -397,18 +384,21 @@ create_cave() { # Create a cave app instance in folder $1
   local VERSION_IDX=$(indexof --version "$@")
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
 
+
   # Clone the repo
+  printf "${CHAR_LINE}\n"
+  printf "Downloading the app template..."
   if [ ! "${VERSION_IDX}" = "-1" ]; then
-    git clone -b "${!offset}" --single-branch "${CLONE_URL}" "$1"
+    git clone -b "${!offset}" --single-branch "${CLONE_URL}" "$1" &> /dev/null
   else
-    git clone --single-branch "${CLONE_URL}" "$1"
+    git clone --single-branch "${CLONE_URL}" "$1" &> /dev/null
   fi
   if [[ ! -d "$1" ]]; then
-    printf "Clone failed. Ensure you used a valid version.\n"
+    printf "\nClone failed. Ensure you used a valid version.\n"
     exit 1
   fi
+  printf "Done\n"
 
-  printf "${CHAR_LINE}\n"
   # cd into the created app
   cd "$1"
   # Create a fake .env file to allow installation to proceed
@@ -420,28 +410,29 @@ create_cave() { # Create a cave app instance in folder $1
   # Setup .env file
   local save_inputs=$(indexof --save-inputs "$@")
   env_create "$1" "${save_inputs}"
-  printf "\n${CHAR_LINE}\n"
-  
-  # Setup DB
-  ./utils/reset_db.sh
+
+  # Set up the app database
+  reset_cave -y
 
   # Prep git repo
-  printf "\n${CHAR_LINE}\nInitializing your project as a local git repository...\n"
+  printf "Version Control:\n"
+  printf "Configuring git repository..."
   if [ "${DEV_IDX}" = "-1" ]; then
     rm -rf .git        
-    git init
+    git init  &> /dev/null
     case "$(uname -s)" in
       Linux*)     sed -i 's/.env//g' .gitignore;;
       Darwin*)    sed -i '' 's/.env//g' .gitignore;;
       *)          printf "Error: OS not recognized."; exit 1;;
     esac
-    git add .
-    git commit -m "Initialize CAVE App"
-    git branch -M main
+    git add .  &> /dev/null
+    git commit -m "Initialize CAVE App" &> /dev/null
+    git branch -M main &> /dev/null
   fi
-  printf "Git repository initialized.\n"
+  printf "Done.\n"
   printf "${CHAR_LINE}\n"
-  printf "Creation completed. Created variables and addtional configuration options availible in $1/.env\n"
+  printf "App Creation completed!\nNote: Created variables and addtional configuration options are availible in $1/.env\n"
+  printf "${CHAR_LINE}\n"
   exit 0
 }
 
@@ -529,18 +520,16 @@ reset_cave() { # Run reset_db.sh
     cd "${app_dir}"
   fi
   printf "${CHAR_LINE}\n"
-  printf "Resetting your app database:\n"
-  printf "${CHAR_LINE}\n"
+  printf "Setup/Reset your App Database:\n"
   local confirmed=$(indexof -y "$@")
   if [[ "${confirmed}" = "-1" ]]; then
     confirm_action "This will permanently remove all data stored in the app database"
   fi
   source venv/bin/activate
-  ./utils/reset_db.sh
+  printf "Configuring your app database (sudo required)..."
+  ./utils/reset_db.sh &> /dev/null
+  printf "Done.\n"
   printf "${CHAR_LINE}\n"
-  printf "Your app database has been reset.\n"
-  printf "${CHAR_LINE}\n"
-  exit 0
 }
 
 prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
@@ -548,7 +537,7 @@ prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
       printf "Ensure you are in a valid CAVE app directory\n"
       exit 1
   fi
-  printf "Prettifying api..."
+  printf "Prettifying api:\n"
   local VERSION_IDX=$(indexof --all "$@")
   source venv/bin/activate
   ./utils/api_prettify.sh
@@ -597,23 +586,27 @@ install_cave() { # (re)installs all python requirements for cave app
   fi
   printf "${CHAR_LINE}\n"
   printf "Setting up your python virtual environment:\n"
-  printf "${CHAR_LINE}\n"
   printf "Removing old packages if they exist..."
-  rm -rf venv/
+  rm -rf venv/ &> /dev/null
   printf "Done\n"
   # Install virtualenv and create venv
   local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
   if [ "$virtual" = "" ]; then
-    $PYTHON3_BIN -m pip install virtualenv
+    printf "Virtualenv not installed. Installing it for you..."
+    $PYTHON3_BIN -m pip install virtualenv &> /dev/null
+    printf "Done\n"
   fi
-  $PYTHON3_BIN -m virtualenv venv
+  printf "Creating a virtual envrionment..."
+  $PYTHON3_BIN -m virtualenv venv &> /dev/null
+  printf "Done\n"
 
   # Activate venv and install requirements
   source venv/bin/activate
   # Since the virtualenv has been activated we use python3 instead of the bin location
-  python3 -m pip install --require-virtualenv -r requirements.txt
-  printf "${CHAR_LINE}\n"
-  printf "Package reinstall completed.\n"
+  printf "Installing all python requirements in your new virtual environment..."
+  python3 -m pip install --require-virtualenv -r requirements.txt  &> /dev/null
+  printf "Done\n"
+  printf "Package install completed.\n"
   printf "${CHAR_LINE}\n"
 }
 
@@ -625,23 +618,25 @@ purge_cave() { # Removes cave app in specified dir and db/db user
     exit 1
   fi
   cd ../
-
+  printf "${CHAR_LINE}\n"
+  printf "Purging CAVE App (${app_name}):\n"
   local confirmed=$(indexof -y "$@")
   if [[ "${confirmed}" = "-1" ]]; then
-    confirm_action "This will permanently remove all data associated with ${app_name}"
+    confirm_action "This will permanently remove all data associated with your CAVE App (${app_name})"
   fi
   source "${app_name}/.env"
   printf "Removing files..."
   rm -rf "${app_name}"
   printf "Done\n"
-  printf "Removing DB\n"
+  printf "Removing DB (sudo required)..."
   case "$(uname -s)" in
-    Linux*)     purge_linux_db;;
-    Darwin*)    purge_mac_db;;
+    Linux*)     purge_linux_db &> /dev/null;;
+    Darwin*)    purge_mac_db &> /dev/null;;
     *)          printf "Error: OS not recognized."; exit 1;;
   esac
+  printf "Done\n"
+  printf "Purge complete.\n"
   printf "${CHAR_LINE}\n"
-  printf "${app_name} purge complete.\n"
   exit 0
 }
 
@@ -649,7 +644,6 @@ update_cave() { # Updates the cave cli
   version 
   printf "${CHAR_LINE}\n"
   printf "Updating CAVE CLI...\n"
-  printf "${CHAR_LINE}\n"
   # Change into the cave cli directory
   cd "${CAVE_PATH}"
   # Check if the user wants to update to a specific version
@@ -657,12 +651,15 @@ update_cave() { # Updates the cave cli
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
   if [ ! "${VERSION_IDX}" = "-1" ]; then
     confirm_action "This will update the CAVE CLI to the latest commit of version ${!offset} on github (using git)"
-    git fetch
-    git checkout ${!offset}
-    git pull
+    local BRANCH="${!offset}"
   else
-    bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"
+    local BRANCH="main"
   fi
+  git fetch  &> /dev/null
+  git checkout $BRANCH  &> /dev/null
+  git pull &> /dev/null
+  printf "CAVE CLI updated.\n"
+  printf "${CHAR_LINE}\n"
 }
 
 
@@ -710,6 +707,7 @@ main() {
     ;;
     reset)
       reset_cave
+      exit 0
     ;;
     prettify)
       shift

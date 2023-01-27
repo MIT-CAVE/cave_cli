@@ -40,6 +40,8 @@ Utility Commands:
                              current directory.
   uninstall                 Removes the CAVE CLI.
 
-  update                    Updates to the latest version of the CAVE CLI.
-
+  update [--version]        Updates to the latest version of the CAVE CLI.
+                             Using the `--version` flag allows you to choose a specific cave_cli 
+                             version (github branch) to install. If not specified, this command 
+                             reinstalls the latest stable version from the `main` branch.
   version                   Prints the version of the cli.

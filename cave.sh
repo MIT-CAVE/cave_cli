@@ -645,8 +645,7 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   exit 0
 }
 
-update_cave() { # Updates the cave cli
-  version 
+update_cave() { # Updates the cave cli 
   printf "${CHAR_LINE}\n"
   printf "Updating CAVE CLI...\n"
   printf "${CHAR_LINE}\n"

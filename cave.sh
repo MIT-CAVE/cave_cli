@@ -645,6 +645,26 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   exit 0
 }
 
+update_cave() { # Updates the cave cli
+  version 
+  printf "${CHAR_LINE}\n"
+  printf "Updating CAVE CLI...\n"
+  printf "${CHAR_LINE}\n"
+  # Change into the cave cli directory
+  cd "${CAVE_PATH}"
+  # Check if the user wants to update to a specific version
+  local VERSION_IDX=$(indexof --version "$@")
+  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
+  if [ ! "${VERSION_IDX}" = "-1" ]; then
+    confirm_action "This will update the CAVE CLI to the latest commit of version ${!offset} on github (using git)"
+    git fetch
+    git checkout ${!offset}
+    git pull
+  else
+    bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"
+  fi
+}
+
 
 
 main() {
@@ -665,7 +685,7 @@ main() {
       run_cave "$@"
     ;;
     update)
-      bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"
+      update_cave "$@"
     ;;
     uninstall)
       uninstall_cli

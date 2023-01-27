@@ -70,6 +70,22 @@ valid_app_name() {
 }
 
 valid_app_dir() { # Checks if current directory is the an instance of the cave app
+  # Check to see if this is a cave app folder with manage.py and cave_core
+  if ! [[ -f manage.py && -d cave_core ]]; then
+    return 1
+  fi
+  # Check the folders
+  for folder in cave_api cave_app cave_core; do
+    if ! [ -d ${folder} ] ; then
+      printf "The folder '${folder}' is missing in the root project directory.\n" >&2
+    fi
+  done
+  # Check the files
+  for file in .env manage.py requirements.txt; do
+      if ! [ -f ${file} ]; then
+        printf "The file '${file}' is missing in the root project directory.\n" >&2
+      fi
+  done
   [[  -f .env && \
       -f manage.py && \
       -f requirements.txt && \
@@ -146,6 +162,15 @@ EOF
   exit 0
 }
 
+force_venv_setup() {
+  if ! [[ -d venv ]]; then
+    confirm_action "Your app python virtual environment has not been set up. You must set it up and reset your database before proceeding"
+    install_cave
+    reset_cave
+  fi
+}
+
+
 run_cave() { # Runs the cave app in the current directory
   local app_dir=$(find_app_dir)
   if [ "${app_dir}" = "-1" ]; then
@@ -154,6 +179,9 @@ run_cave() { # Runs the cave app in the current directory
   else
     cd "${app_dir}"
   fi
+
+  force_venv_setup
+
   source venv/bin/activate
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
     local ip=$(echo "$1" | perl -nle'print $& while m{([0-9]{1,3}\.)+([0-9]{1,3})}g')
@@ -235,7 +263,8 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   # Activate venv and install requirements
 
   source venv/bin/activate
-  python -m pip install --require-virtualenv -r requirements.txt
+  # Since the virtualenv has been activated we use python3 instead of the bin location
+  python3 -m pip install --require-virtualenv -r requirements.txt
 
   git add .
 
@@ -248,9 +277,9 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
 
 env_create() { # creates .env file for create_cave
   local save_inputs=$2
-
+  rm .env >& /dev/null
   cp example.env .env
-  local key=$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
+  local key=$(source venv/bin/activate && python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
   local key2=""
@@ -353,13 +382,18 @@ create_cave() { # Create a cave app instance in folder $1
     printf "Cannot create app '$1': This folder already exists in the current directory\n"
     exit 1
   fi
+  
   local DEV_IDX=$(indexof --dev "$@")
   if [ ! "${DEV_IDX}" = "-1" ]; then
     local CLONE_URL="${SSH_URL}"
   else
     local CLONE_URL="${HTTPS_URL}"
   fi
-
+  local URL_IDX=$(indexof --url "$@")
+  local offset=$(echo "${URL_IDX} + 2" | bc -l)
+  if [ ! "${URL_IDX}" = "-1" ]; then
+    local CLONE_URL="${!offset}"
+  fi
   local VERSION_IDX=$(indexof --version "$@")
   local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
 
@@ -374,32 +408,38 @@ create_cave() { # Create a cave app instance in folder $1
     exit 1
   fi
 
-  # Install virtualenv and create venv
-  local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
-  if [ "$virtual" = "" ]; then
-    $PYTHON3_BIN -m pip install virtualenv
-  fi
-  cd "$1"
-  if [ "${DEV_IDX}" = "-1" ]; then
-    rm -rf .git
-    git init
-    git add .
-    git commit -m "Initialize CAVE App"
-    git branch -M main
-  fi
-  $PYTHON3_BIN -m virtualenv venv
-
-  # Activate venv and install requirements
-  source venv/bin/activate
-  python -m pip install --require-virtualenv -r requirements.txt
-
   printf "${CHAR_LINE}\n"
+  # cd into the created app
+  cd "$1"
+  # Create a fake .env file to allow installation to proceed
+  touch .env
+
+  # Setup python virtual environment
+  install_cave
+
   # Setup .env file
   local save_inputs=$(indexof --save-inputs "$@")
   env_create "$1" "${save_inputs}"
   printf "\n${CHAR_LINE}\n"
+  
   # Setup DB
   ./utils/reset_db.sh
+
+  # Prep git repo
+  printf "\n${CHAR_LINE}\nInitializing your project as a local git repository...\n"
+  if [ "${DEV_IDX}" = "-1" ]; then
+    rm -rf .git        
+    git init
+    case "$(uname -s)" in
+      Linux*)     sed -i 's/.env//g' .gitignore;;
+      Darwin*)    sed -i '' 's/.env//g' .gitignore;;
+      *)          printf "Error: OS not recognized."; exit 1;;
+    esac
+    git add .
+    git commit -m "Initialize CAVE App"
+    git branch -M main
+  fi
+  printf "Git repository initialized.\n"
   printf "${CHAR_LINE}\n"
   printf "Creation completed. Created variables and addtional configuration options availible in $1/.env\n"
   exit 0
@@ -488,12 +528,18 @@ reset_cave() { # Run reset_db.sh
   else
     cd "${app_dir}"
   fi
+  printf "${CHAR_LINE}\n"
+  printf "Resetting your app database:\n"
+  printf "${CHAR_LINE}\n"
   local confirmed=$(indexof -y "$@")
   if [[ "${confirmed}" = "-1" ]]; then
     confirm_action "This will permanently remove all data stored in the app database"
   fi
   source venv/bin/activate
   ./utils/reset_db.sh
+  printf "${CHAR_LINE}\n"
+  printf "Your app database has been reset.\n"
+  printf "${CHAR_LINE}\n"
   exit 0
 }
 
@@ -549,10 +595,13 @@ install_cave() { # (re)installs all python requirements for cave app
   else
     cd "${app_dir}"
   fi
-  printf "Removing old packages..."
+  printf "${CHAR_LINE}\n"
+  printf "Setting up your python virtual environment:\n"
+  printf "${CHAR_LINE}\n"
+  printf "Removing old packages if they exist..."
   rm -rf venv/
   printf "Done\n"
-   # Install virtualenv and create venv
+  # Install virtualenv and create venv
   local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
   if [ "$virtual" = "" ]; then
     $PYTHON3_BIN -m pip install virtualenv
@@ -561,9 +610,11 @@ install_cave() { # (re)installs all python requirements for cave app
 
   # Activate venv and install requirements
   source venv/bin/activate
-  python -m pip install --require-virtualenv -r requirements.txt
+  # Since the virtualenv has been activated we use python3 instead of the bin location
+  python3 -m pip install --require-virtualenv -r requirements.txt
   printf "${CHAR_LINE}\n"
   printf "Package reinstall completed.\n"
+  printf "${CHAR_LINE}\n"
 }
 
 purge_cave() { # Removes cave app in specified dir and db/db user
@@ -594,6 +645,28 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   exit 0
 }
 
+update_cave() { # Updates the cave cli
+  version 
+  printf "${CHAR_LINE}\n"
+  printf "Updating CAVE CLI...\n"
+  printf "${CHAR_LINE}\n"
+  # Change into the cave cli directory
+  cd "${CAVE_PATH}"
+  # Check if the user wants to update to a specific version
+  local VERSION_IDX=$(indexof --version "$@")
+  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
+  if [ ! "${VERSION_IDX}" = "-1" ]; then
+    confirm_action "This will update the CAVE CLI to the latest commit of version ${!offset} on github (using git)"
+    git fetch
+    git checkout ${!offset}
+    git pull
+  else
+    bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"
+  fi
+}
+
+
+
 main() {
   if [[ $# -lt 1 ]]; then
     print_help
@@ -612,7 +685,7 @@ main() {
       run_cave "$@"
     ;;
     update)
-      bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"
+      update_cave "$@"
     ;;
     uninstall)
       uninstall_cli
@@ -656,7 +729,7 @@ main() {
     purge)
       shift
       purge_cave "$@"
-    ;;
+    ;; 
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"
     ;;

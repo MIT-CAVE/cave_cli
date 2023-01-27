@@ -9,7 +9,6 @@ readonly CAVE_CLI_SHORT_NAME="CAVE CLI"
 readonly CAVE_CLI_COMMAND="cave"
 readonly CAVE_CLI_VERSION="1.0.0"
 readonly BIN_DIR="/usr/local/bin"
-readonly DATA_DIR="data"
 readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cave_cli.git"
 readonly SSH_CLONE_URL="-b ${CAVE_CLI_VERSION} git@github.com:MIT-CAVE/cave_cli.git"
 readonly MIN_PYTHON_VERSION="3.10.0"
@@ -90,10 +89,11 @@ check_previous_installation() { # Check to make sure previous installations are 
     fi
     case ${input} in
       [yY][eE][sS] | [yY])
-        printf "Removing old installation... "
-        cp "${CAVE_CLI_PATH}/CONFIG" "${config_path}"
-        rm -rf "${CAVE_CLI_PATH}"
-        printf "done\n"
+        printf "${CHARS_LINE}\n"
+        printf "Removing old installation..."
+        cp "${CAVE_CLI_PATH}/CONFIG" "${config_path}" &> /dev/null
+        rm -rf "${CAVE_CLI_PATH}" &> /dev/null
+        printf "Done\n"
         ;;
       [nN][oO] | [nN] | "")
         err "Installation canceled"
@@ -109,7 +109,7 @@ check_previous_installation() { # Check to make sure previous installations are 
 
 choose_python() { # Choose a python bin and check that it is valid
   local path=""
-  local default=$(which python3)
+  local default=$(which python3.10)
   local check="Placeholder"
   #Ask for python path until valid version is given
   while [[ ! "${check}" = "" ]]; do
@@ -133,29 +133,28 @@ install_new() { # Copy the needed files locally
   check_previous_installation "${config_path}"
   printf "Creating application folder at '${CAVE_CLI_PATH}'..."
   mkdir -p "${CAVE_CLI_PATH}"
-  printf "done\n"
+  printf "Done\n"
   printf "${CHARS_LINE}\n"
   CLONE_URL="$HTTPS_CLONE_URL"
+  printf "Downloading the CLI..."
   git clone $CLONE_URL \
-    ${clone_opts} \
-    "${CAVE_CLI_PATH}" > /dev/null
+    "${CAVE_CLI_PATH}" &> /dev/null
   if [ ! -d "${CAVE_CLI_PATH}" ]; then
     err "Git Clone Failed. Installation Canceled"
     exit 1
   fi
-
+  printf "Done\n"
   printf "${CHARS_LINE}\n"
   choose_python
 }
 
 add_to_path() { # Add the cli to a globally accessable path
   printf "${CHARS_LINE}\n"
-  printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}':\n"
+  printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}' (sudo required)..."
   if [ $(readlink "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
-    printf "Link already present... skipping. \n"
+    :
   else
     if [ ! $(ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}") ]; then
-      printf "WARNING!: Super User priviledges required to complete link! Using 'sudo'.\n"
       sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}"
     fi
   fi

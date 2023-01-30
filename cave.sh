@@ -712,7 +712,6 @@ main() {
       run_cave "$@"
     ;;
     update)
-      ensure_postgres_running
       update_cave "$@"
     ;;
     uninstall)
@@ -766,6 +765,9 @@ main() {
     ;; 
     --version | version)
       printf "$(cat "${CAVE_PATH}/VERSION")\n"
+    ;;
+    *)
+      printf "Unrecognized Command ($1) passed.\nUse cave --help for information on how to use the cave cli.\n"
     ;;
   esac
 }

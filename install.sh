@@ -156,9 +156,9 @@ add_to_path() { # Add the cli to a globally accessable path
   printf "${CHARS_LINE}\n"
   printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}' (sudo required)..."
   if [ $(readlink "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
-    :
+    printf "Already linked\n" &> /dev/null
   else
-    if [ ! $(ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}") ]; then
+    if [ ! $(sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}") ]; then
       sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}"
     fi
   fi

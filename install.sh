@@ -7,7 +7,7 @@ readonly CHARS_LINE="============================"
 readonly CAVE_CLI_PATH="${HOME}/.cave_cli"
 readonly CAVE_CLI_SHORT_NAME="CAVE CLI"
 readonly CAVE_CLI_COMMAND="cave"
-readonly CAVE_CLI_VERSION="1.0.0"
+readonly CAVE_CLI_VERSION="1.1.0-dev"
 readonly BIN_DIR="/usr/local/bin"
 readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cave_cli.git"
 readonly SSH_CLONE_URL="-b ${CAVE_CLI_VERSION} git@github.com:MIT-CAVE/cave_cli.git"
@@ -135,7 +135,11 @@ install_new() { # Copy the needed files locally
   mkdir -p "${CAVE_CLI_PATH}"
   printf "Done\n"
   printf "${CHARS_LINE}\n"
-  CLONE_URL="$HTTPS_CLONE_URL"
+  if [ "$1" = "--dev" ]; then
+    CLONE_URL="$SSH_CLONE_URL"
+  else
+    CLONE_URL="$HTTPS_CLONE_URL"
+  fi
   printf "Downloading the CLI..."
   git clone $CLONE_URL \
     "${CAVE_CLI_PATH}" &> /dev/null
@@ -165,7 +169,7 @@ main() {
   check_os
   check_git
   check_postgress
-  install_new
+  install_new "$2"
   add_to_path
   printf "${CHARS_LINE}\n"
   printf "Install completed.\n"

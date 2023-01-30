@@ -121,17 +121,28 @@ find_open_port() { # Finds an open port above the specified one
   echo "${port}"
 }
 
+start_postgres() {
+  case "$(uname -s)" in
+    Linux*)     sudo service postgresql start &> /dev/null;;
+    Darwin*)    brew services start postgresql@14 &> /dev/null;;
+    *)          printf "Error: OS not recognized."; exit 1;;
+  esac
+}
+
+is_postgres_running() {
+  case "$(pg_isready)" in
+    *"accepting"*)    printf "Postgres Is Running!\n" &> /dev/null;;
+    *)                return 1;;
+  esac
+}
+
 ensure_postgres_running() {
-  if ! [[ "$(pg_isready)" == *"accepting"* ]]; then
+  if ! is_postgres_running; then
     printf "Postgres is not currently running. Attempting to start it..."
-    case "$(uname -s)" in
-      Linux*)     sudo service postgresql start &> /dev/null;;
-      Darwin*)    brew services start postgresql@14 &> /dev/null;;
-      *)          printf "Error: OS not recognized."; exit 1;;
-    esac
-    if ! [[ "$(pg_isready)" == *"accepting"* ]]; then
-      printf "Failed! Exiting.\n"
-      printf "Ensure you have postgresql installed and running.\nSee the docs at: https://github.com/MIT-CAVE/cave_cli for setup information.\n"
+    start_postgres
+    if ! is_postgres_running; then
+      printf "Failed!\n"
+      printf "Ensure you have postgresql installed and running.\nSee the docs at: https://github.com/MIT-CAVE/cave_cli for setup information.\nExiting\n"
       exit 1
     else
       printf "Done.\n"

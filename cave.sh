@@ -140,6 +140,7 @@ ensure_postgres_running() {
   if ! is_postgres_running; then
     printf "Postgres is not currently running. Attempting to start it..."
     start_postgres
+    sleep 1
     if ! is_postgres_running; then
       printf "Failed!\n"
       printf "Ensure you have postgresql installed and running.\nSee the docs at: https://github.com/MIT-CAVE/cave_cli for setup information.\nExiting\n"

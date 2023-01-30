@@ -1,11 +1,11 @@
 Core Commands:
-  create <app-name> [--version v --save-inputs] 
+  create <app-name> [--version --save-inputs] 
                             Creates a new CAVE app in the specified directory. If
                              the version flag isn't specified the latest version is used.
                              `--save-inputs` stores all inputs to be the defaults for future
                              creation.
                              `--version` can be used to specify which cave app version (github branch name)
-                             to use.
+                             to use. If not specified, uses the most recent stable branch.
   run [options]             Runs the CAVE app in the current directory. 
                              `options` includes:
                               - The ip and port to host the app <ip address>:<port> (EG 192.168.1.100:8000)
@@ -24,9 +24,9 @@ Peripheral Commands:
                              and resets the database for the CAVE app in the current directory.
   test [--all]              Runs the given test python file located in /cave_api/tests/.
                              If --all flag is present runs all files in /cave_api/tests/.
-  upgrade [--version v]     Upgrades the CAVE app in the current dicrectory to the provided
-                             version (github branch name). 
-                             If the version flag isn't specified the latest version is used.
+  upgrade [--version]       Upgrades the CAVE app in the current dicrectory.
+                             `--version` can be used to specify which cave app version (github 
+                             branch name) to use. If not specified, uses the most recent stable branch.
   purge <app-name>          Removes the app in the specified directory, as well as removing
                              its associated database and database user.
 
@@ -40,8 +40,8 @@ Utility Commands:
                              current directory.
   uninstall                 Removes the CAVE CLI.
 
-  update [--version]        Updates to the latest version of the CAVE CLI.
-                             Using the `--version` flag allows you to choose a specific cave_cli 
-                             version (github branch) to install. If not specified, this command 
-                             reinstalls the latest stable version from the `main` branch.
+  update [--version]        Updates the CAVE CLI to the latest version.
+                             `--version` can be used to choose a specific cave_cli 
+                             version (github branch name) to install. If not specified, this 
+                             command installs the latest stable version.
   version                   Prints the version of the cli.

@@ -11,20 +11,37 @@ readonly INVALID_NAME_PATTERN_4="(_-)+"
 readonly BIN_DIR="/usr/local/bin"
 readonly TMP_DIR="/tmp"
 readonly CHAR_LINE="============================="
-readonly SSH_URL="git@github.com:MIT-CAVE/cave_app.git"
 readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
 readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
 # update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 
-indexof() {
-  search="$1"; shift
-  i=0
-  for arg; do
-    [ "$search" = "$arg" ] && echo $i && exit
-    ((i++))
-  done
-  echo -1 && exit
+get_flag() {
+    local default=$1
+    shift
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            echo "$2"
+            return
+        fi
+        shift
+    done
+    echo "$default"
+}
+
+has_flag() {
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            echo "true"
+            return
+        fi
+        shift
+    done
+    echo "false"
 }
 
 validate_version() {
@@ -240,43 +257,29 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   else
     cd "${app_dir}"
   fi
-  local confirmed=$(indexof -y "$@")
-  if [[ "${confirmed}" = "-1" ]]; then
-    confirm_action "This will replace all files not in 'cave_api/' and reset your database"
+
+  if [[ "$(has_flag -y "$@")" != "true" ]]; then
+    confirm_action "This will potentially update all files not in 'cave_api/' or '.env' and reset your database"
   fi
-  # copy kept files to temp directory
-  printf "Backing up cave_api and .env..."
+
+  printf "Downloading your new app version..."
   local path=$(mktemp -d)
-  cp .env "${path}/.env"
-  cp -r cave_api "${path}/cave_api"
-  cp -r .git "${path}/.git"
-  printf "Done\n"
-
-  # remove current files
-  rm -rf *
-  rm -rf .* &> /dev/null
-
-  # Clone the repo
-  local CLONE_URL="${HTTPS_URL}"
-  local VERSION_IDX=$(indexof --version "$@")
-  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
-  if [ ! "${VERSION_IDX}" = "-1" ]; then
-    git clone -b "${!offset}" --single-branch "${CLONE_URL}" . &> /dev/null
+  local CLONE_URL="$(get_flag "${HTTPS_URL}" --url "$@")"
+  local VERSION="$(get_flag '' --version "$@")"
+  if [[ "$(has_flag --version "$@")" = 'true' ]]; then
+    git clone -b "$VERSION" --single-branch "${CLONE_URL}" "$path" &> /dev/null
   else
-    git clone --single-branch "${CLONE_URL}" . &> /dev/null
+    git clone --single-branch "${CLONE_URL}" "$path" &> /dev/null
   fi
-  if [[ ! -d "cave_core" ]]; then
-    printf "Clone failed. Ensure you used a valid version.\n"
+  if [[ ! -d "${path}/cave_core" ]]; then
+    printf "Clone failed\nEnsure you have access rights to the repository and have specified a valid version.\n"
     exit 1
   fi
-  # remove cloned cave_api and git
-  rm -rf cave_api
-  rm -rf .git
+  printf "Done.\n"
 
-  printf "Restoring backed up files..."
-  cp "${path}/.env" .env
-  cp -r "${path}/cave_api" cave_api
-  cp -r "${path}/.git" .git
+  printf "Syncing files.."
+  rsync -a --exclude={'.git','.env','cave_api'} "${path}/" .
+  cp -r "${path}/cave_api/docs" cave_api
   printf "Done\n"
 
   # clean up temp files
@@ -312,7 +315,7 @@ env_create() { # creates .env file for create_cave
   fi
   if [ "${key}" = "" ]; then
     key="${MAPBOX_TOKEN}"
-  elif [ "${save_inputs}" != "-1" ]; then
+  elif [ "${save_inputs}" = "true" ]; then
     MAPBOX_TOKEN="${key}"
   fi
   line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
@@ -323,7 +326,7 @@ env_create() { # creates .env file for create_cave
   read -r -p "Please input an admin email. Leave blank for default(${ADMIN_EMAIL}): " key
   if [ "${key}" = "" ]; then
     key="${ADMIN_EMAIL}"
-  elif [ "${save_inputs}" != "-1" ]; then
+  elif [ "${save_inputs}" = "true" ]; then
     ADMIN_EMAIL="${key}"
   fi
   line=$(grep -n --colour=auto "DJANGO_ADMIN_EMAIL" .env | cut -d: -f1)
@@ -379,7 +382,7 @@ env_create() { # creates .env file for create_cave
   echo "$newenv" > .env
 
   # Save inputs
-  if [ "${save_inputs}" != "-1" ]; then
+  if [ "${save_inputs}" = "true" ]; then
     # Write MAPBOX_TOKEN to config line 2 and ADMIN_EMAIL to config line 3
     local inputs="MAPBOX_TOKEN='${MAPBOX_TOKEN}'\nADMIN_EMAIL='${ADMIN_EMAIL}'\n"
     local newConfig=$(awk "NR==2 {print \"${inputs}\"; next} NR==3 {next} {print}" "${CAVE_PATH}/CONFIG")
@@ -400,26 +403,13 @@ create_cave() { # Create a cave app instance in folder $1
     exit 1
   fi
   
-  local DEV_IDX=$(indexof --dev "$@")
-  if [ ! "${DEV_IDX}" = "-1" ]; then
-    local CLONE_URL="${SSH_URL}"
-  else
-    local CLONE_URL="${HTTPS_URL}"
-  fi
-  local URL_IDX=$(indexof --url "$@")
-  local offset=$(echo "${URL_IDX} + 2" | bc -l)
-  if [ ! "${URL_IDX}" = "-1" ]; then
-    local CLONE_URL="${!offset}"
-  fi
-  local VERSION_IDX=$(indexof --version "$@")
-  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
-
+  local CLONE_URL=$(get_flag "${HTTPS_URL}" --url "$@")
 
   # Clone the repo
   printf "${CHAR_LINE}\n"
   printf "Downloading the app template..."
-  if [ ! "${VERSION_IDX}" = "-1" ]; then
-    git clone -b "${!offset}" --single-branch "${CLONE_URL}" "$1" &> /dev/null
+  if [ "$(has_flag --version "$@")" = 'true' ]; then
+    git clone -b "$(get_flag main --version "$@")" --single-branch "${CLONE_URL}" "$1" &> /dev/null
   else
     git clone --single-branch "${CLONE_URL}" "$1" &> /dev/null
   fi
@@ -438,8 +428,7 @@ create_cave() { # Create a cave app instance in folder $1
   install_cave
 
   # Setup .env file
-  local save_inputs=$(indexof --save-inputs "$@")
-  env_create "$1" "${save_inputs}"
+  env_create "$1" "$(has_flag --save-inputs "$@")"
 
   # Set up the app database
   reset_cave -y
@@ -499,19 +488,17 @@ sync_cave() { # Sync files from another repo to the selected cave app
     printf "Ensure you include a repository link when syncing\n"
     exit 1
   fi
-  local confirmed=$(indexof -y "$@")
-  if [[ "${confirmed}" = "-1" ]]; then
+  if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This may overwrite some of the files in your CAVE app"
   fi
   local path=$(mktemp -d)
-  local VERSION_IDX=$(indexof --branch "$@")
-  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
   # Clone the repo
-  if [ ! "${VERSION_IDX}" = "-1" ]; then
-    git clone -b "${!offset}" --single-branch "$1" "${path}"
+  if [ ! "$(has_flag --version "$@")" = "true" ]; then
+    git clone -b "$(get_flag main --version "$@")" --single-branch "$1" "${path}"
   else
     git clone --single-branch "$1" "${path}"
   fi
+
   if [[ $(ls "${path}") = "" ]]; then
     printf "Clone failed. Ensure you included a valid repository link .\n"
     exit 1
@@ -550,9 +537,8 @@ reset_cave() { # Run reset_db.sh
     cd "${app_dir}"
   fi
   printf "${CHAR_LINE}\n"
-  printf "Setup/Reset your App Database:\n"
-  local confirmed=$(indexof -y "$@")
-  if [[ "${confirmed}" = "-1" ]]; then
+  printf "Setup/Reset your app database:\n"
+  if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will permanently remove all data stored in the app database"
   fi
   source venv/bin/activate
@@ -568,10 +554,9 @@ prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
       exit 1
   fi
   printf "Prettifying api:\n"
-  local VERSION_IDX=$(indexof --all "$@")
   source venv/bin/activate
   ./utils/api_prettify.sh
-  if [ ! "${VERSION_IDX}" = "-1" ]; then
+  if [ "$(has_flag --all "$@")" = "true" ]; then
     printf "Prettifying core and app..."
     ./utils/prettify.sh
   fi
@@ -588,8 +573,7 @@ test_cave() { # Run given file found in /cave_api/tests/
   else
     cd "${app_dir}"
   fi
-  local ALL_IDX=$(indexof --all "$@")
-  if [[ ! -f "cave_api/tests/$1" && "${ALL_IDX}" = "-1" ]]; then
+  if [[ ! -f "cave_api/tests/$1" && "$(has_flag --all "$@")" = "true" ]]; then
     printf "Test $1 not found. Ensure you entered a valid test name.\n"
     printf "Tests available in 'cave_api/tests/' include \n $(ls cave_api/tests/)\n"
     exit 1
@@ -650,8 +634,7 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   cd ../
   printf "${CHAR_LINE}\n"
   printf "Purging CAVE App (${app_name}):\n"
-  local confirmed=$(indexof -y "$@")
-  if [[ "${confirmed}" = "-1" ]]; then
+  if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will permanently remove all data associated with your CAVE App (${app_name})"
   fi
   source "${app_name}/.env"
@@ -675,17 +658,8 @@ update_cave() { # Updates the cave cli
   printf "Updating CAVE CLI...\n"
   # Change into the cave cli directory
   cd "${CAVE_PATH}"
-  # Check if the user wants to update to a specific version
-  local VERSION_IDX=$(indexof --version "$@")
-  local offset=$(echo "${VERSION_IDX} + 2" | bc -l)
-  if [ ! "${VERSION_IDX}" = "-1" ]; then
-    confirm_action "This will update the CAVE CLI to the latest commit of version ${!offset} on github (using git)"
-    local BRANCH="${!offset}"
-  else
-    local BRANCH="main"
-  fi
   git fetch  &> /dev/null
-  git checkout $BRANCH  &> /dev/null
+  git checkout "$(get_flag main --version "$@")"  &> /dev/null
   git pull &> /dev/null
   printf "CAVE CLI updated.\n"
   printf "${CHAR_LINE}\n"
@@ -739,7 +713,7 @@ main() {
     ;;
     reset)
       ensure_postgres_running
-      reset_cave
+      reset_cave "$@"
       exit 0
     ;;
     prettify)
@@ -756,15 +730,12 @@ main() {
     setup)
       ensure_postgres_running
       install_cave
-      reset_cave
+      reset_cave "$@"
     ;;
     purge)
       shift
       ensure_postgres_running
       purge_cave "$@"
-    ;; 
-    --version | version)
-      printf "$(cat "${CAVE_PATH}/VERSION")\n"
     ;;
     *)
       printf "Unrecognized Command ($1) passed.\nUse cave --help for information on how to use the cave cli.\n"

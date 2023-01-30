@@ -135,7 +135,7 @@ install_new() { # Copy the needed files locally
   mkdir -p "${CAVE_CLI_PATH}"
   printf "Done\n"
   printf "${CHARS_LINE}\n"
-  if [ "$1" = "--dev" ]; then
+  if [[ "$1" = "--dev" ]]; then
     CLONE_URL="$SSH_CLONE_URL"
   else
     CLONE_URL="$HTTPS_CLONE_URL"
@@ -169,7 +169,7 @@ main() {
   check_os
   check_git
   check_postgress
-  install_new "$2"
+  install_new "$@"
   add_to_path
   printf "${CHARS_LINE}\n"
   printf "Install completed.\n"

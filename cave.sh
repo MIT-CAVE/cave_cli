@@ -121,6 +121,16 @@ find_open_port() { # Finds an open port above the specified one
   echo "${port}"
 }
 
+ensure_postgres_running() {
+  if [[ "accepting" == *"$pg_isready"* ]]; then
+    case "$(uname -s)" in
+      Linux*)     sudo service postgresql start &> /dev/null;;
+      Darwin*)    brew services start postgresql@14 &> /dev/null;;
+      *)          printf "Error: OS not recognized."; exit 1;;
+    esac
+  fi
+}
+
 purge_mac_db() { # Removes db and db user on mac
   psql postgres -c "DROP DATABASE IF EXISTS ${DATABASE_NAME}"
   psql postgres -c "DROP USER IF EXISTS ${DATABASE_USER}"
@@ -586,7 +596,7 @@ install_cave() { # (re)installs all python requirements for cave app
   fi
   printf "${CHAR_LINE}\n"
   printf "Setting up your python virtual environment:\n"
-  printf "Removing old packages if they exist..."
+  printf "Removing old virtual enviornment if it exists..."
   rm -rf venv/ &> /dev/null
   printf "Done\n"
   # Install virtualenv and create venv
@@ -596,7 +606,7 @@ install_cave() { # (re)installs all python requirements for cave app
     $PYTHON3_BIN -m pip install virtualenv &> /dev/null
     printf "Done\n"
   fi
-  printf "Creating a virtual envrionment..."
+  printf "Creating a new virtual envrionment..."
   $PYTHON3_BIN -m virtualenv venv &> /dev/null
   printf "Done\n"
 
@@ -678,9 +688,11 @@ main() {
     ;;
     run)
       shift # pass all args except "run"
+      ensure_postgres_running
       run_cave "$@"
     ;;
     update)
+      ensure_postgres_running
       update_cave "$@"
     ;;
     uninstall)
@@ -688,11 +700,13 @@ main() {
     ;;
     create)
       check_python
+      ensure_postgres_running
       shift
       create_cave "$@"
     ;;
     upgrade)
       check_python
+      ensure_postgres_running
       shift
       upgrade_cave "$@"
     ;;
@@ -705,6 +719,7 @@ main() {
       kill_cave "$@"
     ;;
     reset)
+      ensure_postgres_running
       reset_cave
       exit 0
     ;;
@@ -720,11 +735,13 @@ main() {
       install_cave
     ;;
     setup)
+      ensure_postgres_running
       install_cave
       reset_cave
     ;;
     purge)
       shift
+      ensure_postgres_running
       purge_cave "$@"
     ;; 
     --version | version)

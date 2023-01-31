@@ -44,6 +44,19 @@ has_flag() {
     echo "false"
 }
 
+remove_flag() {
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            shift
+        else
+            echo "$1"
+            shift
+        fi
+    done
+}
+
 is_dir_empty() {
     local dir=$1
     if [ "$(ls -A $dir)" ]; then
@@ -76,6 +89,7 @@ check_python() { # Validate python is installed and is correct version
     printf "Please ensure that you are not using Anaconda. ${CAVE_CLI_SHORT_NAME} is not compatible with Anaconda"
     exit 1
   fi
+  printf "Python Check Passed!\n"  2>&1 | print_if_verbose
 }
 
 valid_app_name() {
@@ -260,7 +274,8 @@ run_cave() { # Runs the cave app in the current directory
       exit 1
     fi
   else
-    python manage.py runserver "$@"
+    # Run and remove conflicting flag -v with runserver
+    python manage.py runserver "$(remove_flag "-v" "$@")"
   fi
 }
 

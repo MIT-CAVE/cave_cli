@@ -8,10 +8,9 @@ Core Commands:
                               - What: Stores all inputs to be the defaults for future `create`s
                              EG: `cave create my_app --version 1.0.1 -save-inputs`
                              
-  run [<options>]           Runs the CAVE app in the current directory. 
-                             `options` (optional):
+  run [<ip:port>]           Runs the CAVE app in the current directory. 
+                             `<ip:port>` (optional):
                               - The ip and port to host the app with the format <ip address>:<port>
-                              - All options available to `python manage.py runserver`
                              EG: `cave run 192.168.1.1:8000`
 
 

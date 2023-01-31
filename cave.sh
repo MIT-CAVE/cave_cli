@@ -681,16 +681,18 @@ update_cave() { # Updates the cave cli
 }
 
 print_if_verbose () {
-    if [ "$VERBOSE" = 'true' ]; then
-        if [ -n "${1}" ]; then 
-            IN="${1}"
+  if [ -n "${1}" ]; then 
+      IN="${1}"
+      if [ "$VERBOSE" = 'true' ]; then
+        printf "${IN}\n"
+      fi
+  else
+      while read IN; do
+          if [ "$VERBOSE" = 'true' ]; then
             printf "${IN}\n"
-        else
-            while read IN; do
-                printf "${IN}\n" 
-            done
-        fi
-    fi
+          fi
+      done
+  fi
 }
 
 

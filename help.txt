@@ -1,47 +1,80 @@
 Core Commands:
-  create <app-name> [--version --save-inputs] 
-                            Creates a new CAVE app in the specified directory. If
-                             the version flag isn't specified the latest version is used.
-                             `--save-inputs` stores all inputs to be the defaults for future
-                             creation.
-                             `--version` can be used to specify which cave app version (github branch name)
-                             to use. If not specified, uses the most recent stable branch.
-  run [options]             Runs the CAVE app in the current directory. 
-                             `options` includes:
-                              - The ip and port to host the app <ip address>:<port> (EG 192.168.1.100:8000)
+  create <app-name> [--version -save-inputs] 
+                            Creates a new CAVE app in the specified directory.
+                             `--version`: str (optional)
+                              - What: Used to specify a cave app version (git branch name).
+                              - Default: The latest stable version (default branch).
+                             `-save-inputs`: flag (optional)
+                              - What: Stores all inputs to be the defaults for future `create`s
+                             EG: `cave create my_app --version 1.0.1 -save-inputs`
+  run [<options>]           Runs the CAVE app in the current directory. 
+                             `options` (optional):
+                              - The ip and port to host the app with the format <ip address>:<port>
                               - All options available to `python manage.py runserver`
+                             EG: `cave run 192.168.1.1:8000`
 
 
 Peripheral Commands:
-  prettify [--all]          Cleans up cave_api code for the CAVE app in the current
-                             directory using autoflake and black. If --all flag is given
-                             also runs on cave_core and cave_app
+  prettify [-all]          Cleans up cave_api code for the CAVE app in the current
+                             directory using autoflake and black. 
+                             `-all`: flag (optional)
+                              - What: Trigger prettify for cave_core and cave_app.
+
   reinstall-pkgs            Installs all requirements for the CAVE app in the current
                              directory.
+
   reset                     Resets the database for the CAVE app in the current directory.
 
   setup                     Execute an initial setup on a cloned repo. Installs all requirements
                              and resets the database for the CAVE app in the current directory.
-  test [--all]              Runs the given test python file located in /cave_api/tests/.
-                             If --all flag is present runs all files in /cave_api/tests/.
+
+  test [-all]              Runs the given test python file located in /cave_api/tests/.
+                             `-all`: flag (optional)
+                              - What: Trigger to run all files in /cave_api/tests/.
+                             EG: `cave test test_init.py`
+                             EG: `cave test -all`
+
   upgrade [--version]       Upgrades the CAVE app in the current dicrectory.
-                             `--version` can be used to specify which cave app version (github 
-                             branch name) to use. If not specified, uses the most recent stable branch.
-  purge <app-name>          Removes the app in the specified directory, as well as removing
+                             `--version`: str (optional)
+                              - What: Used to specify a cave app version (git branch name).
+                              - Default: The latest stable version (default branch).
+                             EG: `cave upgrade --version 1.0.1`
+
+  purge <app-path>          Removes the app in the specified directory, as well as removing
                              its associated database and database user.
+                             EG: `cave purge my_app/`
 
 
 Utility Commands:
   help                      Prints this help text.
 
-  kill [port]               Kills any connections running on the given port(default 8000).
+  kill [--port]             Kills a running tcp port.
                              Used when a CAVE app wasn't properly shut down.
-  sync <repo>               Merges files from the given repo into the CAVE app in the
+                             `--port`: str (optional)
+                              - What: The port to kill.
+                              - Default: 8000
+                             EG: `cave kill`
+                             EG: `cave kill --port 8000`
+
+  sync --url [--branch --exclude]
+                            Merges files from the given repo (url) into the CAVE app in the
                              current directory.
+                             `--url`: str (required)
+                              - What: The git `url` for a repo to which you have clone access
+                             `--branch`: str (optional)
+                              - What: The branch of the git url you wish to sync
+                             `--exclude` string of space separated substrings (optional)
+                              - What: A space separated string of strings that should not be
+                                      included in any sync operation
+                              EG: `cave sync --url git@github.com:mit-cave/cave_app_aws.git \
+                                   --exclude "'.git' '.gitignore' 'README.md'"`
+
   uninstall                 Removes the CAVE CLI.
 
-  update [--version]        Updates the CAVE CLI to the latest version.
-                             `--version` can be used to choose a specific cave_cli 
-                             version (github branch name) to install. If not specified, this 
-                             command installs the latest stable version.
-  version                   Prints the version of the cli.
+  update [--version]        Updates the CAVE CLI.
+                             `--version`: str (optional)
+                              - What: Used to choose a specific CAVE CLI version (git branch)
+                              - Default: The latest stable version (default branch)
+                             EG: `cave update --version 1.0.1`
+                             
+  version                   Prints the version of your installed CAVE CLI.

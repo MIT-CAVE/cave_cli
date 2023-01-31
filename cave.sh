@@ -44,6 +44,15 @@ has_flag() {
     echo "false"
 }
 
+is_dir_empty() {
+    local dir=$1
+    if [ "$(ls -A $dir)" ]; then
+        echo "false"
+    else
+        echo "true"
+    fi
+}
+
 validate_version() {
   local PROGRAM_NAME="$1"
   local EXIT_BOOL="$2"
@@ -262,34 +271,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
     confirm_action "This will potentially update all files not in 'cave_api/' or '.env' and reset your database"
   fi
 
-  printf "Downloading your new app version..."
-  local path=$(mktemp -d)
-  local CLONE_URL="$(get_flag "${HTTPS_URL}" --url "$@")"
-  local VERSION="$(get_flag '' --version "$@")"
-  if [[ "$(has_flag --version "$@")" = 'true' ]]; then
-    git clone -b "$VERSION" --single-branch "${CLONE_URL}" "$path" &> /dev/null
-  else
-    git clone --single-branch "${CLONE_URL}" "$path" &> /dev/null
-  fi
-  if [[ ! -d "${path}/cave_core" ]]; then
-    printf "Clone failed\nEnsure you have access rights to the repository and have specified a valid version.\n"
-    exit 1
-  fi
-  printf "Done.\n"
-
-  printf "Syncing files.."
-  rsync -a --exclude={'.git','.env','cave_api'} "${path}/" .
-  cp -r "${path}/cave_api/docs" cave_api
-  printf "Done\n"
-
-  # clean up temp files
-  rm -rf "${path}"
-
-  # Setup venv and db again
-  install_cave
-  reset_cave -y
-
-  git add . &> /dev/null
+  sync_cave -y --exclude "'.git' '.env' '.gitignore' 'cave_api/'" --url "$(get_flag "$HTTPS_URL" "--url" "$@")" --branch "$(get_flag "" "--version" "$@")" "$@"
   printf "Upgrade complete.\n"
   exit 0
 }
@@ -428,7 +410,7 @@ create_cave() { # Create a cave app instance in folder $1
   install_cave
 
   # Setup .env file
-  env_create "$1" "$(has_flag --save-inputs "$@")"
+  env_create "$1" "$(has_flag -save-inputs "$@")"
 
   # Set up the app database
   reset_cave -y
@@ -484,41 +466,49 @@ sync_cave() { # Sync files from another repo to the selected cave app
     cd "${app_dir}"
   fi
 
-  if [[ "$1" = "" ]]; then
-    printf "Ensure you include a repository link when syncing\n"
-    exit 1
-  fi
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
-    confirm_action "This may overwrite some of the files in your CAVE app"
-  fi
-  local path=$(mktemp -d)
-  # Clone the repo
-  if [ ! "$(has_flag --version "$@")" = "true" ]; then
-    git clone -b "$(get_flag main --version "$@")" --single-branch "$1" "${path}"
-  else
-    git clone --single-branch "$1" "${path}"
+    confirm_action "This will reset your virtual environment and database. It will also potentially update your files"
   fi
 
-  if [[ $(ls "${path}") = "" ]]; then
-    printf "Clone failed. Ensure you included a valid repository link .\n"
+  printf "Downloading repo to sync..."
+  local path=$(mktemp -d)
+  local CLONE_URL="$(get_flag "none" --url "$@")"
+  local CLONE_BRANCH="$(get_flag "none" --branch "$@")"
+  if [[ "${CLONE_BRANCH}" != 'none' ]]; then
+    git clone -b "$(get_flag '' --branch "$@")" --single-branch "${CLONE_URL}" "$path" &> /dev/null
+  else
+    git clone --single-branch "${CLONE_URL}" "$path" &> /dev/null
+  fi
+  if [[ "$(is_dir_empty "$path")" = 'true' ]]; then
+    printf "Failed!\nEnsure you have access rights to the repository: ${CLONE_URL}\nEnsure you specified a valid branch: ${CLONE_BRANCH}.\n"
+    rm -rf "${path}"
     exit 1
   fi
-  printf "Syncing files from provided repo..."
-  rsync -a --exclude={'.git','.gitignore','README.md'} "${path}/" .
+  printf "Done.\n"
+
+  printf "Syncing files..."
+  RSYNC_EXCLUDE=$(get_flag "" "--exclude" "$@")
+  RSYNC_COMMAND="rsync -a --exclude='.git'"
+  for EXCLUDE in $RSYNC_EXCLUDE; do
+      RSYNC_COMMAND="$RSYNC_COMMAND --exclude=${EXCLUDE}"
+  done
+  RSYNC_COMMAND="$RSYNC_COMMAND "${path}/" ."
+  eval $RSYNC_COMMAND &> /dev/null
   printf "Done\n"
 
-  printf "Cleaning up..."
-  rm -rf ${path}
-  printf "Done \n"
-  printf "Sync complete\n"
+  # clean up temp files
+  rm -rf "${path}"
+
+  # Setup venv and db again
+  install_cave
+  reset_cave -y
+
+  printf "Sync complete.\n"
   exit 0
 }
 
 kill_cave() { # Kill given tcp port (default 8000)
-  local port="8000"
-  if [ "$1" != "" ]; then
-    port="$1"
-  fi
+  local port="$(get_flag "8000" "--port" "$@")"
   case "$(uname -s)" in
     Linux*)     fuser -k "${port}/tcp";;
     Darwin*)    lsof -P | grep ":${port}" | awk '{print $2}' | xargs kill -9;;
@@ -549,18 +539,22 @@ reset_cave() { # Run reset_db.sh
 }
 
 prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
-  if ! valid_app_dir; then
-      printf "Ensure you are in a valid CAVE app directory\n"
-      exit 1
+  local app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
+    printf "Ensure you are in a valid CAVE app directory\n"
+    exit 1
+  else
+    cd "${app_dir}"
   fi
-  printf "Prettifying api:\n"
   source venv/bin/activate
-  ./utils/api_prettify.sh
-  if [ "$(has_flag --all "$@")" = "true" ]; then
-    printf "Prettifying core and app..."
-    ./utils/prettify.sh
-  fi
+  printf "Prettifying cave_api..."
+  ./utils/api_prettify.sh &> /dev/null
   printf "Done\n"
+  if [ "$(has_flag -all "$@")" = "true" ]; then
+    printf "Prettifying everything else..."
+    ./utils/prettify.sh &> /dev/null
+    printf "Done\n"
+  fi
   exit 0
 }
 
@@ -573,20 +567,19 @@ test_cave() { # Run given file found in /cave_api/tests/
   else
     cd "${app_dir}"
   fi
-  if [[ ! -f "cave_api/tests/$1" && "$(has_flag --all "$@")" = "true" ]]; then
+  ALL_FLAG=$(has_flag -all "$@")
+  if [[ ! -f "cave_api/tests/$1" && "${ALL_FLAG}" != "true" ]]; then
     printf "Test $1 not found. Ensure you entered a valid test name.\n"
     printf "Tests available in 'cave_api/tests/' include \n $(ls cave_api/tests/)\n"
     exit 1
   fi
   # Activate venv and run given test
   source venv/bin/activate
-  if [ "${ALL_IDX}" = "-1" ]; then
-    python "cave_api/tests/$1"
+  if [ "${ALL_FLAG}" != "true" ]; then
+    python3 "cave_api/tests/$1"
   else
-    for f in cave_api/tests/*.py; do python "$f"; done
+    for f in cave_api/tests/*.py; do python3 "$f"; done
   fi
-  printf "${CHAR_LINE}\n"
-  printf "Testing completed.\n"
   exit 0
 }
 

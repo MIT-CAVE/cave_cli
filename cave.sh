@@ -209,13 +209,17 @@ print_help() { # Prints the help text for cave_cli
   VERSION="$(cat ${CAVE_PATH}/VERSION)"
   HELP="$(cat ${CAVE_PATH}/help.txt))"
   cat 1>&2 <<EOF
+${CHAR_LINE}
 CAVE CLI ($VERSION)
 ${CHAR_LINE}
 
 ${HELP}
 
 EOF
-  exit 0
+}
+
+print_version(){
+  printf "$(cat "${CAVE_PATH}/VERSION")\n"
 }
 
 force_venv_setup() {
@@ -225,7 +229,6 @@ force_venv_setup() {
     reset_cave -y
   fi
 }
-
 
 run_cave() { # Runs the cave app in the current directory
   local app_dir=$(find_app_dir)
@@ -237,6 +240,10 @@ run_cave() { # Runs the cave app in the current directory
   fi
 
   force_venv_setup
+
+  printf "\n${CHAR_LINE}\n"
+  printf "Starting CAVE App:\n"
+  printf "${CHAR_LINE}\n"
 
   source venv/bin/activate
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
@@ -255,7 +262,6 @@ run_cave() { # Runs the cave app in the current directory
   else
     python manage.py runserver "$@"
   fi
-  exit 0
 }
 
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
@@ -273,7 +279,6 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
 
   sync_cave -y --exclude "'.git' '.env' '.gitignore' 'cave_api/'" --url "$(get_flag "$HTTPS_URL" "--url" "$@")" --branch "$(get_flag "" "--version" "$@")" "$@"
   printf "Upgrade complete.\n"
-  exit 0
 }
 
 env_create() { # creates .env file for create_cave
@@ -287,7 +292,9 @@ env_create() { # creates .env file for create_cave
   if [ "${ADMIN_EMAIL}" = "" ]; then
     ADMIN_EMAIL="$1@example.com"
   fi
+  printf "\n${CHAR_LINE}\n"
   printf "Set up your new app environment (.env) variables:\n"
+  printf "${CHAR_LINE}\n"
   echo "$newenv" > .env
   printf "Mapbox tokens can be created by making an account on 'https://mapbox.com'\n"
   if [ "${MAPBOX_TOKEN}" = "" ]; then
@@ -386,9 +393,10 @@ create_cave() { # Create a cave app instance in folder $1
   fi
   
   local CLONE_URL=$(get_flag "${HTTPS_URL}" --url "$@")
-
-  # Clone the repo
+  printf "\n${CHAR_LINE}\n"
+  printf "App Creation:\n"
   printf "${CHAR_LINE}\n"
+  # Clone the repo
   printf "Downloading the app template..."
   if [ "$(has_flag --version "$@")" = 'true' ]; then
     git clone -b "$(get_flag main --version "$@")" --single-branch "${CLONE_URL}" "$1" &> /dev/null
@@ -416,7 +424,9 @@ create_cave() { # Create a cave app instance in folder $1
   reset_cave -y
 
   # Prep git repo
+  printf "\n${CHAR_LINE}\n"
   printf "Version Control:\n"
+  printf "${CHAR_LINE}\n"
   printf "Configuring git repository..."
   if [ "${DEV_IDX}" = "-1" ]; then
     rm -rf .git        
@@ -431,10 +441,11 @@ create_cave() { # Create a cave app instance in folder $1
     git branch -M main &> /dev/null
   fi
   printf "Done.\n"
+  printf "\n${CHAR_LINE}\n"
+  printf "App Creation Status:\n"
   printf "${CHAR_LINE}\n"
-  printf "App Creation completed!\nNote: Created variables and addtional configuration options are availible in $1/.env\n"
-  printf "${CHAR_LINE}\n"
-  exit 0
+  printf "App '$1' created successfully!\n"
+  printf "Note: Created variables and addtional configuration options are availible in $1/.env\n"
 }
 
 uninstall_cli() { # Remove the CAVE CLI from system
@@ -447,12 +458,10 @@ uninstall_cli() { # Remove the CAVE CLI from system
       printf "WARNING!: Super User privileges required to terminate link! Using 'sudo'.\n"
       sudo rm "${BIN_DIR}/cave"
     fi
-    printf "done\n"
-    exit 0
+    printf "Done.\n"
     ;;
   *)
     printf "Uninstall canceled\n"
-    exit 0
     ;;
   esac
 }
@@ -469,6 +478,9 @@ sync_cave() { # Sync files from another repo to the selected cave app
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will reset your virtual environment and database. It will also potentially update your files"
   fi
+  printf "\n${CHAR_LINE}\n"
+  printf "Sync:\n"
+  printf "${CHAR_LINE}\n"
 
   printf "Downloading repo to sync..."
   local path=$(mktemp -d)
@@ -515,7 +527,6 @@ kill_cave() { # Kill given tcp port (default 8000)
     *)          printf "Error: OS not recognized."; exit 1;;
   esac
   printf "Activity on port ${port} ended.\n"
-  exit 0
 }
 
 reset_cave() { # Run reset_db.sh
@@ -526,8 +537,9 @@ reset_cave() { # Run reset_db.sh
   else
     cd "${app_dir}"
   fi
+  printf "\n${CHAR_LINE}\n"
+  printf "Database Configuration:\n"
   printf "${CHAR_LINE}\n"
-  printf "Setup/Reset your app database:\n"
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will permanently remove all data stored in the app database"
   fi
@@ -535,7 +547,6 @@ reset_cave() { # Run reset_db.sh
   printf "Configuring your app database (sudo required)..."
   ./utils/reset_db.sh &> /dev/null
   printf "Done.\n"
-  printf "${CHAR_LINE}\n"
 }
 
 prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
@@ -555,7 +566,6 @@ prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
     ./utils/prettify.sh &> /dev/null
     printf "Done\n"
   fi
-  exit 0
 }
 
 test_cave() { # Run given file found in /cave_api/tests/
@@ -580,7 +590,6 @@ test_cave() { # Run given file found in /cave_api/tests/
   else
     for f in cave_api/tests/*.py; do python3 "$f"; done
   fi
-  exit 0
 }
 
 install_cave() { # (re)installs all python requirements for cave app
@@ -591,8 +600,9 @@ install_cave() { # (re)installs all python requirements for cave app
   else
     cd "${app_dir}"
   fi
-  printf "${CHAR_LINE}\n"
+  printf "\n${CHAR_LINE}\n"
   printf "Setting up your python virtual environment:\n"
+  printf "${CHAR_LINE}\n"
   printf "Removing old virtual enviornment if it exists..."
   rm -rf venv/ &> /dev/null
   printf "Done\n"
@@ -613,8 +623,6 @@ install_cave() { # (re)installs all python requirements for cave app
   printf "Installing all python requirements in your new virtual environment..."
   python3 -m pip install --require-virtualenv -r requirements.txt  &> /dev/null
   printf "Done\n"
-  printf "Package install completed.\n"
-  printf "${CHAR_LINE}\n"
 }
 
 purge_cave() { # Removes cave app in specified dir and db/db user
@@ -625,8 +633,9 @@ purge_cave() { # Removes cave app in specified dir and db/db user
     exit 1
   fi
   cd ../
-  printf "${CHAR_LINE}\n"
+  printf "\n${CHAR_LINE}\n"
   printf "Purging CAVE App (${app_name}):\n"
+  printf "${CHAR_LINE}\n"
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will permanently remove all data associated with your CAVE App (${app_name})"
   fi
@@ -642,12 +651,9 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   esac
   printf "Done\n"
   printf "Purge complete.\n"
-  printf "${CHAR_LINE}\n"
-  exit 0
 }
 
-update_cave() { # Updates the cave cli 
-  printf "${CHAR_LINE}\n"
+update_cave() { # Updates the cave cli
   printf "Updating CAVE CLI...\n"
   # Change into the cave cli directory
   cd "${CAVE_PATH}"
@@ -655,26 +661,27 @@ update_cave() { # Updates the cave cli
   git checkout "$(get_flag main --version "$@")"  &> /dev/null
   git pull &> /dev/null
   printf "CAVE CLI updated.\n"
-  printf "${CHAR_LINE}\n"
 }
 
 
-
 main() {
-  if [[ $# -lt 1 ]]; then
-    print_help
-  fi
-  # Set the $PYTHON3_BIN var
+  # Source the the CONFIG file
   source "${CAVE_PATH}/CONFIG"
-  case $1 in
+  # If no command is passed default to the help command
+  if [[ $# -lt 1 ]]; then
+    local MAIN_COMMAND="help"
+  else
+    local MAIN_COMMAND=$1
+    shift
+  fi
+  case $MAIN_COMMAND in
     help | --help | -h)
       print_help
     ;;
     version | --version | -v)
-      printf "$(cat "${CAVE_PATH}/VERSION")\n"
+      print_version
     ;;
     run)
-      shift # pass all args except "run"
       ensure_postgres_running
       run_cave "$@"
     ;;
@@ -687,34 +694,27 @@ main() {
     create)
       check_python
       ensure_postgres_running
-      shift
       create_cave "$@"
     ;;
     upgrade)
       check_python
       ensure_postgres_running
-      shift
       upgrade_cave "$@"
     ;;
     sync)
-      shift
       sync_cave "$@"
     ;;
     kill)
-      shift
       kill_cave "$@"
     ;;
     reset)
       ensure_postgres_running
       reset_cave "$@"
-      exit 0
     ;;
     prettify)
-      shift
       prettify_cave "$@"
     ;;
     test)
-      shift
       test_cave "$@"
     ;;
     reinstall-pkgs)
@@ -726,7 +726,6 @@ main() {
       reset_cave "$@"
     ;;
     purge)
-      shift
       ensure_postgres_running
       purge_cave "$@"
     ;;

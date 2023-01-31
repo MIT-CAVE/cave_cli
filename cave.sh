@@ -13,6 +13,7 @@ readonly TMP_DIR="/tmp"
 readonly CHAR_LINE="============================="
 readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
 readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
+readonly MIN_PYTHON_VERSION="3.10.0"
 # update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 
@@ -82,7 +83,7 @@ validate_version() {
 }
 
 check_python() { # Validate python is installed and is correct version
-  install_python="\nPlease install python version 3.9.0 or greater. \nFor more information see: 'https://www.python.org/downloads/'"
+  install_python="\nPlease install python version ${MIN_PYTHON_VERSION} or greater. \nFor more information see: 'https://www.python.org/downloads/'"
   CURRENT_PYTHON_VERSION=$($PYTHON3_BIN --version | sed 's/Python //')
   validate_version "python" "1" "$install_python" "$MIN_PYTHON_VERSION" "$CURRENT_PYTHON_VERSION"
   if [ ! "$(printf $PYTHON3_BIN -V | grep conda)" = "" ]; then

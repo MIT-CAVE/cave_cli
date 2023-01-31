@@ -78,3 +78,7 @@ Utility Commands:
                              EG: `cave update --version 1.0.1`
                              
   version                   Prints the version of your installed CAVE CLI.
+
+Global Flags:
+  `-y`: Automatically answer (bypass) any confirmation prompts with `y`.
+  `-v`: Enable verbose logging output.

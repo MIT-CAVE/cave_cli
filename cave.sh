@@ -149,15 +149,15 @@ find_open_port() { # Finds an open port above the specified one
 
 start_postgres() {
   case "$(uname -s)" in
-    Linux*)     sudo service postgresql start &> /dev/null;;
-    Darwin*)    brew services start postgresql@14 &> /dev/null;;
+    Linux*)     sudo service postgresql start 2>&1 | print_if_verbose;;
+    Darwin*)    brew services start postgresql@14 2>&1 | print_if_verbose;;
     *)          printf "Error: OS not recognized."; exit 1;;
   esac
 }
 
 is_postgres_running() {
   case "$(pg_isready)" in
-    *"accepting"*)    printf "Postgres Is Running!\n" &> /dev/null;;
+    *"accepting"*)    printf "Postgres Is Running!\n" 2>&1 | print_if_verbose;;
     *)                return 1;;
   esac
 }
@@ -283,8 +283,8 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
 
 env_create() { # creates .env file for create_cave
   local save_inputs=$2
-  rm .env &> /dev/null
-  cp example.env .env &> /dev/null
+  rm .env 2>&1 | print_if_verbose
+  cp example.env .env 2>&1 | print_if_verbose
   local key=$(source venv/bin/activate && python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   local line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   local newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
@@ -399,9 +399,9 @@ create_cave() { # Create a cave app instance in folder $1
   # Clone the repo
   printf "Downloading the app template..."
   if [ "$(has_flag --version "$@")" = 'true' ]; then
-    git clone -b "$(get_flag main --version "$@")" --single-branch "${CLONE_URL}" "$1" &> /dev/null
+    git clone -b "$(get_flag main --version "$@")" --single-branch "${CLONE_URL}" "$1" 2>&1 | print_if_verbose
   else
-    git clone --single-branch "${CLONE_URL}" "$1" &> /dev/null
+    git clone --single-branch "${CLONE_URL}" "$1" 2>&1 | print_if_verbose
   fi
   if [[ ! -d "$1" ]]; then
     printf "\nClone failed. Ensure you used a valid version.\n"
@@ -430,15 +430,15 @@ create_cave() { # Create a cave app instance in folder $1
   printf "Configuring git repository..."
   if [ "${DEV_IDX}" = "-1" ]; then
     rm -rf .git        
-    git init  &> /dev/null
+    git init 2>&1 | print_if_verbose
     case "$(uname -s)" in
       Linux*)     sed -i 's/.env//g' .gitignore;;
       Darwin*)    sed -i '' 's/.env//g' .gitignore;;
       *)          printf "Error: OS not recognized."; exit 1;;
     esac
-    git add .  &> /dev/null
-    git commit -m "Initialize CAVE App" &> /dev/null
-    git branch -M main &> /dev/null
+    git add . 2>&1 | print_if_verbose
+    git commit -m "Initialize CAVE App" 2>&1 | print_if_verbose
+    git branch -M main 2>&1 | print_if_verbose
   fi
   printf "Done.\n"
   printf "\n${CHAR_LINE}\n"
@@ -487,9 +487,9 @@ sync_cave() { # Sync files from another repo to the selected cave app
   local CLONE_URL="$(get_flag "none" --url "$@")"
   local CLONE_BRANCH="$(get_flag "none" --branch "$@")"
   if [[ "${CLONE_BRANCH}" != 'none' ]]; then
-    git clone -b "$(get_flag '' --branch "$@")" --single-branch "${CLONE_URL}" "$path" &> /dev/null
+    git clone -b "$(get_flag '' --branch "$@")" --single-branch "${CLONE_URL}" "$path" 2>&1 | print_if_verbose
   else
-    git clone --single-branch "${CLONE_URL}" "$path" &> /dev/null
+    git clone --single-branch "${CLONE_URL}" "$path" 2>&1 | print_if_verbose
   fi
   if [[ "$(is_dir_empty "$path")" = 'true' ]]; then
     printf "Failed!\nEnsure you have access rights to the repository: ${CLONE_URL}\nEnsure you specified a valid branch: ${CLONE_BRANCH}.\n"
@@ -505,7 +505,7 @@ sync_cave() { # Sync files from another repo to the selected cave app
       RSYNC_COMMAND="$RSYNC_COMMAND --exclude=${EXCLUDE}"
   done
   RSYNC_COMMAND="$RSYNC_COMMAND "${path}/" ."
-  eval $RSYNC_COMMAND &> /dev/null
+  eval $RSYNC_COMMAND 2>&1 | print_if_verbose
   printf "Done\n"
 
   # clean up temp files
@@ -545,7 +545,7 @@ reset_cave() { # Run reset_db.sh
   fi
   source venv/bin/activate
   printf "Configuring your app database (sudo required)..."
-  ./utils/reset_db.sh &> /dev/null
+  ./utils/reset_db.sh 2>&1 | print_if_verbose
   printf "Done.\n"
 }
 
@@ -559,11 +559,11 @@ prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
   fi
   source venv/bin/activate
   printf "Prettifying cave_api..."
-  ./utils/api_prettify.sh &> /dev/null
+  ./utils/api_prettify.sh 2>&1 | print_if_verbose
   printf "Done\n"
   if [ "$(has_flag -all "$@")" = "true" ]; then
     printf "Prettifying everything else..."
-    ./utils/prettify.sh &> /dev/null
+    ./utils/prettify.sh 2>&1 | print_if_verbose
     printf "Done\n"
   fi
 }
@@ -604,24 +604,24 @@ install_cave() { # (re)installs all python requirements for cave app
   printf "Setting up your python virtual environment:\n"
   printf "${CHAR_LINE}\n"
   printf "Removing old virtual enviornment if it exists..."
-  rm -rf venv/ &> /dev/null
+  rm -rf venv/ 2>&1 | print_if_verbose
   printf "Done\n"
   # Install virtualenv and create venv
   local virtual=$($PYTHON3_BIN -m pip list | grep -F virtualenv)
   if [ "$virtual" = "" ]; then
     printf "Virtualenv not installed. Installing it for you..."
-    $PYTHON3_BIN -m pip install virtualenv &> /dev/null
+    $PYTHON3_BIN -m pip install virtualenv 2>&1 | print_if_verbose
     printf "Done\n"
   fi
   printf "Creating a new virtual envrionment..."
-  $PYTHON3_BIN -m virtualenv venv &> /dev/null
+  $PYTHON3_BIN -m virtualenv venv 2>&1 | print_if_verbose
   printf "Done\n"
 
   # Activate venv and install requirements
   source venv/bin/activate
   # Since the virtualenv has been activated we use python3 instead of the bin location
   printf "Installing all python requirements in your new virtual environment..."
-  python3 -m pip install --require-virtualenv -r requirements.txt  &> /dev/null
+  python3 -m pip install --require-virtualenv -r requirements.txt 2>&1 | print_if_verbose
   printf "Done\n"
 }
 
@@ -645,8 +645,8 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   printf "Done\n"
   printf "Removing DB (sudo required)..."
   case "$(uname -s)" in
-    Linux*)     purge_linux_db &> /dev/null;;
-    Darwin*)    purge_mac_db &> /dev/null;;
+    Linux*)     purge_linux_db 2>&1 | print_if_verbose;;
+    Darwin*)    purge_mac_db 2>&1 | print_if_verbose;;
     *)          printf "Error: OS not recognized."; exit 1;;
   esac
   printf "Done\n"
@@ -657,10 +657,23 @@ update_cave() { # Updates the cave cli
   printf "Updating CAVE CLI...\n"
   # Change into the cave cli directory
   cd "${CAVE_PATH}"
-  git fetch  &> /dev/null
-  git checkout "$(get_flag main --version "$@")"  &> /dev/null
-  git pull &> /dev/null
+  git fetch 2>&1 | print_if_verbose
+  git checkout "$(get_flag main --version "$@")" 2>&1 | print_if_verbose
+  git pull 2>&1 | print_if_verbose
   printf "CAVE CLI updated.\n"
+}
+
+print_if_verbose () {
+    if [ "$VERBOSE" = 'true' ]; then
+        if [ -n "${1}" ]; then 
+            IN="${1}"
+            printf "${IN}\n"
+        else
+            while read IN; do
+                printf "${IN}\n" 
+            done
+        fi
+    fi
 }
 
 
@@ -674,6 +687,7 @@ main() {
     local MAIN_COMMAND=$1
     shift
   fi
+  VERBOSE=$(has_flag -v "$@")
   case $MAIN_COMMAND in
     help | --help | -h)
       print_help

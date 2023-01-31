@@ -91,8 +91,8 @@ check_previous_installation() { # Check to make sure previous installations are 
       [yY][eE][sS] | [yY])
         printf "${CHARS_LINE}\n"
         printf "Removing old installation..."
-        cp "${CAVE_CLI_PATH}/CONFIG" "${config_path}" &> /dev/null
-        rm -rf "${CAVE_CLI_PATH}" &> /dev/null
+        cp "${CAVE_CLI_PATH}/CONFIG" "${config_path}" 2>&1 | print_if_verbose
+        rm -rf "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
         printf "Done\n"
         ;;
       [nN][oO] | [nN] | "")
@@ -142,7 +142,7 @@ install_new() { # Copy the needed files locally
   fi
   printf "Downloading the CLI..."
   git clone $CLONE_URL \
-    "${CAVE_CLI_PATH}" &> /dev/null
+    "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
   if [ ! -d "${CAVE_CLI_PATH}" ]; then
     err "Git Clone Failed. Installation Canceled"
     exit 1
@@ -156,7 +156,7 @@ add_to_path() { # Add the cli to a globally accessable path
   printf "${CHARS_LINE}\n"
   printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}' (sudo required)..."
   if [ $(readlink "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
-    printf "Already linked\n" &> /dev/null
+    printf "Already linked\n" 2>&1 | print_if_verbose
   else
     if [ ! $(sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}") ]; then
       sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}"
@@ -165,8 +165,35 @@ add_to_path() { # Add the cli to a globally accessable path
   printf "Done\n"
 }
 
+print_if_verbose () {
+    if [ "$VERBOSE" = 'true' ]; then
+        if [ -n "${1}" ]; then 
+            IN="${1}"
+            printf "${IN}\n"
+        else
+            while read IN; do
+                printf "${IN}\n" 
+            done
+        fi
+    fi
+}
+
+has_flag() {
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            echo "true"
+            return
+        fi
+        shift
+    done
+    echo "false"
+}
+
 main() {
   check_os
+  VERBOSE=$(has_flag "-v" "$@")
   check_git
   check_postgress
   install_new "$@"

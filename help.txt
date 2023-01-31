@@ -7,6 +7,7 @@ Core Commands:
                              `-save-inputs`: flag (optional)
                               - What: Stores all inputs to be the defaults for future `create`s
                              EG: `cave create my_app --version 1.0.1 -save-inputs`
+                             
   run [<options>]           Runs the CAVE app in the current directory. 
                              `options` (optional):
                               - The ip and port to host the app with the format <ip address>:<port>

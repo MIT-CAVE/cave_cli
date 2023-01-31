@@ -13,6 +13,43 @@ readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cav
 readonly SSH_CLONE_URL="-b ${CAVE_CLI_VERSION} git@github.com:MIT-CAVE/cave_cli.git"
 readonly MIN_PYTHON_VERSION="3.10.0"
 
+get_flag() {
+    local default=$1
+    shift
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            echo "$2"
+            return
+        fi
+        shift
+    done
+    echo "$default"
+}
+
+has_flag() {
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            echo "true"
+            return
+        fi
+        shift
+    done
+    echo "false"
+}
+
+is_dir_empty() {
+    local dir=$1
+    if [ "$(ls -A $dir)" ]; then
+        echo "false"
+    else
+        echo "true"
+    fi
+}
+
 err() { # Display an error message
   printf "$0: $1\n" >&2
 }
@@ -63,7 +100,7 @@ check_git() { # Validate git is installed
   validate_install "git" "1" "$install_git"
 }
 
-check_postgress() { # Validate postgress is installed
+check_postgres() { # Validate postgress is installed
   local install_post="\nPlease install postgreSQL. \nFor more information see: 'https://www.postgresql.org/download/'"
   validate_install "psql" "1" "$install_post"
 }
@@ -135,16 +172,15 @@ install_new() { # Copy the needed files locally
   mkdir -p "${CAVE_CLI_PATH}"
   printf "Done\n"
   printf "${CHARS_LINE}\n"
-  if [[ "$1" = "--dev" ]]; then
+  if [[ "$(has_flag "--dev" "$@")" = "true" ]]; then
     CLONE_URL="$SSH_CLONE_URL"
   else
     CLONE_URL="$HTTPS_CLONE_URL"
   fi
-  printf "Downloading the CLI..."
-  git clone $CLONE_URL \
-    "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
-  if [ ! -d "${CAVE_CLI_PATH}" ]; then
-    err "Git Clone Failed. Installation Canceled"
+  git clone -b "$(get_flag main --version "$@")" --single-branch $CLONE_URL "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
+  if [[ "$(is_dir_empty "$path")" = 'true' ]]; then
+    printf "Failed!\nEnsure you have access rights to the repository: ${CLONE_URL}\nEnsure you specified a valid branch: $(get_flag main --version "$@").\n"
+    rm -rf "${path}"
     exit 1
   fi
   printf "Done\n"
@@ -180,24 +216,11 @@ print_if_verbose () {
   fi
 }
 
-has_flag() {
-    local flag=$1
-    shift
-    while [ $# -gt 0 ]; do
-        if [ "$1" = "$flag" ]; then
-            echo "true"
-            return
-        fi
-        shift
-    done
-    echo "false"
-}
-
 main() {
   check_os
   VERBOSE=$(has_flag "-v" "$@")
   check_git
-  check_postgress
+  check_postgres
   install_new "$@"
   add_to_path
   printf "${CHARS_LINE}\n"

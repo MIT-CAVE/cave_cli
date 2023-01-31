@@ -763,7 +763,7 @@ main() {
       purge_cave "$@"
     ;;
     *)
-      printf "Unrecognized Command ($1) passed.\nUse cave --help for information on how to use the cave cli.\n"
+      printf "Unrecognized Command ($MAIN_COMMAND) passed.\nUse cave --help for information on how to use the cave cli.\n"
     ;;
   esac
 }

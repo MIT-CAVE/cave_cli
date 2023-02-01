@@ -292,8 +292,12 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will potentially update all files not in 'cave_api/' or '.env' and reset your database"
   fi
-
-  sync_cave -y --exclude "'.git' '.env' '.gitignore' 'cave_api/'" --url "$(get_flag "$HTTPS_URL" "--url" "$@")" --branch "$(get_flag "" "--version" "$@")" "$@"
+  if [ "$(has_flag --version "$@")" = "true" ]; then
+    local BRANCH_STRING="--branch $(get_flag "" "--version" "$@")"
+  else
+    local BRANCH_STRING=""
+  fi
+  sync_cave -y --include "'cave_api/docs'" --exclude "'.env' '.gitignore' 'cave_api/*'" --url "$(get_flag "$HTTPS_URL" "--url" "$@")" $BRANCH_STRING "$@"
   printf "Upgrade complete.\n"
 }
 
@@ -444,18 +448,16 @@ create_cave() { # Create a cave app instance in folder $1
   printf "Version Control:\n"
   printf "${CHAR_LINE}\n"
   printf "Configuring git repository..."
-  if [ "${DEV_IDX}" = "-1" ]; then
-    rm -rf .git        
-    git init 2>&1 | print_if_verbose
-    case "$(uname -s)" in
-      Linux*)     sed -i 's/.env//g' .gitignore;;
-      Darwin*)    sed -i '' 's/.env//g' .gitignore;;
-      *)          printf "Error: OS not recognized."; exit 1;;
-    esac
-    git add . 2>&1 | print_if_verbose
-    git commit -m "Initialize CAVE App" 2>&1 | print_if_verbose
-    git branch -M main 2>&1 | print_if_verbose
-  fi
+  rm -rf .git
+  git init 2>&1 | print_if_verbose
+  case "$(uname -s)" in
+    Linux*)     sed -i 's/.env//g' .gitignore;;
+    Darwin*)    sed -i '' 's/.env//g' .gitignore;;
+    *)          printf "Error: OS not recognized."; exit 1;;
+  esac
+  git add . 2>&1 | print_if_verbose
+  git commit -m "Initialize CAVE App" 2>&1 | print_if_verbose
+  git branch -M main 2>&1 | print_if_verbose
   printf "Done.\n"
   printf "\n${CHAR_LINE}\n"
   printf "App Creation Status:\n"
@@ -515,8 +517,12 @@ sync_cave() { # Sync files from another repo to the selected cave app
   printf "Done.\n"
 
   printf "Syncing files..."
+  RSYNC_INCLUDE=$(get_flag "" "--include" "$@")
   RSYNC_EXCLUDE=$(get_flag "" "--exclude" "$@")
   RSYNC_COMMAND="rsync -a --exclude='.git'"
+  for INCLUDE in $RSYNC_INCLUDE; do
+      RSYNC_COMMAND="$RSYNC_COMMAND --include=${INCLUDE}"
+  done
   for EXCLUDE in $RSYNC_EXCLUDE; do
       RSYNC_COMMAND="$RSYNC_COMMAND --exclude=${EXCLUDE}"
   done

@@ -177,7 +177,7 @@ install_new() { # Copy the needed files locally
   else
     CLONE_URL="$HTTPS_CLONE_URL"
   fi
-  git clone --single-branch $CLONE_URL "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
+  git clone $CLONE_URL "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
   if [[ "$(is_dir_empty "${CAVE_CLI_PATH}")" = 'true' ]]; then
     printf "Failed!\nEnsure you have access rights to the repository: ${CLONE_URL}\nEnsure you specified a valid branch: $(get_flag main --version "$@").\n"
     rm -rf "${CAVE_CLI_PATH}"

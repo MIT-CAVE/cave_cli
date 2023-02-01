@@ -56,13 +56,16 @@ Utility Commands:
                              EG: `cave kill`
                              EG: `cave kill --port 8000`
 
-  sync --url [--branch --exclude]
+  sync --url [--branch --exclude --include]
                             Merges files from the given repo (url) into the CAVE app in the
-                             current directory.
+                             current directory. This always excludes the `.git` folder.
                              `--url`: str (required)
                               - What: The git `url` for a repo to which you have clone access
                              `--branch`: str (optional)
                               - What: The branch of the git url you wish to sync
+                            `--include` string of space separated substrings (optional)
+                              - What: A space separated string of strings (filenames) that should be
+                                      included (if inside of an exclude folder) in any sync operation
                              `--exclude` string of space separated substrings (optional)
                               - What: A space separated string of strings that should not be
                                       included in any sync operation

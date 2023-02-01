@@ -515,8 +515,12 @@ sync_cave() { # Sync files from another repo to the selected cave app
   printf "Done.\n"
 
   printf "Syncing files..."
+  RSYNC_INCLUDE=$(get_flag "" "--include" "$@")
   RSYNC_EXCLUDE=$(get_flag "" "--exclude" "$@")
   RSYNC_COMMAND="rsync -a --exclude='.git'"
+  for INCLUDE in $RSYNC_INCLUDE; do
+      RSYNC_COMMAND="$RSYNC_COMMAND --include=${INCLUDE}"
+  done
   for EXCLUDE in $RSYNC_EXCLUDE; do
       RSYNC_COMMAND="$RSYNC_COMMAND --exclude=${EXCLUDE}"
   done

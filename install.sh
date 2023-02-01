@@ -7,11 +7,48 @@ readonly CHARS_LINE="============================"
 readonly CAVE_CLI_PATH="${HOME}/.cave_cli"
 readonly CAVE_CLI_SHORT_NAME="CAVE CLI"
 readonly CAVE_CLI_COMMAND="cave"
-readonly CAVE_CLI_VERSION="1.0.1"
+readonly CAVE_CLI_VERSION="1.1.0"
 readonly BIN_DIR="/usr/local/bin"
 readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cave_cli.git"
 readonly SSH_CLONE_URL="-b ${CAVE_CLI_VERSION} git@github.com:MIT-CAVE/cave_cli.git"
 readonly MIN_PYTHON_VERSION="3.10.0"
+
+get_flag() {
+    local default=$1
+    shift
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            echo "$2"
+            return
+        fi
+        shift
+    done
+    echo "$default"
+}
+
+has_flag() {
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            echo "true"
+            return
+        fi
+        shift
+    done
+    echo "false"
+}
+
+is_dir_empty() {
+    local dir=$1
+    if [ "$(ls -A $dir)" ]; then
+        echo "false"
+    else
+        echo "true"
+    fi
+}
 
 err() { # Display an error message
   printf "$0: $1\n" >&2
@@ -63,7 +100,7 @@ check_git() { # Validate git is installed
   validate_install "git" "1" "$install_git"
 }
 
-check_postgress() { # Validate postgress is installed
+check_postgres() { # Validate postgress is installed
   local install_post="\nPlease install postgreSQL. \nFor more information see: 'https://www.postgresql.org/download/'"
   validate_install "psql" "1" "$install_post"
 }
@@ -91,8 +128,8 @@ check_previous_installation() { # Check to make sure previous installations are 
       [yY][eE][sS] | [yY])
         printf "${CHARS_LINE}\n"
         printf "Removing old installation..."
-        cp "${CAVE_CLI_PATH}/CONFIG" "${config_path}" &> /dev/null
-        rm -rf "${CAVE_CLI_PATH}" &> /dev/null
+        cp "${CAVE_CLI_PATH}/CONFIG" "${config_path}" 2>&1 | print_if_verbose
+        rm -rf "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
         printf "Done\n"
         ;;
       [nN][oO] | [nN] | "")
@@ -135,16 +172,15 @@ install_new() { # Copy the needed files locally
   mkdir -p "${CAVE_CLI_PATH}"
   printf "Done\n"
   printf "${CHARS_LINE}\n"
-  if [[ "$1" = "--dev" ]]; then
+  if [[ "$(has_flag "--dev" "$@")" = "true" ]]; then
     CLONE_URL="$SSH_CLONE_URL"
   else
     CLONE_URL="$HTTPS_CLONE_URL"
   fi
-  printf "Downloading the CLI..."
-  git clone $CLONE_URL \
-    "${CAVE_CLI_PATH}" &> /dev/null
-  if [ ! -d "${CAVE_CLI_PATH}" ]; then
-    err "Git Clone Failed. Installation Canceled"
+  git clone $CLONE_URL "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
+  if [[ "$(is_dir_empty "${CAVE_CLI_PATH}")" = 'true' ]]; then
+    printf "Failed!\nEnsure you have access rights to the repository: ${CLONE_URL}\nEnsure you specified a valid branch: $(get_flag main --version "$@").\n"
+    rm -rf "${CAVE_CLI_PATH}"
     exit 1
   fi
   printf "Done\n"
@@ -156,7 +192,7 @@ add_to_path() { # Add the cli to a globally accessable path
   printf "${CHARS_LINE}\n"
   printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}' (sudo required)..."
   if [ $(readlink "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
-    printf "Already linked\n" &> /dev/null
+    printf "Already linked\n" 2>&1 | print_if_verbose
   else
     if [ ! $(sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}") ]; then
       sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}"
@@ -165,10 +201,26 @@ add_to_path() { # Add the cli to a globally accessable path
   printf "Done\n"
 }
 
+print_if_verbose () {
+  if [ -n "${1}" ]; then 
+      IN="${1}"
+      if [ "$VERBOSE" = 'true' ]; then
+        printf "${IN}\n"
+      fi
+  else
+      while read IN; do
+          if [ "$VERBOSE" = 'true' ]; then
+            printf "${IN}\n"
+          fi
+      done
+  fi
+}
+
 main() {
   check_os
+  VERBOSE=$(has_flag "-v" "$@")
   check_git
-  check_postgress
+  check_postgres
   install_new "$@"
   add_to_path
   printf "${CHARS_LINE}\n"

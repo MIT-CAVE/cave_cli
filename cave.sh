@@ -237,6 +237,14 @@ print_version(){
   printf "$(cat "${CAVE_PATH}/VERSION")\n"
 }
 
+check_django_installed() {
+  if ! [[ -f venv/bin/django-admin ]]; then
+    printf "Error.\nOops, it looks like something failed while setting up your virtual environment.\n"
+    printf "Try running 'cave reinstall-pkgs -v' to get verbose output of the package installation process.\n"
+    exit 1
+  fi
+}
+
 force_venv_setup() {
   if ! [[ -d venv ]]; then
     confirm_action "Your app python virtual environment has not been set up. You must set it up and reset your database before proceeding"
@@ -644,6 +652,7 @@ install_cave() { # (re)installs all python requirements for cave app
   # Since the virtualenv has been activated we use python3 instead of the bin location
   printf "Installing all python requirements in your new virtual environment..."
   python3 -m pip install --require-virtualenv -r requirements.txt 2>&1 | print_if_verbose
+  check_django_installed
   printf "Done\n"
 }
 

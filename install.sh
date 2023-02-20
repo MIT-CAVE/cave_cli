@@ -7,7 +7,7 @@ readonly CHARS_LINE="============================"
 readonly CAVE_CLI_PATH="${HOME}/.cave_cli"
 readonly CAVE_CLI_SHORT_NAME="CAVE CLI"
 readonly CAVE_CLI_COMMAND="cave"
-readonly CAVE_CLI_VERSION="1.1.0"
+readonly CAVE_CLI_VERSION="1.2.0-dev"
 readonly BIN_DIR="/usr/local/bin"
 readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cave_cli.git"
 readonly SSH_CLONE_URL="-b ${CAVE_CLI_VERSION} git@github.com:MIT-CAVE/cave_cli.git"
@@ -48,6 +48,21 @@ is_dir_empty() {
     else
         echo "true"
     fi
+}
+
+print_if_verbose () {
+  if [ -n "${1}" ]; then 
+      IN="${1}"
+      if [ "$VERBOSE" = 'true' ]; then
+        printf "${IN}\n"
+      fi
+  else
+      while read IN; do
+          if [ "$VERBOSE" = 'true' ]; then
+            printf "${IN}\n"
+          fi
+      done
+  fi
 }
 
 err() { # Display an error message
@@ -94,9 +109,8 @@ check_os() { # Validate that the current OS
   fi
 }
 
-
 check_git() { # Validate git is installed
-  install_git="\nPlease install git. \nFor more information see: 'https://git-scm.com'"
+  local install_git="\nPlease install git. \nFor more information see: 'https://git-scm.com'"
   validate_install "git" "1" "$install_git"
 }
 
@@ -115,25 +129,19 @@ check_python() { # Validate python is installed and is correct version
 }
 
 check_previous_installation() { # Check to make sure previous installations are removed before continuing
-  local config_path="$1"
   if [ -d "${CAVE_CLI_PATH}" ]; then
-    LOCAL_CLI_VERSION=$(cat ${CAVE_CLI_PATH}/VERSION)
-    printf "An existing installation of ${CAVE_CLI_SHORT_NAME} ($LOCAL_CLI_VERSION) was found\n"
-    if [ "$LOCAL_CLI_VERSION" = "$CAVE_CLI_VERSION" ] ; then
-      read -r -p "Would you like to reinstall ${CAVE_CLI_SHORT_NAME} ($CAVE_CLI_VERSION)? [y/N] " input
-    else
-      read -r -p "Would you like to update to ${CAVE_CLI_SHORT_NAME} ($CAVE_CLI_VERSION)? [y/N] " input
-    fi
+    local LOCAL_CLI_VERSION=$(cat ${CAVE_CLI_PATH}/VERSION)
+    printf "${CHARS_LINE}\n"
+    printf "An existing installation of ${CAVE_CLI_SHORT_NAME} ($LOCAL_CLI_VERSION) was found.\n"
+    read -r -p "Would you like to uninstall it and then install ${CAVE_CLI_SHORT_NAME} ($CAVE_CLI_VERSION)? [y/N] " input
     case ${input} in
       [yY][eE][sS] | [yY])
-        printf "${CHARS_LINE}\n"
-        printf "Removing old installation..."
-        cp "${CAVE_CLI_PATH}/CONFIG" "${config_path}" 2>&1 | print_if_verbose
+        printf "Uninstalling old installation..."
         rm -rf "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
         printf "Done\n"
         ;;
       [nN][oO] | [nN] | "")
-        err "Installation canceled"
+        err "Installation canceled."
         exit 1
         ;;
       *)
@@ -146,32 +154,33 @@ check_previous_installation() { # Check to make sure previous installations are 
 
 choose_python() { # Choose a python bin and check that it is valid
   local path=""
-  local default=$(which python3.10)
-  local check="Placeholder"
+  local default=""
+  for python_version in {'3.11','3.10'}; do
+    local default=$(which python$python_version)
+    if [ ! "${default}" = "" ]; then
+      break
+    fi
+  done
+  printf "${CHARS_LINE}\n"
+  local check="Choose default python runtime:"
   #Ask for python path until valid version is given
   while [[ ! "${check}" = "" ]]; do
-    read -r -p "Please enter the path to your python binary. Leave blank to use the default(${default}): " path
+    printf "$check\n"
+    read -r -p "Please enter the path to your python3.10+ binary. Leave blank to use the default(${default}): " path
     if [[ "${path}" = "" ]]; then
-      check=$(check_python ${default})
-    else
-      check=$(check_python ${path})
+      local path=${default}
     fi
-    printf "${check}"
+    local check=$(check_python ${path})
   done
-  if [[ "${path}" = "" ]]; then
-    printf "PYTHON3_BIN=\"${default}\"\n\n\n" > "${CAVE_CLI_PATH}/CONFIG"
-  else
-    printf "PYTHON3_BIN=\"${path}\"\n\n\n" > "${CAVE_CLI_PATH}/CONFIG"
-  fi
+  printf "PYTHON3_BIN=\"${path}\"\n\n\n" > "${CAVE_CLI_PATH}/CONFIG"
 }
 
 install_new() { # Copy the needed files locally
-  local config_path=$(mktemp)
-  check_previous_installation "${config_path}"
+  check_previous_installation
   printf "Creating application folder at '${CAVE_CLI_PATH}'..."
-  mkdir -p "${CAVE_CLI_PATH}"
+  mkdir -p "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
   printf "Done\n"
-  printf "${CHARS_LINE}\n"
+  printf "Cloning ${CAVE_CLI_SHORT_NAME} from GitHub..."
   if [[ "$(has_flag "--dev" "$@")" = "true" ]]; then
     CLONE_URL="$SSH_CLONE_URL"
   else
@@ -180,40 +189,19 @@ install_new() { # Copy the needed files locally
   git clone $CLONE_URL "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
   if [[ "$(is_dir_empty "${CAVE_CLI_PATH}")" = 'true' ]]; then
     printf "Failed!\nEnsure you have access rights to the repository: ${CLONE_URL}.\n"
-    rm -rf "${CAVE_CLI_PATH}"
+    rm -rf "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
     exit 1
   fi
   printf "Done\n"
-  printf "${CHARS_LINE}\n"
   choose_python
 }
 
 add_to_path() { # Add the cli to a globally accessable path
-  printf "${CHARS_LINE}\n"
   printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}' (sudo required)..."
-  if [ $(readlink "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
-    printf "Already linked\n" 2>&1 | print_if_verbose
-  else
-    if [ ! $(sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}") ]; then
-      sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}"
-    fi
+  if [ ! $(readlink "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
+    sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}" 2>&1 | print_if_verbose
   fi
   printf "Done\n"
-}
-
-print_if_verbose () {
-  if [ -n "${1}" ]; then 
-      IN="${1}"
-      if [ "$VERBOSE" = 'true' ]; then
-        printf "${IN}\n"
-      fi
-  else
-      while read IN; do
-          if [ "$VERBOSE" = 'true' ]; then
-            printf "${IN}\n"
-          fi
-      done
-  fi
 }
 
 main() {
@@ -224,8 +212,8 @@ main() {
   install_new "$@"
   add_to_path
   printf "${CHARS_LINE}\n"
-  printf "Install completed.\n"
-  exit 0
+  printf "Installation Complete.\n"
+  printf "To get started, run:\n\n${CAVE_CLI_COMMAND} --help\n\n"
 }
 
 main "$@"

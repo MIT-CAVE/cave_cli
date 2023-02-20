@@ -17,12 +17,12 @@ sudo apt-get update && sudo apt-get upgrade -y
 sudo apt install software-properties-common -y
 # Add the deadsnakes python PPA
 sudo add-apt-repository ppa:deadsnakes/ppa
-# Install python3.10 from the deadsnakes PPA
-sudo apt-get install python3.10 -y
+# Install python3.10+ from the deadsnakes PPA
+sudo apt-get install python3.11 -y
 # Install pip
-curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 # Install virtualenv
-python3.10 -m pip install virtualenv
+python3.11 -m pip install virtualenv
 # Install Postgres
 sudo apt-get install postgresql postgresql-contrib
 ```
@@ -40,14 +40,14 @@ sudo apt-get install postgresql postgresql-contrib
     - **Note**: Remember to execute any requested follow up commands listed at the end of the brew installation process
 - Install `python3.10+`
     ```sh
-    brew install python@3.10
+    brew install python@3.11
     ```
 - Install `pip` and `virtualenv`:
     ```sh
     # Install pip
-    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
     # Install virtualenv
-    python3.10 -m pip install virtualenv
+    python3.11 -m pip install virtualenv
     ```
 - Install `postgresql`:
     ```sh
@@ -65,7 +65,7 @@ sudo apt-get install postgresql postgresql-contrib
 bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"
 ```
 - **Note**: During installation you will be asked to choose your default python installation path.
-    - This can be found with: `which python3.10` in a new terminal.
+    - You can use the default or this can be found with: `which python3.11` in a new terminal.
 - Validate Installation:
     ```
     cave --version

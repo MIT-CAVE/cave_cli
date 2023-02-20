@@ -238,6 +238,7 @@ print_version(){
 }
 
 check_django_installed() {
+  # Note: This function is not specifically designed to check for django but rather uses django as a proxy to check the virtualenv as a whole
   if ! [[ -f venv/bin/django-admin ]]; then
     printf "Error.\nOops, it looks like something failed while setting up your virtual environment.\n"
     printf "Try running 'cave reinstall-pkgs -v' to get verbose output of the package installation process.\n"

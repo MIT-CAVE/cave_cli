@@ -240,8 +240,10 @@ print_version(){
 check_django_installed() {
   # Note: This function is not specifically designed to check for django but rather uses django as a proxy to check the virtualenv as a whole
   if ! [[ -f venv/bin/django-admin ]]; then
-    printf "Error.\nOops, it looks like something failed while setting up your virtual environment.\n"
-    printf "Try running 'cave reinstall-pkgs -v' to get verbose output of the package installation process.\n"
+    printf "Error.\nOops, it looks like something is not quite right with your virtual environment.\n"
+    printf "If you have not yet 'setup' the project on this machine, please run 'cave setup' first.\n"
+    printf "If this is happening during the setup process, something is likely wrong with your requirements file.\n"
+    printf "Try running 'cave reinstall-pkgs -v' to get verbose output and debug of the package installation process.\n"
     exit 1
   fi
 }
@@ -264,6 +266,7 @@ run_cave() { # Runs the cave app in the current directory
   fi
 
   force_venv_setup
+  check_django_installed
 
   printf "\n${CHAR_LINE}\n"
   printf "Starting CAVE App:\n"

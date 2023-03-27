@@ -733,7 +733,7 @@ main() {
     version | --version | -v)
       print_version
     ;;
-    run)
+    run | start)
       ensure_postgres_running
       run_cave "$@"
     ;;

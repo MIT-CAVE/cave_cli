@@ -7,7 +7,7 @@ readonly CHARS_LINE="============================"
 readonly CAVE_CLI_PATH="${HOME}/.cave_cli"
 readonly CAVE_CLI_SHORT_NAME="CAVE CLI"
 readonly CAVE_CLI_COMMAND="cave"
-readonly CAVE_CLI_VERSION="1.2.0"
+readonly CAVE_CLI_VERSION="1.3.0"
 readonly BIN_DIR="/usr/local/bin"
 readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cave_cli.git"
 readonly SSH_CLONE_URL="-b ${CAVE_CLI_VERSION} git@github.com:MIT-CAVE/cave_cli.git"
@@ -198,9 +198,7 @@ install_new() { # Copy the needed files locally
 
 add_to_path() { # Add the cli to a globally accessable path
   printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}' (sudo required)..."
-  if [ ! $(readlink "${BIN_DIR}/${CAVE_CLI_COMMAND}") = "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" ]; then
-    sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}" 2>&1 | print_if_verbose
-  fi
+  sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}" 2>&1 | print_if_verbose
   printf "Done\n"
 }
 

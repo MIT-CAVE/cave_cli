@@ -544,7 +544,7 @@ test_cave() { # Run given file found in /cave_api/tests/
   fi
   ALL_FLAG=$(has_flag -all "$@")
   if [[ ! -f "cave_api/tests/$1" && "${ALL_FLAG}" != "true" ]]; then
-    printf "Test %1 not found. Ensure you entered a valid test name.\n" "$1" | pipe_log "ERROR"
+    printf "Test %s not found. Ensure you entered a valid test name.\n" "$1" | pipe_log "ERROR"
     printf "Tests available in 'cave_api/tests/' include \n %s\n" "$(ls cave_api/tests/)" | pipe_log "ERROR"
     exit 1
   fi
@@ -553,10 +553,10 @@ test_cave() { # Run given file found in /cave_api/tests/
 
   # Run given test in docker
   if [ "${ALL_FLAG}" != "true" ]; then
-    docker run --volume "$app_dir:/app" cave-app python "/app/cave_app/cave_api/tests/$1" 2>&1 | pipe_log "INFO"
+    docker run --volume "$app_dir:/app" cave-app python "/app/cave_api/tests/$1" 2>&1 | pipe_log "INFO"
   else
     for f in cave_api/tests/*.py; do
-      docker run --volume "$app_dir:/app" cave-app python "/app/cave_app/$f" 2>&1 | pipe_log "INFO"
+      docker run --volume "$app_dir:/app" cave-app python "/app/$f" 2>&1 | pipe_log "INFO"
     done
   fi
 }

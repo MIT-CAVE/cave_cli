@@ -178,6 +178,11 @@ print_version(){
   printf "%s" "$(cat "${CAVE_PATH}/VERSION")\n" | pipe_log "INFO"
 }
 
+build_container() {
+  printf "Building container...\n" | pipe_log "DEBUG"
+  BUILDKIT_PROGRESS=plain docker build . --tag cave-app 2>&1 | pipe_log "DEBUG"
+}
+
 run_cave() { # Runs the cave app in the current directory
   local app_dir app_name
   app_dir=$(find_app_dir)
@@ -190,7 +195,7 @@ run_cave() { # Runs the cave app in the current directory
   app_name=$(basename "$(readlink -f "$app_dir")")
 
   kill_cave
-  docker build . --tag cave-app 2>&1 | pipe_log "DEGUG"
+  build_container
 
   printf_header "Starting CAVE App:"
 
@@ -376,6 +381,8 @@ create_cave() { # Create a cave app instance in folder $1
   # Create a fake .env file to allow installation to proceed
   touch .env
 
+  build_container
+
   # Setup .env file
   env_create "$1" "$(has_flag -save-inputs "$@")"
 
@@ -510,8 +517,9 @@ prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
     cd "$app_dir" || exit 1
   fi
 
+  build_container
+
   printf "Prettifying cave_api..." | pipe_log "INFO"
-  echo docker run --volume "$app_dir:/app" cave-app /app/utils/api_prettify.sh
   docker run --volume "$app_dir:/app" cave-app /app/utils/api_prettify.sh 2>&1 | pipe_log "DEBUG"
   printf "Done\n" | pipe_log "INFO"
   if [ "$(has_flag -all "$@")" = "true" ]; then
@@ -537,12 +545,15 @@ test_cave() { # Run given file found in /cave_api/tests/
     printf "Tests available in 'cave_api/tests/' include \n %s\n" "$(ls cave_api/tests/)" | pipe_log "ERROR"
     exit 1
   fi
+
+  build_container
+
   # Run given test in docker
   if [ "${ALL_FLAG}" != "true" ]; then
-    docker run --volume "$app_dir:/app" cave-app python "/app/cave_app/cave_api/tests/$1"
+    docker run --volume "$app_dir:/app" cave-app python "/app/cave_app/cave_api/tests/$1" 2>&1 | pipe_log "INFO"
   else
     for f in cave_api/tests/*.py; do
-      docker run --volume "$app_dir:/app" cave-app python "/app/cave_app/$f"
+      docker run --volume "$app_dir:/app" cave-app python "/app/cave_app/$f" 2>&1 | pipe_log "INFO"
     done
   fi
 }

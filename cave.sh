@@ -44,6 +44,19 @@ has_flag() {
     echo "false"
 }
 
+remove_flag() {
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            shift
+        else
+            echo "$1"
+            shift
+        fi
+    done
+}
+
 printf_header() {
   printf "%s\n" $CHAR_LINE | pipe_log "INFO"
   printf "%s\n" "$@" | pipe_log "INFO"
@@ -597,6 +610,11 @@ pipe_log() {
 }
 
 main() {
+  # Bailout to legacy if -legacy passed
+  if [[ "$(has_flag -legacy "$@")" == "true" ]]; then
+    "$CAVE_PATH/cave-1.3.0.sh" "$(remove_flag "-legacy" "$@")"
+    exit
+  fi
   # Source the the CONFIG file
   source "${CAVE_PATH}/CONFIG"
   # If no command is passed default to the help command

@@ -199,6 +199,8 @@ run_cave() { # Runs the cave app in the current directory
 
   printf_header "Starting CAVE App:"
 
+  docker network create cave-net 2>&1 | pipe_log "DEBUG"
+
   source .env
   docker run --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" -d postgres:15.3-alpine3.18 2>&1 | pipe_log "DEBUG"
 
@@ -579,7 +581,7 @@ purge_cave() { # Removes cave app in specified dir and db/db user
     printf "Done\n" | pipe_log "INFO"
     printf "Purge complete.\n" | pipe_log "INFO"
   else
-   echo "Couldn't remove files" | pipe_log "ERROR"
+   printf "Couldn't remove files\n" | pipe_log "ERROR"
    exit 1
   fi
 }
@@ -610,7 +612,7 @@ log() {
     (( ${levels[$log_priority]} < ${levels[$script_logging_level]} )) && return 2
 
     #log here
-    echo "${log_priority} : ${log_message}"
+    printf "%s : $log_message\n" "$log_priority"
 }
 
 pipe_log() {

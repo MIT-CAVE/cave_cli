@@ -211,7 +211,7 @@ run_cave() { # Runs the cave app in the current directory
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
     if [[ "$OPEN" = "1" ]]; then
       docker run -d --restart unless-stopped -p "$IP:$PORT:8000" --network cave-net --volume "$app_dir/utils/lan_hosting:/certs" --name "${app_name}_nginx" -e CAVE_HOST="${app_name}_django" --volume "$CAVE_PATH/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
-      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" cave-app /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
+      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" cave-app /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
       docker rm --force "${app_name}_nginx" 2>&1 | pipe_log "DEBUG"
     else
       printf "The specified port is in use. Please try another."

@@ -222,7 +222,7 @@ confirm_action() { # Checks user input for an action
 
 print_help() { # Prints the help text for cave_cli
   VERSION="$(cat ${CAVE_PATH}/VERSION)"
-  HELP="$(cat ${CAVE_PATH}/help.txt)"
+  HELP="$(cat ${CAVE_PATH}/help-1.3.0.txt)"
   cat 1>&2 <<EOF
 ${CHAR_LINE}
 CAVE CLI ($VERSION)

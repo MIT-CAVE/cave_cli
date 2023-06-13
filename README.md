@@ -11,20 +11,13 @@ A unix based Command Line Interface (CLI) to streamline the creation and develop
 ## Ubuntu Setup:
 
 ```sh
-# Update your package list and current packages
-sudo apt-get update && sudo apt-get upgrade -y
-# Install software to add external PPAs
-sudo apt install software-properties-common -y
-# Add the deadsnakes python PPA
-sudo add-apt-repository ppa:deadsnakes/ppa
-# Install python3.10+ from the deadsnakes PPA
-sudo apt-get install python3.11 -y
-# Install pip
-curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
-# Install virtualenv
-python3.11 -m pip install virtualenv
-# Install Postgres
-sudo apt-get install postgresql postgresql-contrib
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh ./get-docker.sh
+# Add the current user to the docker group
+dockerd-rootless-setuptool.sh install
+# Make sure it works outside of sudo
+docker run hello-world
 ```
 
 ## Mac Setup:
@@ -33,31 +26,8 @@ sudo apt-get install postgresql postgresql-contrib
     - Install `XCode` from the `App Store`
     - Once `XCode` is installed, install the XCode `Command Line Tools`
         - `menu` -> `preferences` -> `downloads` -> `command line tools`
-- Install `brew`:
-    ```sh
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    ```
-    - **Note**: Remember to execute any requested follow up commands listed at the end of the brew installation process
-- Install `python3.10+`
-    ```sh
-    brew install python@3.11
-    ```
-- Install `pip` and `virtualenv`:
-    ```sh
-    # Install pip
-    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
-    # Install virtualenv
-    python3.11 -m pip install virtualenv
-    ```
-- Install `postgresql`:
-    ```sh
-    brew install postgresql@14
-    brew services start postgresql@14
-    ```
-    - **Note**: After rebooting your machine you will need to start postgres each time using:
-      ```sh
-      brew services start postgresql@14
-      ```
+- Install Docker
+    - https://docs.docker.com/docker-for-mac/install/
 
 ## CLI Installation
 
@@ -80,7 +50,7 @@ bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install
 
 ## License Notice
 
-Copyright 2022 Massachusetts Institute of Technology (MIT), Center for Transportation & Logistics (CTL)
+Copyright 2023 Massachusetts Institute of Technology (MIT), Center for Transportation & Logistics (CTL)
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
 

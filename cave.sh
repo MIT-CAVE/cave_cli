@@ -662,51 +662,51 @@ main() {
     ;;
     create)
       # Does NOT require being inside app_dir
-      check_docker "$@"
+      check_docker
       create_cave "$@"
     ;;
     purge)
       # Requires being in parent of app_dir
-      check_docker "$@"
+      check_docker
       purge_cave "$@"
     ;;
-    run | start)
+    run)
       # Requires being inside app_dir
-      check_docker "$@"
+      check_docker
       # Starts all required containers for the app
       run_cave "$@"
     ;;
     kill)
       # Requires being inside app_dir
-      check_docker "$@"
+      check_docker
       # Kills all containers for the app
-      kill_cave "$@"
+      kill_cave
     ;;
     reset-db)
       # Requires being inside app_dir
-      check_docker "$@"
+      check_docker
       # Runs kill, then
       # Removes the volume for the db
-      reset_db "$@"
+      reset_db
     ;;
     upgrade)
       # Requires being inside app_dir
-      check_docker "$@"
+      check_docker
       upgrade_cave "$@"
     ;;
     sync)
       # Requires being inside app_dir
-      check_docker "$@"
+      check_docker
       sync_cave "$@"
     ;;
     prettify)
       # Requires being inside app_dir
-      check_docker "$@"
+      check_docker
       prettify_cave "$@"
     ;;
     test)
       # Requires being inside app_dir
-      check_docker "$@"
+      check_docker
       test_cave "$@"
     ;;
     *)

@@ -171,7 +171,7 @@ print_help() { # Prints the help text for cave_cli
   VERSION="$(cat "${CAVE_PATH}/VERSION")"
   HELP="$(cat "${CAVE_PATH}/help.txt")"
   printf_header "CAVE CLI ($VERSION)"
-  printf "\n\n%s\n" "$HELP" | pipe_log "INFO"
+  printf "\n\n$HELP\n"
 }
 
 print_version(){
@@ -507,6 +507,7 @@ reset_db() {
   app_name=$(basename "$(readlink -f "$app_dir")")
   kill_cave
   docker volume rm "${app_name}_pg_volume" 2>&1 | pipe_log "DEBUG"
+  printf "DB Reset\n" | pipe_log "INFO"
 }
 
 prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh

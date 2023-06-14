@@ -43,6 +43,12 @@ Peripheral Commands:
 Utility Commands:
   help                      Prints this help text.
 
+  list [-all]               Lists CAVE apps running in docker
+                              `-all`: flag (optional)
+                                - What: Trigger to list all CAVE containers (django, postgres, nginx) 
+                                        running in docker
+                              EG: `cave list -all`
+
   kill                      Kills the app run from the current directory
                              Used when a CAVE app wasn't properly shut down.
                               EG: `cave kill`

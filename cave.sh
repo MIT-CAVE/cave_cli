@@ -194,7 +194,7 @@ run_cave() { # Runs the cave app in the current directory
   fi
   app_name=$(basename "$(readlink -f "$app_dir")")
 
-  kill_cave
+  kill_cave -internal
   build_container
 
   printf_header "Starting CAVE App:"
@@ -218,6 +218,7 @@ run_cave() { # Runs the cave app in the current directory
       exit 1
     fi
   else
+    # TODO: Make sure that 8000 is not taken.
     docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" cave-app /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
   fi
 
@@ -481,7 +482,25 @@ sync_cave() { # Sync files from another repo to the selected cave app
   exit 0
 }
 
-kill_cave() { # Kill given tcp port (default 8000)
+list_cave() {
+  printf_header "CAVE Apps (Running):"
+  docker ps --format "{{.Names}}" | grep -E ".*_django" | sed 's/_django//g' 2>&1 | pipe_log "INFO"
+
+  if [ "$(has_flag -all "$@")" = "true" ]; then
+    printf_header "CAVE Apps (All):" 2>&1 | pipe_log "INFO"
+    docker ps --format "{{.Names}}" | grep -E ".*_django" 2>&1 | pipe_log "INFO"
+    docker ps -a --format "{{.Names}}" | grep -E ".*_django" 2>&1 | pipe_log "INFO"
+    docker ps --format "{{.Names}}" | grep -E ".*_postgres" 2>&1 | pipe_log "INFO"
+    docker ps -a --format "{{.Names}}" | grep -E ".*_postgres" 2>&1 | pipe_log "INFO"
+    docker ps --format "{{.Names}}" | grep -E ".*_nginx" 2>&1 | pipe_log "INFO"
+    docker ps -a --format "{{.Names}}" | grep -E ".*_nginx" 2>&1 | pipe_log "INFO"
+  fi
+}
+
+kill_cave() { # Kill an app
+  # TODO: Allow specifying app name
+  # TODO: Allow killing all apps
+  # TODO: Think about where image cleanup would go
   local app_dir app_name
   app_dir=$(find_app_dir)
   if [ "${app_dir}" = "-1" ]; then
@@ -492,7 +511,13 @@ kill_cave() { # Kill given tcp port (default 8000)
   fi
   app_name=$(basename "$(readlink -f "$app_dir")")
   docker rm --force "${app_name}_django" "${app_name}_nginx" "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"
-  printf "Cave app killed\n" | pipe_log "INFO"
+  # If -internal flag is set (EG: fired from cave run), log at DEBUG level instead of INFO
+  if [ "$(has_flag -internal "$@")" = "true" ]; then
+    LEVEL="DEBUG"
+  else
+    LEVEL="INFO"
+  fi
+  printf "Cave app killed\n" | pipe_log $LEVEL
 }
 
 reset_db() {
@@ -675,6 +700,12 @@ main() {
       check_docker
       # Starts all required containers for the app
       run_cave "$@"
+    ;;
+    list)
+      # Requires being inside app_dir
+      check_docker
+      # Kills all containers for the app
+      list_cave
     ;;
     kill)
       # Requires being inside app_dir

@@ -94,6 +94,17 @@ check_docker() { # Validate docker is installed, running, and is correct version
   printf "Docker Check Passed!\n" | pipe_log "DEBUG"
 }
 
+get_app() {
+  app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
+    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
+    exit 1
+  else
+    cd "${app_dir}" || exit 1
+  fi
+  app_name=$(basename "$(readlink -f "$app_dir")")
+}
+
 valid_app_name() {
   local app_name=$1
   if [[ ${#app_name} -lt 2 || ${#app_name} -gt 255 ]]; then
@@ -180,20 +191,10 @@ print_version(){
 
 build_container() {
   printf "Building container...\n" | pipe_log "DEBUG"
-  BUILDKIT_PROGRESS=plain docker build . --tag cave-app 2>&1 | pipe_log "DEBUG"
+  BUILDKIT_PROGRESS=plain docker build . --tag "cave-app:${app_name}" 2>&1 | pipe_log "DEBUG"
 }
 
 run_cave() { # Runs the cave app in the current directory
-  local app_dir app_name
-  app_dir=$(find_app_dir)
-  if [ "${app_dir}" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
-  else
-    cd "${app_dir}" || exit 1
-  fi
-  app_name=$(basename "$(readlink -f "$app_dir")")
-
   kill_cave -internal
   build_container
 
@@ -202,11 +203,8 @@ run_cave() { # Runs the cave app in the current directory
   docker network create cave-net 2>&1 | pipe_log "DEBUG"
 
   source .env
-  # TODO: specify postgres image in .env
-  # TODO: allow specifying postgres image in .env
-  docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" postgres:15.3-alpine3.18 postgres -c listen_addresses='*' 2>&1 | pipe_log "DEBUG"
+  docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
 
-  # TODO: remove DATABASE_HOST and pass it in as an env variable to django
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
     export PORT OFFSET_OPEN IP
     IP=$(echo "$1" | perl -nle'print $& while m{([0-9]{1,3}\.)+([0-9]{1,3})}g')
@@ -214,30 +212,25 @@ run_cave() { # Runs the cave app in the current directory
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
     if [[ "$OPEN" = "1" ]]; then
       docker run -d --restart unless-stopped -p "$IP:$PORT:8000" --network cave-net --volume "$app_dir/utils/lan_hosting:/certs" --name "${app_name}_nginx" -e CAVE_HOST="${app_name}_django" --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
-      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" cave-app /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
+      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
       docker rm --force "${app_name}_nginx" 2>&1 | pipe_log "DEBUG"
     else
-      printf "The specified port is in use. Please try another."
+      printf "The specified port is in use. Please try another." | pipe_log "ERROR"
       exit 1
     fi
   else
-    # TODO: Make sure that 8000 is not taken.
-    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" cave-app /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
+    if nc -z 127.0.0.1 8000 ; then
+      printf "Port 8000 is in use. Please try another." | pipe_log "ERROR"
+      exit 1
+    fi
+
+    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
   fi
 
   docker rm --force "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"
 }
 
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
-  local app_dir
-  app_dir=$(find_app_dir)
-  if [ "${app_dir}" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
-  else
-    cd "${app_dir}" || exit 1
-  fi
-
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will potentially update all files not in 'cave_api/' or '.env' and reset your database"
   fi
@@ -256,7 +249,7 @@ env_create() { # creates .env file for create_cave
   rm .env 2>&1 | pipe_log "DEBUG"
   cp example.env .env 2>&1 | pipe_log "DEBUG"
   local key line newenv
-  key=$(docker run cave-app python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
+  key=$(docker run "cave-app:${app_name}" python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
   local key2=""
@@ -338,10 +331,6 @@ env_create() { # creates .env file for create_cave
   line=$(grep -n --colour=auto "DATABASE_USER" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DATABASE_USER='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
-  key="$1_postgres"
-  line=$(grep -n --colour=auto "DATABASE_HOST" .env | cut -d: -f1)
-  newenv=$(awk "NR==${line} {print \"DATABASE_HOST='${key}'\"; next} {print}" .env)
-  echo "$newenv" > .env
 
   # Save inputs
   if [ "${save_inputs}" = "true" ]; then
@@ -387,6 +376,7 @@ create_cave() { # Create a cave app instance in folder $1
   # Create a fake .env file to allow installation to proceed
   touch .env
 
+  get_app
   build_container
 
   # Setup .env file
@@ -485,34 +475,40 @@ sync_cave() { # Sync files from another repo to the selected cave app
   exit 0
 }
 
-list_cave() {
-  printf_header "CAVE Apps (Running):"
-  docker ps --format "{{.Names}}" | grep -E ".*_django" | sed 's/_django//g' 2>&1 | pipe_log "INFO"
+get_running_apps() {
+    docker ps -a --format "{{.Names}}" | grep -E ".*_django" | sed 's/_django//g' 2>&1
+}
 
+list_cave() {
   if [ "$(has_flag -all "$@")" = "true" ]; then
-    printf_header "CAVE Apps (All):" 2>&1 | pipe_log "INFO"
-    docker ps --format "{{.Names}}" | grep -E ".*_django" 2>&1 | pipe_log "INFO"
+    printf_header "CAVE Apps (All):"
     docker ps -a --format "{{.Names}}" | grep -E ".*_django" 2>&1 | pipe_log "INFO"
-    docker ps --format "{{.Names}}" | grep -E ".*_postgres" 2>&1 | pipe_log "INFO"
     docker ps -a --format "{{.Names}}" | grep -E ".*_postgres" 2>&1 | pipe_log "INFO"
-    docker ps --format "{{.Names}}" | grep -E ".*_nginx" 2>&1 | pipe_log "INFO"
     docker ps -a --format "{{.Names}}" | grep -E ".*_nginx" 2>&1 | pipe_log "INFO"
+  else
+    printf_header "CAVE Apps (Running):"
+    get_running_apps | pipe_log "INFO"
   fi
 }
 
-kill_cave() { # Kill an app
-  # TODO: Allow specifying app name
-  # TODO: Allow killing all apps
-  # TODO: Think about where image cleanup would go
-  local app_dir app_name
-  app_dir=$(find_app_dir)
-  if [ "${app_dir}" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
+kill_cave() {
+  if [ "$(has_flag -all "$@")" = "true" ]; then
+    for app in $(get_running_apps) ; do
+      kill_cave_app --app "$app"
+    done
   else
-    cd "${app_dir}" || exit 1
+    kill_cave_app "$@"
   fi
-  app_name=$(basename "$(readlink -f "$app_dir")")
+}
+
+kill_cave_app() { # Kill an app
+  if [ "$(has_flag --app "$@")" = "true" ]; then
+    local BRANCH_STRING
+    app_name="$(get_flag "" "--app" "$@")"
+  else
+    get_app
+  fi
+
   docker rm --force "${app_name}_django" "${app_name}_nginx" "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"
   # If -internal flag is set (EG: fired from cave run), log at DEBUG level instead of INFO
   if [ "$(has_flag -internal "$@")" = "true" ]; then
@@ -520,56 +516,30 @@ kill_cave() { # Kill an app
   else
     LEVEL="INFO"
   fi
-  printf "Cave app killed\n" | pipe_log $LEVEL
+  printf "Cave app %s killed\n" "$app_name" | pipe_log $LEVEL
 }
 
 reset_db() {
-  local app_dir app_name
-  app_dir=$(find_app_dir)
-  if [ "${app_dir}" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
-  else
-    cd "${app_dir}" || exit 1
-  fi
-  app_name=$(basename "$(readlink -f "$app_dir")")
   kill_cave
   docker volume rm "${app_name}_pg_volume" 2>&1 | pipe_log "DEBUG"
   printf "DB Reset\n" | pipe_log "INFO"
 }
 
 prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
-  local app_dir
-  app_dir=$(find_app_dir)
-  if [ "$app_dir" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
-  else
-    cd "$app_dir" || exit 1
-  fi
-
   build_container
 
   printf "Prettifying cave_api..." | pipe_log "INFO"
-  docker run --volume "$app_dir:/app" cave-app /app/utils/api_prettify.sh 2>&1 | pipe_log "DEBUG"
+  docker run --volume "$app_dir:/app" "cave-app:${app_name}" /app/utils/api_prettify.sh 2>&1 | pipe_log "DEBUG"
   printf "Done\n" | pipe_log "INFO"
   if [ "$(has_flag -all "$@")" = "true" ]; then
     printf "Prettifying everything else..." | pipe_log "INFO"
-    docker run --volume "$app_dir:/app" cave-app /app/utils/prettify.sh 2>&1 | pipe_log "DEBUG"
+    docker run --volume "$app_dir:/app" "cave-app:${app_name}" /app/utils/prettify.sh 2>&1 | pipe_log "DEBUG"
     printf "Done\n" | pipe_log "INFO"
   fi
 }
 
 test_cave() { # Run given file found in /cave_api/tests/
   # Check directory and files
-  local app_dir
-  app_dir=$(find_app_dir)
-  if [ "$app_dir" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
-  else
-    cd "$app_dir" || exit 1
-  fi
   ALL_FLAG=$(has_flag -all "$@")
   if [[ ! -f "cave_api/tests/$1" && "${ALL_FLAG}" != "true" ]]; then
     printf "Test %s not found. Ensure you entered a valid test name.\n" "$1" | pipe_log "ERROR"
@@ -581,16 +551,15 @@ test_cave() { # Run given file found in /cave_api/tests/
 
   # Run given test in docker
   if [ "${ALL_FLAG}" != "true" ]; then
-    docker run --volume "$app_dir:/app" cave-app python "/app/cave_api/tests/$1" 2>&1 | pipe_log "INFO"
+    docker run --volume "$app_dir:/app" "cave-app:${app_name}" python "/app/cave_api/tests/$1" 2>&1 | pipe_log "INFO"
   else
     for f in cave_api/tests/*.py; do
-      docker run --volume "$app_dir:/app" cave-app python "/app/$f" 2>&1 | pipe_log "INFO"
+      docker run --volume "$app_dir:/app" "cave-app:${app_name}" python "/app/$f" 2>&1 | pipe_log "INFO"
     done
   fi
 }
 
 purge_cave() { # Removes cave app in specified dir and db/db user
-  # TODO: Delete associated docker images
   local app_name=$1
   cd "${app_name}" || (printf "No directory %s\n" "$app_name" | pipe_log "ERROR" ; exit 1)
   if ! valid_app_dir; then
@@ -604,6 +573,10 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   fi
   cd "$app_name" || exit 1
   reset_db
+
+  # Delete docker image
+  docker rmi "cave-app:$app_name"
+
   cd ../
   source "${app_name}/.env"
   printf "Removing files..." | pipe_log "INFO"
@@ -702,24 +675,24 @@ main() {
     run)
       # Requires being inside app_dir
       check_docker
+      get_app
       # Starts all required containers for the app
       run_cave "$@"
     ;;
     list)
-      # Requires being inside app_dir
       check_docker
-      # Kills all containers for the app
-      list_cave
+      list_cave "$@"
     ;;
     kill)
-      # Requires being inside app_dir
+      # Requires being inside app_dir or app_dir specified
       check_docker
       # Kills all containers for the app
-      kill_cave
+      kill_cave "$@"
     ;;
     reset-db)
       # Requires being inside app_dir
       check_docker
+      get_app
       # Runs kill, then
       # Removes the volume for the db
       reset_db
@@ -727,21 +700,25 @@ main() {
     upgrade)
       # Requires being inside app_dir
       check_docker
+      get_app
       upgrade_cave "$@"
     ;;
     sync)
       # Requires being inside app_dir
       check_docker
+      get_app
       sync_cave "$@"
     ;;
     prettify)
       # Requires being inside app_dir
       check_docker
+      get_app
       prettify_cave "$@"
     ;;
     test)
       # Requires being inside app_dir
       check_docker
+      get_app
       test_cave "$@"
     ;;
     *)

@@ -189,14 +189,14 @@ print_version(){
   printf "%s" "$(cat "${CAVE_PATH}/VERSION")\n" | pipe_log "INFO"
 }
 
-build_container() {
-  printf "Building container...\n" | pipe_log "DEBUG"
+build_image() {
+  printf "Building docker image... (may take a minute)\n" | pipe_log "INFO"
   BUILDKIT_PROGRESS=plain docker build . --tag "cave-app:${app_name}" 2>&1 | pipe_log "DEBUG"
 }
 
 run_cave() { # Runs the cave app in the current directory
   kill_cave -internal
-  build_container
+  build_image
 
   printf_header "Starting CAVE App:"
 
@@ -227,7 +227,7 @@ run_cave() { # Runs the cave app in the current directory
     docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
   fi
 
-  docker rm --force "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"
+  docker rm --force "${app_name}_django" "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"
 }
 
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
@@ -249,7 +249,7 @@ env_create() { # creates .env file for create_cave
   rm .env 2>&1 | pipe_log "DEBUG"
   cp example.env .env 2>&1 | pipe_log "DEBUG"
   local key line newenv
-  key=$(docker run "cave-app:${app_name}" python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
+  key=$(docker run --rm "cave-app:${app_name}" python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
   local key2=""
@@ -377,7 +377,7 @@ create_cave() { # Create a cave app instance in folder $1
   touch .env
 
   get_app
-  build_container
+  build_image
 
   # Setup .env file
   env_create "$1" "$(has_flag -save-inputs "$@")"
@@ -526,14 +526,14 @@ reset_db() {
 }
 
 prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
-  build_container
+  build_image
 
   printf "Prettifying cave_api..." | pipe_log "INFO"
-  docker run --volume "$app_dir:/app" "cave-app:${app_name}" /app/utils/api_prettify.sh 2>&1 | pipe_log "DEBUG"
+  docker run --rm --volume "$app_dir:/app" "cave-app:${app_name}" /app/utils/api_prettify.sh 2>&1 | pipe_log "DEBUG"
   printf "Done\n" | pipe_log "INFO"
   if [ "$(has_flag -all "$@")" = "true" ]; then
     printf "Prettifying everything else..." | pipe_log "INFO"
-    docker run --volume "$app_dir:/app" "cave-app:${app_name}" /app/utils/prettify.sh 2>&1 | pipe_log "DEBUG"
+    docker run --rm --volume "$app_dir:/app" "cave-app:${app_name}" /app/utils/prettify.sh 2>&1 | pipe_log "DEBUG"
     printf "Done\n" | pipe_log "INFO"
   fi
 }
@@ -547,14 +547,14 @@ test_cave() { # Run given file found in /cave_api/tests/
     exit 1
   fi
 
-  build_container
+  build_image
 
   # Run given test in docker
   if [ "${ALL_FLAG}" != "true" ]; then
-    docker run --volume "$app_dir:/app" "cave-app:${app_name}" python "/app/cave_api/tests/$1" 2>&1 | pipe_log "INFO"
+    docker run --rm --volume "$app_dir:/app" "cave-app:${app_name}" python "/app/cave_api/tests/$1" 2>&1 | pipe_log "INFO"
   else
     for f in cave_api/tests/*.py; do
-      docker run --volume "$app_dir:/app" "cave-app:${app_name}" python "/app/$f" 2>&1 | pipe_log "INFO"
+      docker run --rm --volume "$app_dir:/app" "cave-app:${app_name}" python "/app/$f" 2>&1 | pipe_log "INFO"
     done
   fi
 }
@@ -575,7 +575,7 @@ purge_cave() { # Removes cave app in specified dir and db/db user
   reset_db
 
   # Delete docker image
-  docker rmi "cave-app:$app_name"
+  docker rmi "cave-app:$app_name" | pipe_log "DEBUG"
 
   cd ../
   source "${app_name}/.env"

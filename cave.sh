@@ -202,8 +202,11 @@ run_cave() { # Runs the cave app in the current directory
   docker network create cave-net 2>&1 | pipe_log "DEBUG"
 
   source .env
-  docker run --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" -d postgres:15.3-alpine3.18 postgres -c listen_addresses='*' 2>&1 | pipe_log "DEBUG"
+  # TODO: specify postgres image in .env
+  # TODO: allow specifying postgres image in .env
+  docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" postgres:15.3-alpine3.18 postgres -c listen_addresses='*' 2>&1 | pipe_log "DEBUG"
 
+  # TODO: remove DATABASE_HOST and pass it in as an env variable to django
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
     export PORT OFFSET_OPEN IP
     IP=$(echo "$1" | perl -nle'print $& while m{([0-9]{1,3}\.)+([0-9]{1,3})}g')
@@ -587,6 +590,7 @@ test_cave() { # Run given file found in /cave_api/tests/
 }
 
 purge_cave() { # Removes cave app in specified dir and db/db user
+  # TODO: Delete associated docker images
   local app_name=$1
   cd "${app_name}" || (printf "No directory %s\n" "$app_name" | pipe_log "ERROR" ; exit 1)
   if ! valid_app_dir; then

@@ -51,7 +51,12 @@ Utility Commands:
 
   kill                      Kills the app run from the current directory
                              Used when a CAVE app wasn't properly shut down.
-                              EG: `cave kill`
+                              `--app`: str (optional)
+                                - What: The name of the app to kill
+                                - Default: The app in the current directory
+                              `-all`: flag (optional)
+                                - What: Kill all apps
+                              EG: `cave kill --app my_app`
 
   sync --url [--branch --include --exclude]
                             Merges files from the given repo (url) into the CAVE app in the

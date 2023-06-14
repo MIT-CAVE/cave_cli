@@ -626,7 +626,7 @@ pipe_log() {
 main() {
   # Bailout to legacy if -legacy passed
   if [[ "$(has_flag -legacy "$@")" == "true" ]]; then
-    "$CAVE_PATH/cave-1.3.0.sh" $(remove_flag "-legacy" "$@")
+    "$CAVE_PATH/cave-1.4.0.sh" $(remove_flag "-legacy" "$@")
     exit
   fi
   # Source the the CONFIG file

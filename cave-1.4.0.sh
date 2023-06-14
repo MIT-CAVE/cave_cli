@@ -222,10 +222,11 @@ confirm_action() { # Checks user input for an action
 
 print_help() { # Prints the help text for cave_cli
   VERSION="$(cat ${CAVE_PATH}/VERSION)"
-  HELP="$(cat ${CAVE_PATH}/help-1.3.0.txt)"
+  HELP="$(cat ${CAVE_PATH}/help-1.4.0.txt)"
   cat 1>&2 <<EOF
 ${CHAR_LINE}
 CAVE CLI ($VERSION)
+IN LEGACY MODE (1.4.0)
 ${CHAR_LINE}
 
 ${HELP}
@@ -234,8 +235,8 @@ EOF
 }
 
 print_version(){
-  echo 1.3.0
-  echo LEGACY CLI >&2
+  VERSION="$(cat ${CAVE_PATH}/VERSION)"
+  echo "$VERSION (LEGACY MODE 1.4.0)"
 }
 
 check_django_installed() {

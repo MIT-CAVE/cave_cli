@@ -1,8 +1,8 @@
-#!/bin/bash
-#
 # CAVE cli for unix based systems
 
 # Constants
+readonly MIN_BASH_VERSION="5.0.0"
+readonly MIN_ZSH_VERSION="5.0.0"
 readonly VALID_NAME_PATTERN="^[abcdefghijklmnopqrstuvwxyz0-9_-]+$"
 readonly INVALID_NAME_PATTERN_1="^[-_]+.*$"
 readonly INVALID_NAME_PATTERN_2="^.*[-_]+$"
@@ -13,7 +13,7 @@ readonly CHAR_LINE="============================="
 readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
 readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
 readonly MIN_DOCKER_VERSION="23.0.6"
-# update environment
+# Update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 
 get_flag() {
@@ -85,6 +85,18 @@ validate_version() {
     fi
   fi
 
+}
+
+check_shell() {
+  # Ensure that bash greater than version 5 is used or zsh greater than version 5
+  if [ -n "$BASH_VERSION" ]; then
+    validate_version "bash" "1" "Please upgrade your bash version to $MIN_BASH_VERSION or greater" "$MIN_BASH_VERSION" "${BASH_VERSION}"
+  elif [ -n "$ZSH_VERSION" ]; then
+    validate_version "zsh" "1" "Please upgrade your zsh version to $MIN_ZSH_VERSION or greater" "$MIN_ZSH_VERSION" "${ZSH_VERSION}"
+  else
+    printf "Your shell is not supported. Please use 'bash' or 'zsh'" | pipe_log "ERROR"
+    exit 1
+  fi
 }
 
 check_docker() { # Validate docker is installed, running, and is correct version
@@ -186,7 +198,7 @@ print_help() { # Prints the help text for cave_cli
 }
 
 print_version(){
-  printf "%s" "$(cat "${CAVE_PATH}/VERSION")\n" | pipe_log "INFO"
+  printf "%s" "$(cat "${CAVE_PATH}/VERSION")" | pipe_log "INFO"
 }
 
 build_image() {
@@ -600,22 +612,44 @@ update_cave() { # Updates the cave cli
   printf "CAVE CLI updated.\n" | pipe_log "INFO"
 }
 
-# https://stackoverflow.com/questions/48086633/simple-logging-levels-in-bash
-declare -A levels=([DEBUG]=0 [INFO]=1 [WARN]=2 [ERROR]=3)
-# script_logging_level="INFO"
+
+
+setup_log() {
+    if [[ "$(has_flag -v "$@")" == "true" ]]; then
+      script_logging_level="DEBUG"
+    else
+      script_logging_level="$(get_flag "INFO" --loglevel "$@")"
+    fi
+    # Levels are DEBUG, INFO, WARN, ERROR
+    # Set the levels that will be logged
+    case "$script_logging_level" in
+      "DEBUG")
+        script_logging_levels=("DEBUG" "INFO" "WARN" "ERROR")
+        ;;
+      "INFO")
+        script_logging_levels=("INFO" "WARN" "ERROR")
+        ;;
+      "WARN")
+        script_logging_levels=("WARN" "ERROR")
+        ;;
+      "ERROR")
+        script_logging_levels=("ERROR")
+        ;;
+      *)
+        script_logging_levels=("ERROR")
+        printf "Invalid log level %s" "$script_logging_level" | pipe_log "ERROR"
+        exit 1
+        ;;
+    esac
+}
 
 log() {
     local log_message=$1
     local log_priority=$2
-
-    #check if level exists
-    [[ ${levels[$log_priority]} ]] || return 1
-
-    #check if level is enough
-    (( ${levels[$log_priority]} < ${levels[$script_logging_level]} )) && return 2
-
-    #log here
-    printf "%s : $log_message\n" "$log_priority"
+    
+    if [[ " ${script_logging_levels[@]} " =~ " ${log_priority} " ]]; then
+      printf "$log_priority: $log_message\n" >&2
+    fi
 }
 
 pipe_log() {
@@ -631,6 +665,8 @@ main() {
     "$CAVE_PATH/cave-1.4.0.sh" $(remove_flag "-legacy" "$@")
     exit
   fi
+  setup_log "$@"
+  check_shell
   # Source the the CONFIG file
   source "${CAVE_PATH}/CONFIG"
   # If no command is passed default to the help command
@@ -639,11 +675,6 @@ main() {
   else
     local MAIN_COMMAND=$1
     shift
-  fi
-  if [[ "$(has_flag -v "$@")" == "true" ]]; then
-    script_logging_level="DEBUG"
-  else
-    script_logging_level="INFO"
   fi
   case $MAIN_COMMAND in
     help | --help | -h)

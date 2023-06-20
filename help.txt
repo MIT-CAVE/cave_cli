@@ -87,5 +87,10 @@ Utility Commands:
 
 Global Flags:
   `-y`: Automatically answer (bypass) any confirmation prompts with `y`.
-  `-v`: Enable verbose logging output.
   `-legacy`: Runs the legacy version of the cli (not docker based). See `cave -legacy help`
+  `-v`: Enable verbose logging output (shorthand for `--loglevel DEBUG`)
+                - Note: This overules `--loglevel` if both are specified
+  `--loglevel`: Specify a log level to use for any command from the list: 
+                - ['DEBUG', 'INFO', 'WARN', 'ERROR']
+                - EG: `cave version --loglevel ERROR`
+                  - Note: Returns nothing since version is INFO level

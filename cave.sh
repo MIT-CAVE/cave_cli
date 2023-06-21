@@ -1,8 +1,7 @@
+#!/bin/bash
 # CAVE cli for unix based systems
 
 # Constants
-readonly MIN_BASH_VERSION="5.0.0"
-readonly MIN_ZSH_VERSION="5.0.0"
 readonly VALID_NAME_PATTERN="^[abcdefghijklmnopqrstuvwxyz0-9_-]+$"
 readonly INVALID_NAME_PATTERN_1="^[-_]+.*$"
 readonly INVALID_NAME_PATTERN_2="^.*[-_]+$"
@@ -85,18 +84,6 @@ validate_version() {
     fi
   fi
 
-}
-
-check_shell() {
-  # Ensure that bash greater than version 5 is used or zsh greater than version 5
-  if [ -n "$BASH_VERSION" ]; then
-    validate_version "bash" "1" "Please upgrade your bash version to $MIN_BASH_VERSION or greater" "$MIN_BASH_VERSION" "${BASH_VERSION}"
-  elif [ -n "$ZSH_VERSION" ]; then
-    validate_version "zsh" "1" "Please upgrade your zsh version to $MIN_ZSH_VERSION or greater" "$MIN_ZSH_VERSION" "${ZSH_VERSION}"
-  else
-    printf "Your shell is not supported. Please use 'bash' or 'zsh'" | pipe_log "ERROR"
-    exit 1
-  fi
 }
 
 check_docker() { # Validate docker is installed, running, and is correct version
@@ -615,10 +602,14 @@ update_cave() { # Updates the cave cli
 
 
 setup_log() {
-    if [[ "$(has_flag -v "$@")" == "true" ]]; then
+    if [[ "$(has_flag -v "$@")" == "true" || "$(has_flag -verbose "$@")" == "true" ]]; then
       script_logging_level="DEBUG"
     else
-      script_logging_level="$(get_flag "INFO" --loglevel "$@")"
+      if [[ "$(has_flag --loglevel "$@")" == "true" ]]; then
+        script_logging_level="$(get_flag "INFO" --loglevel "$@")"
+      else
+        script_logging_level="$(get_flag "INFO" --ll "$@")"
+      fi
     fi
     # Levels are DEBUG, INFO, WARN, ERROR
     # Set the levels that will be logged
@@ -635,9 +626,12 @@ setup_log() {
       "ERROR")
         script_logging_levels=("ERROR")
         ;;
+      "SILENT")
+        script_logging_levels=()
+        ;;
       *)
         script_logging_levels=("ERROR")
-        printf "Invalid log level %s" "$script_logging_level" | pipe_log "ERROR"
+        printf "Invalid log level $script_logging_level" | pipe_log "ERROR"
         exit 1
         ;;
     esac
@@ -659,14 +653,21 @@ pipe_log() {
   done
 }
 
-main() {
-  # Bailout to legacy if -legacy passed
+bailout_if_legacy() {
+  # Bailout to legacy if -legacy or -l passed
   if [[ "$(has_flag -legacy "$@")" == "true" ]]; then
     "$CAVE_PATH/cave-1.4.0.sh" $(remove_flag "-legacy" "$@")
-    exit
+    exit 1
   fi
+  if [[ "$(has_flag -l "$@")" == "true" ]]; then
+    "$CAVE_PATH/cave-1.4.0.sh" $(remove_flag "-l" "$@")
+    exit 1
+  fi
+}
+
+main() {
+  bailout_if_legacy "$@"
   setup_log "$@"
-  check_shell
   # Source the the CONFIG file
   source "${CAVE_PATH}/CONFIG"
   # If no command is passed default to the help command

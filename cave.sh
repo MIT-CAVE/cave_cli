@@ -1,5 +1,4 @@
 #!/bin/bash
-#
 # CAVE cli for unix based systems
 
 # Constants
@@ -13,7 +12,7 @@ readonly CHAR_LINE="============================="
 readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
 readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
 readonly MIN_DOCKER_VERSION="23.0.6"
-# update environment
+# Update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 
 get_flag() {
@@ -186,7 +185,7 @@ print_help() { # Prints the help text for cave_cli
 }
 
 print_version(){
-  printf "%s" "$(cat "${CAVE_PATH}/VERSION")\n" | pipe_log "INFO"
+  printf "%s" "$(cat "${CAVE_PATH}/VERSION")" | pipe_log "INFO"
 }
 
 build_image() {
@@ -600,22 +599,51 @@ update_cave() { # Updates the cave cli
   printf "CAVE CLI updated.\n" | pipe_log "INFO"
 }
 
-# https://stackoverflow.com/questions/48086633/simple-logging-levels-in-bash
-declare -A levels=([DEBUG]=0 [INFO]=1 [WARN]=2 [ERROR]=3)
-# script_logging_level="INFO"
+
+
+setup_log() {
+    if [[ "$(has_flag -v "$@")" == "true" || "$(has_flag -verbose "$@")" == "true" ]]; then
+      script_logging_level="DEBUG"
+    else
+      if [[ "$(has_flag --loglevel "$@")" == "true" ]]; then
+        script_logging_level="$(get_flag "INFO" --loglevel "$@")"
+      else
+        script_logging_level="$(get_flag "INFO" --ll "$@")"
+      fi
+    fi
+    # Levels are DEBUG, INFO, WARN, ERROR
+    # Set the levels that will be logged
+    case "$script_logging_level" in
+      "DEBUG")
+        script_logging_levels=("DEBUG" "INFO" "WARN" "ERROR")
+        ;;
+      "INFO")
+        script_logging_levels=("INFO" "WARN" "ERROR")
+        ;;
+      "WARN")
+        script_logging_levels=("WARN" "ERROR")
+        ;;
+      "ERROR")
+        script_logging_levels=("ERROR")
+        ;;
+      "SILENT")
+        script_logging_levels=()
+        ;;
+      *)
+        script_logging_levels=("ERROR")
+        printf "Invalid log level $script_logging_level" | pipe_log "ERROR"
+        exit 1
+        ;;
+    esac
+}
 
 log() {
     local log_message=$1
     local log_priority=$2
-
-    #check if level exists
-    [[ ${levels[$log_priority]} ]] || return 1
-
-    #check if level is enough
-    (( ${levels[$log_priority]} < ${levels[$script_logging_level]} )) && return 2
-
-    #log here
-    printf "%s : $log_message\n" "$log_priority"
+    
+    if [[ " ${script_logging_levels[@]} " =~ " ${log_priority} " ]]; then
+      printf "$log_priority: $log_message\n" >&2
+    fi
 }
 
 pipe_log() {
@@ -625,12 +653,21 @@ pipe_log() {
   done
 }
 
-main() {
-  # Bailout to legacy if -legacy passed
+bailout_if_legacy() {
+  # Bailout to legacy if -legacy or -l passed
   if [[ "$(has_flag -legacy "$@")" == "true" ]]; then
     "$CAVE_PATH/cave-1.4.0.sh" $(remove_flag "-legacy" "$@")
-    exit
+    exit 1
   fi
+  if [[ "$(has_flag -l "$@")" == "true" ]]; then
+    "$CAVE_PATH/cave-1.4.0.sh" $(remove_flag "-l" "$@")
+    exit 1
+  fi
+}
+
+main() {
+  bailout_if_legacy "$@"
+  setup_log "$@"
   # Source the the CONFIG file
   source "${CAVE_PATH}/CONFIG"
   # If no command is passed default to the help command
@@ -639,11 +676,6 @@ main() {
   else
     local MAIN_COMMAND=$1
     shift
-  fi
-  if [[ "$(has_flag -v "$@")" == "true" ]]; then
-    script_logging_level="DEBUG"
-  else
-    script_logging_level="INFO"
   fi
   case $MAIN_COMMAND in
     help | --help | -h)

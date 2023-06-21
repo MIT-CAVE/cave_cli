@@ -93,6 +93,18 @@ check_docker() { # Validate docker is installed, running, and is correct version
   printf "Docker Check Passed!\n" | pipe_log "DEBUG"
 }
 
+dockerfile_help() { # Add additional Dockerfile help if no Dockerfile is found
+  if [ ! -f "Dockerfile" ]; then
+    printf "No Dockerfile found in current directory.\nIf you are using a legacy cave app (v0.0.0-v1.4.0):" | pipe_log "ERROR"
+    printf "    - You should run commands using legacy mode" | pipe_log "ERROR"
+    printf "      - EG: 'cave run -legacy'" | pipe_log "ERROR"
+    printf "      - Note: See 'cave help -legacy' for more information" | pipe_log "ERROR"
+    printf "    - You should upgrade your app to the latest version" | pipe_log "ERROR"
+    printf "      - EG: 'cave upgrade'" | pipe_log "ERROR"
+  fi
+
+}
+
 get_app() {
   app_dir=$(find_app_dir)
   if [ "${app_dir}" = "-1" ]; then
@@ -129,18 +141,20 @@ valid_app_dir() { # Checks if current directory is the an instance of the cave a
   # Check the folders
   for folder in cave_api cave_app cave_core; do
     if ! [ -d ${folder} ] ; then
-      printf "The folder '%s' is missing in the root project directory.\n" "$folder" | pipe_log "ERROR" >&2
+      printf "The folder '${folder}' is missing in the root project directory.\n" | pipe_log "ERROR" >&2
     fi
   done
   # Check the files
-  for file in .env manage.py requirements.txt; do
+  for file in .env manage.py requirements.txt Dockerfile; do
       if ! [ -f ${file} ]; then
-        printf "The file '%s' is missing in the root project directory.\n" "$file" | pipe_log "ERROR" >&2
+        printf "The file '${file}' is missing in the root project directory.\n" | pipe_log "ERROR" >&2
       fi
   done
+  dockerfile_help
   [[  -f .env && \
       -f manage.py && \
       -f requirements.txt && \
+      -f Dockerfile && \
       -d cave_api && \
       -d cave_app && \
       -d cave_core ]]

@@ -6,12 +6,12 @@ Core Commands:
                                 - Default: The latest stable version (default branch).
                               `-save-inputs`: flag (optional)
                                 - What: Stores all inputs to be the defaults for future `create`s
-                              EG: `cave create my_app --version 1.0.1 -save-inputs`
+                              EG: `cave create my_app --version 1.0.1 -save-inputs -legacy`
                              
   run | start [<ip:port>]   Runs the CAVE app in the current directory. 
                               `<ip:port>` (optional):
                                 - The ip and port to host the app with the format <ip address>:<port>
-                              EG: `cave run 192.168.1.1:8000`
+                              EG: `cave run 192.168.1.1:8000 -legacy`
 
 
 Peripheral Commands:
@@ -31,18 +31,18 @@ Peripheral Commands:
   test [-all]              Runs the given test python file located in /cave_api/tests/.
                               `-all`: flag (optional)
                                 - What: Trigger to run all files in /cave_api/tests/.
-                              EG: `cave test test_init.py`
-                              EG: `cave test -all`
+                              EG: `cave test test_init.py -legacy`
+                              EG: `cave test -all -legacy`
 
   upgrade [--version]       Upgrades the CAVE app in the current dicrectory.
                               `--version`: str (optional)
                                 - What: Used to specify a cave app version (git branch name).
                                 - Default: The latest stable version (default branch).
-                              EG: `cave upgrade --version 1.0.1`
+                              EG: `cave upgrade --version 1.0.1 -legacy`
 
   purge <app-path>          Removes the app in the specified directory, as well as removing
                              its associated database and database user.
-                              EG: `cave purge my_app/`
+                              EG: `cave purge my_app/ -legacy`
 
 
 Utility Commands:
@@ -53,8 +53,8 @@ Utility Commands:
                               `--port`: str (optional)
                                 - What: The port to kill.
                                 - Default: 8000
-                              EG: `cave kill`
-                              EG: `cave kill --port 8000`
+                              EG: `cave kill -legacy`
+                              EG: `cave kill --port 8000 -legacy`
 
   sync --url [--branch --include --exclude]
                             Merges files from the given repo (url) into the CAVE app in the
@@ -71,7 +71,7 @@ Utility Commands:
                                         included in the sync operation (`--include` takes precedent)
                                 - Note: If not excluded, a file is automatically included
                               EG: `cave sync --url git@github.com:mit-cave/cave_app_aws.git \
-                                   --exclude "'.git' '.gitignore' 'README.md'"`
+                                   --exclude "'.git' '.gitignore' 'README.md'" -legacy`
 
   uninstall                 Removes the CAVE CLI.
 
@@ -79,7 +79,7 @@ Utility Commands:
                               `--version`: str (optional)
                                 - What: Used to choose a specific CAVE CLI version (git branch)
                                 - Default: The latest stable version (default branch)
-                              EG: `cave update --version 1.0.1`
+                              EG: `cave update --version 1.0.1 -legacy`
                              
   version                   Prints the version of your installed CAVE CLI.
 

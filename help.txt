@@ -6,9 +6,9 @@ Core Commands:
                                 - Default: The latest stable version (default branch).
                               `-save-inputs`: flag (optional)
                                 - What: Stores all inputs to be the defaults for future `create`s
-                              EG: `cave create my_app --version 1.0.1 -save-inputs`
+                              EG: `cave create my_app --version 1.5.0 -save-inputs`
                              
-  run [<ip:port>]   Runs the CAVE app in the current directory. 
+  run | start [<ip:port>]   Runs the CAVE app in the current directory. 
                               `<ip:port>` (optional):
                                 - The ip and port to host the app with the format <ip address>:<port>
                               EG: `cave run 192.168.1.1:8000`
@@ -33,7 +33,7 @@ Peripheral Commands:
                               `--version`: str (optional)
                                 - What: Used to specify a cave app version (git branch name).
                                 - Default: The latest stable version (default branch).
-                              EG: `cave upgrade --version 1.0.1`
+                              EG: `cave upgrade --version 1.5.0`
 
   purge <app-path>          Removes the app in the specified directory, as well as removing
                              its associated database.
@@ -43,13 +43,25 @@ Peripheral Commands:
 Utility Commands:
   help                      Prints this help text.
 
+  interactive              Runs the app docker container and drops into `bash` for that container.
+                              - Note: If you use a different Dockerfile base image, it must have 
+                                      `bash` installed and globally accessable.
+                              - Note: Your current app is volume mounted into the container as `/app` 
+                                      so you can change files externally and get live updates.
+                              - Note: The webapp is not started with this command, but can be launched
+                                      with `/app/utils/run_dev_server.sh` while in interactive mode.
+                              EG: `cave interactive`
+
   list [-all]               Lists CAVE apps running in docker
                               `-all`: flag (optional)
-                                - What: Trigger to list all CAVE containers (django, postgres, nginx) 
-                                        running in docker
-                              EG: `cave list -all`
+                                - What: Trigger to list all running cave app containers (not
+                                        just the app names) with their full container names
+                                        - EG: my_app_django, my_app_postgres, my_app_nginx
+                                - Note: This flag is mostly only used for cave_cli development 
+                                        purposes. It is not recommended for general use.
+                              EG: `cave list`
 
-  kill                      Kills the app run from the current directory
+  kill [--app -all]         Kills the app run from the current directory
                              Used when a CAVE app wasn't properly shut down.
                               `--app`: str (optional)
                                 - What: The name of the app to kill
@@ -57,6 +69,7 @@ Utility Commands:
                               `-all`: flag (optional)
                                 - What: Kill all apps
                               EG: `cave kill --app my_app`
+                              EG: `cave kill -all`
 
   sync --url [--branch --include --exclude]
                             Merges files from the given repo (url) into the CAVE app in the
@@ -81,7 +94,7 @@ Utility Commands:
                               `--version`: str (optional)
                                 - What: Used to choose a specific CAVE CLI version (git branch)
                                 - Default: The latest stable version (default branch)
-                              EG: `cave update --version 1.0.1`
+                              EG: `cave update --version 1.5.0`
                              
   version                   Prints the version of your installed CAVE CLI.
 

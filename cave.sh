@@ -243,6 +243,15 @@ run_cave() { # Runs the cave app in the current directory
   docker rm --force "${app_name}_django" "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"
 }
 
+interactive_cave() { # Allows users to drop into the container in interactive mode
+  kill_cave -internal
+  build_image 2>&1 | pipe_log "DEBUG"
+  docker network create cave-net 2>&1 | pipe_log "DEBUG"
+  source .env
+  docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
+  docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" bash
+}
+
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will potentially update all files not in 'cave_api/' or '.env' and reset your database"
@@ -718,12 +727,19 @@ main() {
       check_docker
       purge_cave "$@"
     ;;
-    run)
+    run | start)
       # Requires being inside app_dir
       check_docker
       get_app
       # Starts all required containers for the app
       run_cave "$@"
+    ;;
+    interactive)
+      # Requires being inside app_dir
+      check_docker
+      get_app
+      # Starts all required containers for the app
+      interactive_cave "$@"
     ;;
     list)
       check_docker

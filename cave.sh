@@ -244,12 +244,7 @@ run_cave() { # Runs the cave app in the current directory
 }
 
 interactive_cave() { # Allows users to drop into the container in interactive mode
-  kill_cave -internal
-  build_image 2>&1 | pipe_log "DEBUG"
-  docker network create cave-net 2>&1 | pipe_log "DEBUG"
-  source .env
-  docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
-  docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" bash
+  docker exec -it "${app_name}_django" /bin/bash
 }
 
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/

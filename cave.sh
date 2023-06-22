@@ -15,6 +15,8 @@ readonly MIN_DOCKER_VERSION="23.0.6"
 # Update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 
+source "$CAVE_PATH/utils.sh"
+
 get_flag() {
     local default=$1
     shift
@@ -218,6 +220,14 @@ run_cave() { # Runs the cave app in the current directory
   source .env
   docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
 
+  server_command="/app/utils/run_server.sh"
+  if [[ "$(has_flag -interactive "$@")" == "true" || "$(has_flag -it "$@")" == "true" ]]; then
+    server_command="bash"
+  fi
+  if [ "$(has_flag --entrypoint "$@")" = "true" ]; then
+    server_command="$(get_flag "" "--entrypoint" "$@")"
+  fi
+
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
     export PORT OFFSET_OPEN IP
     IP=$(echo "$1" | perl -nle'print $& while m{([0-9]{1,3}\.)+([0-9]{1,3})}g')
@@ -225,7 +235,7 @@ run_cave() { # Runs the cave app in the current directory
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
     if [[ "$OPEN" = "1" ]]; then
       docker run -d --restart unless-stopped -p "$IP:$PORT:8000" --network cave-net --volume "$app_dir/utils/lan_hosting:/certs" --name "${app_name}_nginx" -e CAVE_HOST="${app_name}_django" --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
-      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" /app/utils/run_server.sh 2>&1 | pipe_log "INFO"
+      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" "$server_command" 2>&1
       docker rm --force "${app_name}_nginx" 2>&1 | pipe_log "DEBUG"
     else
       printf "The specified port is in use. Please try another." | pipe_log "ERROR"
@@ -237,14 +247,10 @@ run_cave() { # Runs the cave app in the current directory
       exit 1
     fi
 
-    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" /app/utils/run_server.sh 2>&1 | pipe_log "INFO"
+    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" "$server_command" 2>&1
   fi
   printf "Stopping Running Containers...\n" | pipe_log "DEBUG"
   docker rm --force "${app_name}_django" "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"
-}
-
-interactive_cave() { # Allows users to drop into the container in interactive mode
-  docker exec -it "${app_name}_django" /bin/bash
 }
 
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
@@ -617,60 +623,6 @@ update_cave() { # Updates the cave cli
   printf "CAVE CLI updated.\n" | pipe_log "INFO"
 }
 
-
-
-setup_log() {
-    if [[ "$(has_flag -v "$@")" == "true" || "$(has_flag -verbose "$@")" == "true" ]]; then
-      script_logging_level="DEBUG"
-    else
-      if [[ "$(has_flag --loglevel "$@")" == "true" ]]; then
-        script_logging_level="$(get_flag "INFO" --loglevel "$@")"
-      else
-        script_logging_level="$(get_flag "INFO" --ll "$@")"
-      fi
-    fi
-    # Levels are DEBUG, INFO, WARN, ERROR
-    # Set the levels that will be logged
-    case "$script_logging_level" in
-      "DEBUG")
-        script_logging_levels=("DEBUG" "INFO" "WARN" "ERROR")
-        ;;
-      "INFO")
-        script_logging_levels=("INFO" "WARN" "ERROR")
-        ;;
-      "WARN")
-        script_logging_levels=("WARN" "ERROR")
-        ;;
-      "ERROR")
-        script_logging_levels=("ERROR")
-        ;;
-      "SILENT")
-        script_logging_levels=()
-        ;;
-      *)
-        script_logging_levels=("ERROR")
-        printf "Invalid log level $script_logging_level" | pipe_log "ERROR"
-        exit 1
-        ;;
-    esac
-}
-
-log() {
-    local log_message=$1
-    local log_priority=$2
-    
-    if [[ " ${script_logging_levels[@]} " =~ " ${log_priority} " ]]; then
-      printf "$log_priority: $log_message\n" >&2
-    fi
-}
-
-pipe_log() {
-  IFS=''
-  while read -r line || [ -n "$line" ]; do
-    log "$line" "$1"
-  done
-}
-
 bailout_if_legacy() {
   # Bailout to legacy if -legacy or -l passed
   if [[ "$(has_flag -legacy "$@")" == "true" ]]; then
@@ -728,13 +680,6 @@ main() {
       get_app
       # Starts all required containers for the app
       run_cave "$@"
-    ;;
-    interactive)
-      # Requires being inside app_dir
-      check_docker
-      get_app
-      # Starts all required containers for the app
-      interactive_cave "$@"
     ;;
     list)
       check_docker

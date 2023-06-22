@@ -1,5 +1,46 @@
-#!/bin/bash
+#!/bin/bask
 # Shell utils shared by cave projects
+
+get_flag() {
+    local default=$1
+    shift
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            echo "$2"
+            return
+        fi
+        shift
+    done
+    echo "$default"
+}
+
+has_flag() {
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            echo "true"
+            return
+        fi
+        shift
+    done
+    echo "false"
+}
+
+remove_flag() {
+    local flag=$1
+    shift
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "$flag" ]; then
+            shift
+        else
+            echo "$1"
+            shift
+        fi
+    done
+}
 
 setup_log() {
     if [[ "$(has_flag -v "$@")" == "true" || "$(has_flag -verbose "$@")" == "true" ]]; then
@@ -52,3 +93,5 @@ pipe_log() {
     log "$line" "$1"
   done
 }
+
+setup_log "$@"

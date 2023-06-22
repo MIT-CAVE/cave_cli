@@ -15,49 +15,6 @@ readonly MIN_DOCKER_VERSION="23.0.6"
 # Update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 
-source "$CAVE_PATH/utils.sh"
-
-get_flag() {
-    local default=$1
-    shift
-    local flag=$1
-    shift
-    while [ $# -gt 0 ]; do
-        if [ "$1" = "$flag" ]; then
-            echo "$2"
-            return
-        fi
-        shift
-    done
-    echo "$default"
-}
-
-has_flag() {
-    local flag=$1
-    shift
-    while [ $# -gt 0 ]; do
-        if [ "$1" = "$flag" ]; then
-            echo "true"
-            return
-        fi
-        shift
-    done
-    echo "false"
-}
-
-remove_flag() {
-    local flag=$1
-    shift
-    while [ $# -gt 0 ]; do
-        if [ "$1" = "$flag" ]; then
-            shift
-        else
-            echo "$1"
-            shift
-        fi
-    done
-}
-
 printf_header() {
   printf "%s\n" $CHAR_LINE | pipe_log "INFO"
   printf "%s\n" "$@" | pipe_log "INFO"
@@ -220,12 +177,23 @@ run_cave() { # Runs the cave app in the current directory
   source .env
   docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
 
-  server_command="/app/utils/run_server.sh"
+  server_command=("/app/utils/run_server.sh")
   if [[ "$(has_flag -interactive "$@")" == "true" || "$(has_flag -it "$@")" == "true" ]]; then
-    server_command="bash"
-  fi
-  if [ "$(has_flag --entrypoint "$@")" = "true" ]; then
-    server_command="$(get_flag "" "--entrypoint" "$@")"
+    server_command=("bash")
+  else
+    if [[ "$(has_flag -v "$@")" == "true" || "$(has_flag -verbose "$@")" == "true" ]]; then
+      server_command+=("-v")
+    else
+      if [[ "$(has_flag --loglevel "$@")" == "true" ]]; then
+        server_command+=("--loglevel" "$(get_flag "INFO" --loglevel "$@")")
+      fi
+      if [[ "$(has_flag --ll "$@")" == "true" ]]; then
+        server_command+=("--ll" "$(get_flag "INFO" --ll "$@")")
+      fi
+    fi
+    if [ "$(has_flag --entrypoint "$@")" = "true" ]; then
+      server_command=("$(get_flag "" "--entrypoint" "$@")")
+    fi
   fi
 
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
@@ -235,7 +203,7 @@ run_cave() { # Runs the cave app in the current directory
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
     if [[ "$OPEN" = "1" ]]; then
       docker run -d --restart unless-stopped -p "$IP:$PORT:8000" --network cave-net --volume "$app_dir/utils/lan_hosting:/certs" --name "${app_name}_nginx" -e CAVE_HOST="${app_name}_django" --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
-      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" "$server_command" 2>&1
+      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" "${server_command[@]}" 2>&1
       docker rm --force "${app_name}_nginx" 2>&1 | pipe_log "DEBUG"
     else
       printf "The specified port is in use. Please try another." | pipe_log "ERROR"
@@ -247,7 +215,7 @@ run_cave() { # Runs the cave app in the current directory
       exit 1
     fi
 
-    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" "$server_command" 2>&1
+    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" "$server_command" 2>&1
   fi
   printf "Stopping Running Containers...\n" | pipe_log "DEBUG"
   docker rm --force "${app_name}_django" "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"
@@ -636,8 +604,10 @@ bailout_if_legacy() {
 }
 
 main() {
+  source "$CAVE_PATH/utils.sh"
+
   bailout_if_legacy "$@"
-  setup_log "$@"
+
   # Source the the CONFIG file
   source "${CAVE_PATH}/CONFIG"
   # If no command is passed default to the help command

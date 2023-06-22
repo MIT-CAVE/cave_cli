@@ -225,7 +225,7 @@ run_cave() { # Runs the cave app in the current directory
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
     if [[ "$OPEN" = "1" ]]; then
       docker run -d --restart unless-stopped -p "$IP:$PORT:8000" --network cave-net --volume "$app_dir/utils/lan_hosting:/certs" --name "${app_name}_nginx" -e CAVE_HOST="${app_name}_django" --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
-      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
+      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" /app/utils/run_server.sh 2>&1 | pipe_log "INFO"
       docker rm --force "${app_name}_nginx" 2>&1 | pipe_log "DEBUG"
     else
       printf "The specified port is in use. Please try another." | pipe_log "ERROR"
@@ -237,9 +237,9 @@ run_cave() { # Runs the cave app in the current directory
       exit 1
     fi
 
-    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" /app/utils/run_dev_server.sh 2>&1 | pipe_log "INFO"
+    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" /app/utils/run_server.sh 2>&1 | pipe_log "INFO"
   fi
-
+  printf "Stopping Running Containers...\n" | pipe_log "DEBUG"
   docker rm --force "${app_name}_django" "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"
 }
 

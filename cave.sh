@@ -162,7 +162,7 @@ print_version(){
 }
 
 build_image() {
-  printf "Building docker image... (may take a minute)\n" | pipe_log "INFO"
+  printf "Getting Docker setup... (may take a minute)\n" | pipe_log "INFO"
   BUILDKIT_PROGRESS=plain docker build . --tag "cave-app:${app_name}" 2>&1 | pipe_log "DEBUG"
 }
 

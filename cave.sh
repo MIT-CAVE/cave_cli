@@ -215,7 +215,7 @@ run_cave() { # Runs the cave app in the current directory
       exit 1
     fi
 
-    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" "$server_command" 2>&1
+    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" -e DATABASE_HOST="${app_name}_postgres" "cave-app:${app_name}" "${server_command[@]}" 2>&1
   fi
   printf "Stopping Running Containers...\n" | pipe_log "DEBUG"
   docker rm --force "${app_name}_django" "${app_name}_postgres" 2>&1 | pipe_log "DEBUG"

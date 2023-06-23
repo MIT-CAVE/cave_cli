@@ -16,9 +16,9 @@ readonly MIN_DOCKER_VERSION="23.0.6"
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 
 printf_header() {
-  printf "%s\n" $CHAR_LINE | pipe_log "INFO"
-  printf "%s\n" "$@" | pipe_log "INFO"
-  printf "%s\n" $CHAR_LINE | pipe_log "INFO"
+  printf "$CHAR_LINE\n" | pipe_log "INFO"
+  printf "%s" "$@" | pipe_log "INFO"
+  printf "$CHAR_LINE\n" | pipe_log "INFO"
 }
 
 is_dir_empty() {
@@ -170,31 +170,19 @@ run_cave() { # Runs the cave app in the current directory
   kill_cave -internal
   build_image
 
-  printf_header "Starting CAVE App:"
+  if [[ "$(has_flag -interactive "$@")" == "true" || "$(has_flag -it "$@")" == "true" ]]; then
+    server_command=("bash")
+    printf_header "Starting CAVE App: (Interactive)"
+  else
+    entrypoint="$(get_flag "./utils/run_server.sh" "--entrypoint" "$@")"
+    printf_header "Starting CAVE App: ($entrypoint)"
+    server_command=("$entrypoint" "$@")
+  fi
 
   docker network create cave-net 2>&1 | pipe_log "DEBUG"
 
   source .env
   docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_postgres" -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" -e POSTGRES_USER="$DATABASE_USER" -e POSTGRES_DB="$DATABASE_NAME" "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
-
-  server_command=("/app/utils/run_server.sh")
-  if [[ "$(has_flag -interactive "$@")" == "true" || "$(has_flag -it "$@")" == "true" ]]; then
-    server_command=("bash")
-  else
-    if [[ "$(has_flag -v "$@")" == "true" || "$(has_flag -verbose "$@")" == "true" ]]; then
-      server_command+=("-v")
-    else
-      if [[ "$(has_flag --loglevel "$@")" == "true" ]]; then
-        server_command+=("--loglevel" "$(get_flag "INFO" --loglevel "$@")")
-      fi
-      if [[ "$(has_flag --ll "$@")" == "true" ]]; then
-        server_command+=("--ll" "$(get_flag "INFO" --ll "$@")")
-      fi
-    fi
-    if [ "$(has_flag --entrypoint "$@")" = "true" ]; then
-      server_command=("$(get_flag "" "--entrypoint" "$@")")
-    fi
-  fi
 
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
     export PORT OFFSET_OPEN IP
@@ -421,7 +409,7 @@ sync_cave() { # Sync files from another repo to the selected cave app
   fi
 
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
-    confirm_action "This will reset your virtual environment and database. It will also potentially update your files"
+    confirm_action "This will reset your docker containers and database. It will also potentially update your local files"
   fi
   printf_header "Sync:"
 
@@ -511,22 +499,22 @@ kill_cave_app() { # Kill an app
 }
 
 reset_db() {
-  kill_cave
+  if [[ "$(has_flag -y "$@")" != "true" ]]; then
+    confirm_action "This will reset your database"
+  fi
+  printf "Removing existing Docker DB..." 2>&1 | pipe_log "INFO"
   docker volume rm "${app_name}_pg_volume" 2>&1 | pipe_log "DEBUG"
-  printf "DB Reset\n" | pipe_log "INFO"
+  if [ "$(has_flag --entrypoint "$@")" = "true" ]; then
+    run_cave "$@"
+  else
+    run_cave --entrypoint "./utils/reset_db.sh" "$@"
+  fi
+  printf "DB reset finished\n" | pipe_log "INFO"
 }
 
 prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
-  build_image
-
-  printf "Prettifying cave_api..." | pipe_log "INFO"
-  docker run --rm --volume "$app_dir:/app" "cave-app:${app_name}" /app/utils/api_prettify.sh 2>&1 | pipe_log "DEBUG"
-  printf "Done\n" | pipe_log "INFO"
-  if [ "$(has_flag -all "$@")" = "true" ]; then
-    printf "Prettifying everything else..." | pipe_log "INFO"
-    docker run --rm --volume "$app_dir:/app" "cave-app:${app_name}" /app/utils/prettify.sh 2>&1 | pipe_log "DEBUG"
-    printf "Done\n" | pipe_log "INFO"
-  fi
+  printf "Prettifying cave_api...\n" | pipe_log "INFO"
+  run_cave --entrypoint ./utils/prettify.sh "$@"
 }
 
 test_cave() { # Run given file found in /cave_api/tests/
@@ -563,7 +551,7 @@ purge_cave() { # Removes cave app in specified dir and db/db user
     confirm_action "This will permanently remove all data associated with your CAVE App (${app_name})"
   fi
   cd "$app_name" || exit 1
-  reset_db
+  reset_db -y
 
   # Delete docker image
   docker rmi "cave-app:$app_name" | pipe_log "DEBUG"
@@ -667,7 +655,7 @@ main() {
       get_app
       # Runs kill, then
       # Removes the volume for the db
-      reset_db
+      reset_db "$@"
     ;;
     upgrade)
       # Requires being inside app_dir

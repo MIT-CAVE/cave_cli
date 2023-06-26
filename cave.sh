@@ -320,13 +320,6 @@ env_create() { # creates .env file for create_cave
   newenv=$(awk "NR==${line} {print \"DATABASE_PASSWORD='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
   key="$1_db"
-  line=$(grep -n --colour=auto "DATABASE_NAME" .env | cut -d: -f1)
-  newenv=$(awk "NR==${line} {print \"DATABASE_NAME='${key}'\"; next} {print}" .env)
-  echo "$newenv" > .env
-  key="$1_db_user"
-  line=$(grep -n --colour=auto "DATABASE_USER" .env | cut -d: -f1)
-  newenv=$(awk "NR==${line} {print \"DATABASE_USER='${key}'\"; next} {print}" .env)
-  echo "$newenv" > .env
 
   # Save inputs
   if [ "${save_inputs}" = "true" ]; then

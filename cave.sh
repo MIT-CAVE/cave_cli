@@ -14,6 +14,27 @@ readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
 readonly MIN_DOCKER_VERSION="23.0.6"
 # Update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
+readonly CURRENT_ENV_VARIABLES=(
+  "DATABASE_COMMAND"
+  "DATABASE_IMAGE"
+  "DATABASE_NAME"
+  "DATABASE_PASSWORD"
+  "DATABASE_USER"
+  "DJANGO_ADMIN_EMAIL"
+  "DJANGO_ADMIN_FIRST_NAME"
+  "DJANGO_ADMIN_LAST_NAME"
+  "DJANGO_ADMIN_PASSWORD"
+  "DJANGO_ADMIN_USERNAME"
+  "MAPBOX_TOKEN"
+  "SECRET_KEY"
+  "STATIC_APP_URL"
+  "STATIC_APP_URL_PATH"
+  "USE_LOGGING"
+)
+readonly RETIRED_ENV_VARIABLES=(
+  "DATABASE_HOST"
+  "DATABASE_PORT"
+)
 
 printf_header() {
   printf "$CHAR_LINE\n" | pipe_log "INFO"
@@ -85,29 +106,41 @@ valid_app_name() {
 
 valid_app_dir() { # Checks if current directory is the an instance of the cave app
   # Check to see if this is a cave app folder with manage.py and cave_core
+  local failed=false
   if ! [[ -f manage.py && -d cave_core ]]; then
+    failed=true
     return 1
   fi
   # Check the folders
   for folder in cave_api cave_app cave_core; do
     if ! [ -d ${folder} ] ; then
       printf "The folder '${folder}' is missing in the root project directory.\n" | pipe_log "ERROR" >&2
+      failed=true
     fi
   done
   # Check the files
   for file in .env manage.py requirements.txt Dockerfile; do
       if ! [ -f ${file} ]; then
         printf "The file '${file}' is missing in the root project directory.\n" | pipe_log "ERROR" >&2
+        failed=true
       fi
   done
+  # check the .env file has appropriate variables
+  source .env
+  for var in "${CURRENT_ENV_VARIABLES[@]}"; do
+    if [ -z "${!var+x}" ]; then
+      printf "The env variable '%s' is missing from the '.env' file.\n" "$var" | pipe_log "ERROR" >&2
+      failed=true
+    fi
+  done
+  for var in "${RETIRED_ENV_VARIABLES[@]}"; do
+    if [ -n "${!var+x}" ]; then
+      printf "The env variable '%s' is retired and should be removed from the '.env' file.\n" "$var" | pipe_log "ERROR" >&2
+      failed=true
+    fi
+  done
   dockerfile_help
-  [[  -f .env && \
-      -f manage.py && \
-      -f requirements.txt && \
-      -f Dockerfile && \
-      -d cave_api && \
-      -d cave_app && \
-      -d cave_core ]]
+  [ $failed = false ]
 }
 
 find_app_dir() { # Finds path to parent app folder if present

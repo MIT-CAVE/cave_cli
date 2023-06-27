@@ -16,6 +16,7 @@ readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
 readonly MIN_PYTHON_VERSION="3.10.0"
 # update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
+readonly CHARS_LINE="============================"
 
 get_flag() {
     local default=$1
@@ -82,7 +83,24 @@ validate_version() {
 
 }
 
+validate_install() {
+  local PROGRAM_NAME="$1"
+  local EXIT_BOOL="$2"
+  local ERROR_STRING="$3"
+  if [ "$($PROGRAM_NAME --version)" = "" ]; then
+    err "${PROGRAM_NAME} is not installed. ${ERROR_STRING}"
+    if [ "${EXIT_BOOL}" = "1" ]; then
+      exit 1
+    fi
+  fi
+}
+
 check_python() { # Validate python is installed and is correct version
+  if [ -z "${PYTHON3_BIN+x}" ]; then
+    printf "Python with cave cli not set up... Setting up now"
+    choose_python
+    source "${CAVE_PATH}/CONFIG"
+  fi
   install_python="\nPlease install python version ${MIN_PYTHON_VERSION} or greater. \nFor more information see: 'https://www.python.org/downloads/'"
   CURRENT_PYTHON_VERSION=$($PYTHON3_BIN --version | sed 's/Python //')
   validate_version "python" "1" "$install_python" "$MIN_PYTHON_VERSION" "$CURRENT_PYTHON_VERSION"
@@ -91,6 +109,30 @@ check_python() { # Validate python is installed and is correct version
     exit 1
   fi
   printf "Python Check Passed!\n"  2>&1 | print_if_verbose
+}
+
+check_postgres() { # Validate postgress is installed
+  local install_post="\nPlease install postgreSQL. \nFor more information see: 'https://www.postgresql.org/download/'"
+  validate_install "psql" "1" "$install_post"
+}
+
+choose_python() { # Choose a python bin and check that it is valid
+  local path=""
+  local default=""
+  for python_version in {'3.11','3.10'}; do
+    local default=$(which python$python_version)
+    if [ ! "${default}" = "" ]; then
+      break
+    fi
+  done
+  printf "${CHARS_LINE}\n"
+  local check="Choose default python runtime:"
+  #Ask for python path until valid version is given
+  while [[ ! "${check}" = "" ]]; do
+    printf "$check\n"
+    read -r -p "Please enter the path to your python3.10+ binary. Leave blank to use the default(${default}): " path
+  done
+  printf "PYTHON3_BIN=\"${path}\"\n\n\n" > "${CAVE_PATH}/CONFIG"
 }
 
 valid_app_name() {
@@ -178,6 +220,7 @@ is_postgres_running() {
 }
 
 ensure_postgres_running() {
+  check_postgres
   if ! is_postgres_running; then
     printf "Postgres is not currently running. Attempting to start it..."
     start_postgres

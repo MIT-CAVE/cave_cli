@@ -21,15 +21,6 @@ printf_header() {
   printf "$CHAR_LINE\n" | pipe_log "INFO"
 }
 
-is_dir_empty() {
-    local dir=$1
-    if [ "$(ls -A "$dir")" ]; then
-        echo "false"
-    else
-        echo "true"
-    fi
-}
-
 validate_version() {
   local PROGRAM_NAME="$1"
   local EXIT_BOOL="$2"
@@ -241,7 +232,6 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
 }
 
 env_create() { # creates .env file for create_cave
-  local save_inputs=$2
   rm .env 2>&1 | pipe_log "DEBUG"
   cp example.env .env 2>&1 | pipe_log "DEBUG"
   local key line newenv
@@ -262,8 +252,6 @@ env_create() { # creates .env file for create_cave
   fi
   if [ "${key}" = "" ]; then
     key="${MAPBOX_TOKEN}"
-  elif [ "${save_inputs}" = "true" ]; then
-    MAPBOX_TOKEN="${key}"
   fi
   line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
@@ -273,8 +261,6 @@ env_create() { # creates .env file for create_cave
   read -r -p "Please input an admin email. Leave blank for default(${ADMIN_EMAIL}): " key
   if [ "${key}" = "" ]; then
     key="${ADMIN_EMAIL}"
-  elif [ "${save_inputs}" = "true" ]; then
-    ADMIN_EMAIL="${key}"
   fi
   line=$(grep -n --colour=auto "DJANGO_ADMIN_EMAIL" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DJANGO_ADMIN_EMAIL='${key}'\"; next} {print}" .env)
@@ -321,14 +307,6 @@ env_create() { # creates .env file for create_cave
   echo "$newenv" > .env
   key="$1_db"
 
-  # Save inputs
-  if [ "${save_inputs}" = "true" ]; then
-    # Write MAPBOX_TOKEN to config line 2 and ADMIN_EMAIL to config line 3
-    local inputs="MAPBOX_TOKEN='${MAPBOX_TOKEN}'\nADMIN_EMAIL='${ADMIN_EMAIL}'\n"
-    local newConfig
-    newConfig=$(awk "NR==2 {print \"${inputs}\"; next} NR==3 {next} {print}" "${CAVE_PATH}/CONFIG")
-    echo "$newConfig" > "${CAVE_PATH}/CONFIG"
-  fi
   printf "\n"
 }
 
@@ -522,7 +500,7 @@ reset_db() {
   printf "DB reset finished\n" | pipe_log "INFO"
 }
 
-prettify_cave() { # Run api_prettify.sh and optionally prefftify.sh
+prettify_cave() { # Run api_prettify.sh and optionally prettify.sh
   printf "Prettifying cave_api...\n" | pipe_log "INFO"
   run_cave --entrypoint ./utils/prettify.sh "$@"
 }

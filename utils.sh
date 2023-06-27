@@ -42,6 +42,15 @@ remove_flag() {
     done
 }
 
+is_dir_empty() {
+    local dir=$1
+    if [ "$(ls -A "$dir")" ]; then
+        echo "false"
+    else
+        echo "true"
+    fi
+}
+
 setup_log() {
     if [[ "$(has_flag -v "$@")" == "true" || "$(has_flag -verbose "$@")" == "true" ]]; then
       script_logging_level="DEBUG"

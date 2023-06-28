@@ -376,7 +376,7 @@ create_cave() { # Create a cave app instance in folder $1
   # Create a fake .env file to allow installation to proceed
   touch .env
 
-  get_app
+  app_name=$1
   build_image
 
   # Setup .env file

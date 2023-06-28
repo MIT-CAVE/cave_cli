@@ -196,10 +196,10 @@ run_cave() { # Runs the cave app in the current directory
 
   if [[ "$(has_flag -interactive "$@")" == "true" || "$(has_flag -it "$@")" == "true" ]]; then
     server_command=("bash")
-    printf_header "Starting CAVE App: (Interactive)"
+    printf_header "CAVE App: (Interactive)"
   else
     entrypoint="$(get_flag "./utils/run_server.sh" "--entrypoint" "$@")"
-    printf_header "Starting CAVE App: ($entrypoint)"
+    printf_header "CAVE App: ($entrypoint)"
     server_command=("$entrypoint" "$@")
   fi
 

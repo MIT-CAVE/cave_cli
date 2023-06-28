@@ -617,8 +617,6 @@ main() {
 
   bailout_if_legacy "$@"
 
-  # Source the the CONFIG file
-  source "${CAVE_PATH}/CONFIG"
   # If no command is passed default to the help command
   if [[ $# -lt 1 ]]; then
     local MAIN_COMMAND="help"

@@ -13,6 +13,8 @@ readonly HTTPS_CLONE_URL="-b ${CAVE_CLI_VERSION} https://github.com/MIT-CAVE/cav
 readonly SSH_CLONE_URL="-b ${CAVE_CLI_VERSION} git@github.com:MIT-CAVE/cave_cli.git"
 readonly MIN_DOCKER_VERSION="23.0.6"
 
+VERBOSE='false'
+
 get_flag() {
     local default=$1
     shift
@@ -51,18 +53,11 @@ is_dir_empty() {
 }
 
 print_if_verbose () {
-  if [ -n "${1}" ]; then 
-      IN="${1}"
-      if [ "$VERBOSE" = 'true' ]; then
-        printf "${IN}\n"
-      fi
-  else
-      while read IN; do
-          if [ "$VERBOSE" = 'true' ]; then
-            printf "${IN}\n"
-          fi
-      done
-  fi
+  while read IN; do
+    if [ "$VERBOSE" = 'true' ]; then
+      printf "%s\n" "$IN"
+    fi
+  done
 }
 
 err() { # Display an error message
@@ -130,7 +125,7 @@ check_previous_installation() { # Check to make sure previous installations are 
     case ${input} in
       [yY][eE][sS] | [yY])
         printf "Uninstalling old installation..."
-        rm -rf "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose "$@"
+        rm -rf "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
         printf "Done\n"
         ;;
       [nN][oO] | [nN] | "")
@@ -148,7 +143,7 @@ check_previous_installation() { # Check to make sure previous installations are 
 install_new() { # Copy the needed files locally
   check_previous_installation "$@"
   printf "Creating application folder at '${CAVE_CLI_PATH}'..."
-  mkdir -p "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose "$@"
+  mkdir -p "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
   printf "Done\n"
   printf "Cloning ${CAVE_CLI_SHORT_NAME} from GitHub..."
   if [[ "$(has_flag "-dev" "$@")" = "true" ]]; then
@@ -156,10 +151,10 @@ install_new() { # Copy the needed files locally
   else
     CLONE_URL="$HTTPS_CLONE_URL"
   fi
-  git clone $CLONE_URL "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose "$@"
+  git clone --progress $CLONE_URL "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
   if [[ "$(is_dir_empty "${CAVE_CLI_PATH}")" = 'true' ]]; then
     printf "Failed!\nEnsure you have access rights to the repository: ${CLONE_URL}.\n"
-    rm -rf "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose "$@"
+    rm -rf "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose
     exit 1
   fi
   printf "Done\n"
@@ -167,7 +162,7 @@ install_new() { # Copy the needed files locally
 
 add_to_path() { # Add the cli to a globally accessable path
   printf "Making '${CAVE_CLI_COMMAND}' globally accessable: \nCreating link from '${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh' as '${BIN_DIR}/${CAVE_CLI_COMMAND}' (sudo required)..."
-  sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}" 2>&1 | print_if_verbose "$@"
+  sudo ln -sf "${CAVE_CLI_PATH}/${CAVE_CLI_COMMAND}.sh" "${BIN_DIR}/${CAVE_CLI_COMMAND}" 2>&1 | print_if_verbose
   printf "Done\n"
 }
 

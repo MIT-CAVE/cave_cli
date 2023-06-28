@@ -151,7 +151,7 @@ install_new() { # Copy the needed files locally
   mkdir -p "${CAVE_CLI_PATH}" 2>&1 | print_if_verbose "$@"
   printf "Done\n"
   printf "Cloning ${CAVE_CLI_SHORT_NAME} from GitHub..."
-  if [[ "$(has_flag "--dev" "$@")" = "true" ]]; then
+  if [[ "$(has_flag "-dev" "$@")" = "true" ]]; then
     CLONE_URL="$SSH_CLONE_URL"
   else
     CLONE_URL="$HTTPS_CLONE_URL"
@@ -177,7 +177,7 @@ main() {
   check_git
   check_docker
   install_new "$@"
-  add_to_path
+  add_to_path "$@"
   printf "${CHARS_LINE}\n"
   printf "Installation Complete.\n"
   printf "To get started, run:\n\n${CAVE_CLI_COMMAND} --help\n\n"

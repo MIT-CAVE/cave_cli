@@ -1,4 +1,4 @@
-#!/bin/bask
+#!/bin/bash
 # Shell utils shared by cave projects
 
 get_flag() {

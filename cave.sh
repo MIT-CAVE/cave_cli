@@ -186,12 +186,12 @@ print_version(){
 }
 
 build_image() {
-  printf "Getting Docker setup... (may take a minute)\n" | pipe_log "INFO"
-  BUILDKIT_PROGRESS=plain docker build . --tag "cave-app:${app_name}" 2>&1 | pipe_log "DEBUG"
+  remove_docker_containers
+  printf "Getting Docker setup... (this may take a while)\n" | pipe_log "INFO"
+  docker build . --tag "cave-app:${app_name}" 2>&1 | pipe_log "DEBUG"
 }
 
 run_cave() { # Runs the cave app in the current directory
-  kill_cave -internal
   build_image
 
   if [[ "$(has_flag -interactive "$@")" == "true" || "$(has_flag -it "$@")" == "true" ]]; then
@@ -227,7 +227,6 @@ run_cave() { # Runs the cave app in the current directory
         -e DATABASE_NAME="${app_name}_name"\
         -e DATABASE_PORT=5432 \
         "cave-app:${app_name}" "${server_command[@]}" 2>&1
-      docker rm --force "${app_name}_nginx" 2>&1 | pipe_log "DEBUG"
     else
       printf "The specified port is in use. Please try another." | pipe_log "ERROR"
       exit 1
@@ -237,7 +236,6 @@ run_cave() { # Runs the cave app in the current directory
       printf "Port 8000 is in use. Please try another." | pipe_log "ERROR"
       exit 1
     fi
-
     docker run -it -p 8000:8000 --network cave-net:${app_name} --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" \
       -e DATABASE_HOST="${app_name}_db_host" \
       -e DATABASE_USER="${app_name}_user" \
@@ -247,7 +245,7 @@ run_cave() { # Runs the cave app in the current directory
       "cave-app:${app_name}" "${server_command[@]}" 2>&1
   fi
   printf "Stopping Running Containers...\n" | pipe_log "DEBUG"
-  docker rm --force "${app_name}_django" "${app_name}_db_host" 2>&1 | pipe_log "DEBUG"
+  remove_docker_containers
   docker network rm cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
 }
 
@@ -269,6 +267,7 @@ env_create() { # creates .env file for create_cave
   rm .env 2>&1 | pipe_log "DEBUG"
   cp example.env .env 2>&1 | pipe_log "DEBUG"
   local key line newenv
+  build_image
   key=$(docker run --rm "cave-app:${app_name}" python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
   line=$(grep -n --colour=auto "SECRET_KEY" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"SECRET_KEY='${key}'\"; next} {print}" .env)
@@ -347,6 +346,8 @@ env_create() { # creates .env file for create_cave
 create_cave() { # Create a cave app instance in folder $1
   local valid CLONE_URL
   valid=$(valid_app_name "$1")
+  app_name=$1
+  app_dir=$PWD/$1
 
   if [[ ! "${valid}" = "" ]]; then
     printf "%s\n" "$valid" | pipe_log "ERROR"
@@ -374,17 +375,18 @@ create_cave() { # Create a cave app instance in folder $1
 
   # cd into the created app
   cd "$1" || exit 1
+
   # Create a fake .env file to allow installation to proceed
   touch .env
-
-  app_name=$1
-  build_image
 
   # Setup .env file
   env_create "$1" "$(has_flag -save-inputs "$@")"
 
+  # Reset the db
+  reset_db -y
+
   # Prep git repo
-  printf_header "Version Control:"
+  printf_header "Version Control:" | pipe_log "INFO"
   printf "Configuring git repository..." | pipe_log "INFO"
   rm -rf .git
   git init 2>&1 | pipe_log "DEBUG"
@@ -397,7 +399,8 @@ create_cave() { # Create a cave app instance in folder $1
   git commit -m "Initialize CAVE App" 2>&1 | pipe_log "DEBUG"
   git branch -M main 2>&1 | pipe_log "DEBUG"
   printf "Done.\n" | pipe_log "INFO"
-  printf_header "App Creation Status:"
+
+  printf_header "App Creation Status:" | pipe_log "INFO"
   printf "App '%s' created successfully!\n" "$1" | pipe_log "INFO"
   printf "Created variables and addtional configuration options are availible in %s/.env\n" "$1" | pipe_log "INFO"
 }
@@ -492,45 +495,42 @@ list_cave() {
   fi
 }
 
+remove_docker_pg_volume() {
+  printf "Removing Docker DB Volume for App (${app_name})..." 2>&1 | pipe_log "INFO"
+  docker volume rm "${app_name}_pg_volume" 2>&1 | pipe_log "DEBUG"
+}
+
 kill_cave() {
   if [ "$(has_flag -all "$@")" = "true" ]; then
-    for app in $(get_running_apps) ; do
-      kill_cave_app --app "$app"
+    for app_name in $(get_running_apps) ; do
+      remove_docker_containers
+      printf "Cave app ${app_name} killed\n" | pipe_log "INFO"
     done
   else
-    kill_cave_app "$@"
+    get_app
+    remove_docker_containers
+    printf "Cave app ${app_name} killed\n" | pipe_log "INFO"
   fi
 }
 
-kill_cave_app() { # Kill an app
-  if [ "$(has_flag --app "$@")" = "true" ]; then
-    local BRANCH_STRING
-    app_name="$(get_flag "" "--app" "$@")"
-  else
-    get_app
-  fi
-
+remove_docker_containers() {
+  printf "Killing Running App (${app_name})..." 2>&1 | pipe_log "DEBUG"
   docker rm --force "${app_name}_django" "${app_name}_nginx" "${app_name}_db_host" 2>&1 | pipe_log "DEBUG"
-  # If -internal flag is set (EG: fired from cave run), log at DEBUG level instead of INFO
-  if [ "$(has_flag -internal "$@")" = "true" ]; then
-    LEVEL="DEBUG"
-  else
-    LEVEL="INFO"
-  fi
-  printf "Cave app %s killed\n" "$app_name" | pipe_log $LEVEL
+  docker network rm "${app_name}_network" 2>&1 | pipe_log "DEBUG"
+}
+
+remove_docker_images() {
+  printf "Removing Docker Images for App (${app_name})..." 2>&1 | pipe_log "INFO"
+  docker rmi "cave-app:$app_name" | pipe_log "DEBUG"
 }
 
 reset_db() {
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will reset your database"
   fi
-  printf "Removing existing Docker DB..." 2>&1 | pipe_log "INFO"
-  docker volume rm "${app_name}_pg_volume" 2>&1 | pipe_log "DEBUG"
-  if [ "$(has_flag --entrypoint "$@")" = "true" ]; then
-    run_cave "$@"
-  else
-    run_cave --entrypoint "./utils/reset_db.sh" "$@"
-  fi
+  remove_docker_containers
+  remove_docker_pg_volume
+  run_cave --entrypoint "./utils/reset_db.sh" "$@"
   printf "DB reset finished\n" | pipe_log "INFO"
 }
 
@@ -540,24 +540,8 @@ prettify_cave() { # Run api_prettify.sh and optionally prettify.sh
 }
 
 test_cave() { # Run given file found in /cave_api/tests/
-  # Check directory and files
-  ALL_FLAG=$(has_flag -all "$@")
-  if [[ ! -f "cave_api/tests/$1" && "${ALL_FLAG}" != "true" ]]; then
-    printf "Test %s not found. Ensure you entered a valid test name.\n" "$1" | pipe_log "ERROR"
-    printf "Tests available in 'cave_api/tests/' include \n %s\n" "$(ls cave_api/tests/)" | pipe_log "ERROR"
-    exit 1
-  fi
-
-  build_image
-
-  # Run given test in docker
-  if [ "${ALL_FLAG}" != "true" ]; then
-    docker run --rm --volume "$app_dir:/app" "cave-app:${app_name}" python "/app/cave_api/tests/$1" 2>&1 | pipe_log "INFO"
-  else
-    for f in cave_api/tests/*.py; do
-      docker run --rm --volume "$app_dir:/app" "cave-app:${app_name}" python "/app/$f" 2>&1 | pipe_log "INFO"
-    done
-  fi
+  printf "Testing cave_api...\n" | pipe_log "INFO"
+  run_cave --entrypoint ./utils/run_test.sh "$@"
 }
 
 purge_cave() { # Removes cave app in specified dir and db/db user
@@ -573,10 +557,10 @@ purge_cave() { # Removes cave app in specified dir and db/db user
     confirm_action "This will permanently remove all data associated with your CAVE App (${app_name})"
   fi
   cd "$app_name" || exit 1
-  reset_db -y
 
-  # Delete docker image
-  docker rmi "cave-app:$app_name" | pipe_log "DEBUG"
+  remove_docker_containers
+  remove_docker_pg_volume
+  remove_docker_images
 
   cd ../
   source "${app_name}/.env"

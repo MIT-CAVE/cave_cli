@@ -17,9 +17,7 @@ declare -xr CAVE_PATH="${HOME}/.cave_cli"
 readonly CURRENT_ENV_VARIABLES=(
   "DATABASE_COMMAND"
   "DATABASE_IMAGE"
-  "DATABASE_NAME"
   "DATABASE_PASSWORD"
-  "DATABASE_USER"
   "DJANGO_ADMIN_EMAIL"
   "DJANGO_ADMIN_FIRST_NAME"
   "DJANGO_ADMIN_LAST_NAME"
@@ -34,6 +32,8 @@ readonly CURRENT_ENV_VARIABLES=(
 readonly RETIRED_ENV_VARIABLES=(
   "DATABASE_HOST"
   "DATABASE_PORT"
+  "DATABASE_NAME"
+  "DATABASE_USER"
 )
 
 printf_header() {
@@ -203,10 +203,10 @@ run_cave() { # Runs the cave app in the current directory
     server_command=("$entrypoint" "$@")
   fi
 
-  docker network create cave-net 2>&1 | pipe_log "DEBUG"
+  docker network create cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
 
   source .env
-  docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net --name "${app_name}_db_host" \
+  docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net:${app_name} --name "${app_name}_db_host" \
     -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" \
     -e POSTGRES_USER="${app_name}_user" \
     -e POSTGRES_DB="${app_name}_name"\
@@ -218,8 +218,8 @@ run_cave() { # Runs the cave app in the current directory
     PORT=$(echo "$1" | perl -nle'print $& while m{(?<=:)\d\d\d[0-9]+}g')
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
     if [[ "$OPEN" = "1" ]]; then
-      docker run -d --restart unless-stopped -p "$IP:$PORT:8000" --network cave-net --volume "$app_dir/utils/lan_hosting:/certs" --name "${app_name}_nginx" -e CAVE_HOST="${app_name}_django" --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
-      docker run -it -p 8000 --network cave-net --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" \
+      docker run -d --restart unless-stopped -p "$IP:$PORT:8000" --network cave-net:${app_name} --volume "$app_dir/utils/lan_hosting:/certs" --name "${app_name}_nginx" -e CAVE_HOST="${app_name}_django" --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
+      docker run -it -p 8000 --network cave-net:${app_name} --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" \
         -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" \
         -e DATABASE_HOST="${app_name}_db_host" \
         -e DATABASE_USER="${app_name}_user" \
@@ -238,7 +238,7 @@ run_cave() { # Runs the cave app in the current directory
       exit 1
     fi
 
-    docker run -it -p 8000:8000 --network cave-net --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" \
+    docker run -it -p 8000:8000 --network cave-net:${app_name} --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" \
       -e DATABASE_HOST="${app_name}_db_host" \
       -e DATABASE_USER="${app_name}_user" \
       -e DATABASE_PASSWORD="$DATABASE_PASSWORD" \
@@ -248,6 +248,7 @@ run_cave() { # Runs the cave app in the current directory
   fi
   printf "Stopping Running Containers...\n" | pipe_log "DEBUG"
   docker rm --force "${app_name}_django" "${app_name}_db_host" 2>&1 | pipe_log "DEBUG"
+  docker network rm cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
 }
 
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/

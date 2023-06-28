@@ -9,7 +9,6 @@ readonly INVALID_NAME_PATTERN_2="^.*[-_]+$"
 readonly INVALID_NAME_PATTERN_3="(-_)+"
 readonly INVALID_NAME_PATTERN_4="(_-)+"
 readonly BIN_DIR="/usr/local/bin"
-readonly TMP_DIR="/tmp"
 readonly CHAR_LINE="============================="
 readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
 readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
@@ -126,12 +125,11 @@ choose_python() { # Choose a python bin and check that it is valid
     fi
   done
   printf "${CHARS_LINE}\n"
-  local check="Choose default python runtime:"
   #Ask for python path until valid version is given
-  while [[ ! "${check}" = "" ]]; do
-    printf "$check\n"
-    read -r -p "Please enter the path to your python3.10+ binary. Leave blank to use the default(${default}): " path
-  done
+  read -r -p "Please enter the path to your python3.10+ binary. Leave blank to use the default (${default}): " path
+  if [[ "${path}" = "" ]]; then
+    path=${default}
+  fi
   printf "PYTHON3_BIN=\"${path}\"\n\n\n" > "${CAVE_PATH}/CONFIG"
 }
 
@@ -779,6 +777,7 @@ main() {
       print_version
     ;;
     run | start)
+      check_python
       ensure_postgres_running
       run_cave "$@"
     ;;

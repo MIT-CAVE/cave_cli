@@ -95,7 +95,7 @@ validate_install() {
 }
 
 check_python() { # Validate python is installed and is correct version
-  if [ -z "${PYTHON3_BIN+x}" ]; then
+  if [[ ! -n "${PYTHON3_BIN}" ]]; then
     printf "Python with cave cli not set up... Setting up now"
     choose_python
     source "${CAVE_PATH}/CONFIG"
@@ -798,25 +798,31 @@ main() {
       upgrade_cave "$@"
     ;;
     sync)
+      check_python
       sync_cave "$@"
     ;;
     kill)
       kill_cave "$@"
     ;;
     reset)
+      check_python
       ensure_postgres_running
       reset_cave "$@"
     ;;
     prettify)
+      check_python
       prettify_cave "$@"
     ;;
     test)
+      check_python
       test_cave "$@"
     ;;
     reinstall-pkgs)
+      check_python
       install_cave
     ;;
     setup)
+      check_python
       ensure_postgres_running
       install_cave
       reset_cave "$@"

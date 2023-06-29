@@ -253,13 +253,12 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will potentially update all files not in 'cave_api/' or '.env' and reset your database"
   fi
-  if [ "$(has_flag --version "$@")" = "true" ]; then
-    local BRANCH_STRING
-    BRANCH_STRING="--branch $(get_flag "" "--version" "$@")"
-  else
-    local BRANCH_STRING=""
-  fi
-  sync_cave -y --include "'cave_api/docs'" --exclude "'.env' '.gitignore' 'cave_api/*'" --url "$(get_flag "$HTTPS_URL" "--url" "$@")" "$BRANCH_STRING" "$@"
+  sync_cave -y \
+    --include "'cave_api/docs'" \
+    --exclude "'.env' '.gitignore' 'cave_api/*'" \
+    --url "$(get_flag "$HTTPS_URL" "--url" "$@")" \
+    --branch "$(get_flag "main" "--version" "$@")" \
+    "$@"
   printf "Upgrade complete.\n" | pipe_log "INFO"
 }
 
@@ -358,12 +357,12 @@ create_cave() { # Create a cave app instance in folder $1
     exit 1
   fi
   
-  CLONE_URL=$(get_flag "${HTTPS_URL}" --url "$@")
+  CLONE_URL=$(get_flag "${HTTPS_URL}" "--url" "$@")
   printf_header "App Creation:"
   # Clone the repo
   printf "Downloading the app template..." | pipe_log "INFO"
   if [ "$(has_flag --version "$@")" = 'true' ]; then
-    git clone -b "$(get_flag main --version "$@")" --single-branch "${CLONE_URL}" "$1" 2>&1 | pipe_log "DEBUG"
+    git clone -b "$(get_flag "main" "--version" "$@")" --single-branch "${CLONE_URL}" "$1" 2>&1 | pipe_log "DEBUG"
   else
     git clone --single-branch "${CLONE_URL}" "$1" 2>&1 | pipe_log "DEBUG"
   fi
@@ -441,10 +440,10 @@ sync_cave() { # Sync files from another repo to the selected cave app
   printf "Downloading repo to sync..."
   local path CLONE_URL CLONE_BRANCH
   path=$(mktemp -d)
-  CLONE_URL="$(get_flag "none" --url "$@")"
-  CLONE_BRANCH="$(get_flag "none" --branch "$@")"
+  CLONE_URL="$(get_flag "none" "--url" "$@")"
+  CLONE_BRANCH="$(get_flag "none" "--branch" "$@")"
   if [[ "${CLONE_BRANCH}" != 'none' ]]; then
-    git clone -b "$(get_flag '' --branch "$@")" --single-branch "${CLONE_URL}" "$path" 2>&1 | pipe_log "DEBUG"
+    git clone -b "${CLONE_BRANCH}" --single-branch "${CLONE_URL}" "$path" 2>&1 | pipe_log "DEBUG"
   else
     git clone --single-branch "${CLONE_URL}" "$path" 2>&1 | pipe_log "DEBUG"
   fi
@@ -579,7 +578,7 @@ update_cave() { # Updates the cave cli
   # Change into the cave cli directory
   cd "${CAVE_PATH}" || exit 1
   git fetch 2>&1 | pipe_log "DEBUG"
-  git checkout "$(get_flag main --version "$@")" 2>&1 | pipe_log "DEBUG"
+  git checkout "$(get_flag "main" "--version" "$@")" 2>&1 | pipe_log "DEBUG"
   git pull 2>&1 | pipe_log "DEBUG"
   printf "Done.\n" | pipe_log "INFO"
   printf "CAVE CLI updated.\n" | pipe_log "INFO"

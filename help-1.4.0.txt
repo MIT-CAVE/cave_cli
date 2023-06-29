@@ -1,0 +1,88 @@
+Core Commands:
+  create <app-name> [--version -save-inputs] 
+                            Creates a new CAVE app in the specified directory.
+                              `--version`: str (optional)
+                                - What: Used to specify a cave app version (git branch name).
+                                - Default: The latest stable version (default branch).
+                              `-save-inputs`: flag (optional)
+                                - What: Stores all inputs to be the defaults for future `create`s
+                              EG: `cave create my_app --version 1.0.1 -save-inputs -legacy`
+                             
+  run | start [<ip:port>]   Runs the CAVE app in the current directory. 
+                              `<ip:port>` (optional):
+                                - The ip and port to host the app with the format <ip address>:<port>
+                              EG: `cave run 192.168.1.1:8000 -legacy`
+
+
+Peripheral Commands:
+  prettify [-all]          Cleans up cave_api code for the CAVE app in the current
+                             directory using autoflake and black. 
+                              `-all`: flag (optional)
+                                - What: Trigger prettify for cave_core and cave_app.
+
+  reinstall-pkgs            Installs all requirements for the CAVE app in the current
+                             directory.
+
+  reset                     Resets the database for the CAVE app in the current directory.
+
+  setup                     Execute an initial setup on a cloned repo. Installs all requirements
+                             and resets the database for the CAVE app in the current directory.
+
+  test [-all]              Runs the given test python file located in /cave_api/tests/.
+                              `-all`: flag (optional)
+                                - What: Trigger to run all files in /cave_api/tests/.
+                              EG: `cave test test_init.py -legacy`
+                              EG: `cave test -all -legacy`
+
+  upgrade [--version]       Upgrades the CAVE app in the current dicrectory.
+                              `--version`: str (optional)
+                                - What: Used to specify a cave app version (git branch name).
+                                - Default: The latest stable version (default branch).
+                              EG: `cave upgrade --version 1.0.1 -legacy`
+
+  purge <app-path>          Removes the app in the specified directory, as well as removing
+                             its associated database and database user.
+                              EG: `cave purge my_app/ -legacy`
+
+
+Utility Commands:
+  help                      Prints this help text.
+
+  kill [--port]             Kills a running tcp port.
+                             Used when a CAVE app wasn't properly shut down.
+                              `--port`: str (optional)
+                                - What: The port to kill.
+                                - Default: 8000
+                              EG: `cave kill -legacy`
+                              EG: `cave kill --port 8000 -legacy`
+
+  sync --url [--branch --include --exclude]
+                            Merges files from the given repo (url) into the CAVE app in the
+                             current directory. This always excludes the `.git` folder.
+                              `--url`: str (required)
+                                - What: The git `url` for a repo to which you have clone access
+                              `--branch`: str (optional)
+                                - What: The branch of the git url you wish to sync
+                              `--include` string of space separated substrings (optional)
+                                - What: A space separated string of strings (filenames) that should be
+                                        included (even if in an `--exclude` statement) for a sync operation
+                              `--exclude` string of space separated substrings (optional)
+                                - What: A space separated string of strings (filenames) that should not be
+                                        included in the sync operation (`--include` takes precedent)
+                                - Note: If not excluded, a file is automatically included
+                              EG: `cave sync --url git@github.com:mit-cave/cave_app_aws.git \
+                                   --exclude "'.git' '.gitignore' 'README.md'" -legacy`
+
+  uninstall                 Removes the CAVE CLI.
+
+  update [--version]        Updates the CAVE CLI.
+                              `--version`: str (optional)
+                                - What: Used to choose a specific CAVE CLI version (git branch)
+                                - Default: The latest stable version (default branch)
+                              EG: `cave update --version 1.0.1 -legacy`
+                             
+  version                   Prints the version of your installed CAVE CLI.
+
+Global Flags:
+  `-y`: Automatically answer (bypass) any confirmation prompts with `y`.
+  `-v`: Enable verbose logging output.

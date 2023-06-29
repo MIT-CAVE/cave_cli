@@ -37,9 +37,9 @@ readonly RETIRED_ENV_VARIABLES=(
 )
 
 printf_header() {
-  printf "$CHAR_LINE\n" | pipe_log "INFO"
+  printf "%s\n" "$CHAR_LINE" | pipe_log "INFO"
   printf "%s" "$@" | pipe_log "INFO"
-  printf "$CHAR_LINE\n" | pipe_log "INFO"
+  printf "%s\n" "$CHAR_LINE" | pipe_log "INFO"
 }
 
 validate_version() {
@@ -213,7 +213,7 @@ run_cave() { # Runs the cave app in the current directory
     "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
 
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
-    export PORT OFFSET_OPEN IP
+    export PORT IP
     IP=$(echo "$1" | perl -nle'print $& while m{([0-9]{1,3}\.)+([0-9]{1,3})}g')
     PORT=$(echo "$1" | perl -nle'print $& while m{(?<=:)\d\d\d[0-9]+}g')
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
@@ -379,7 +379,7 @@ create_cave() { # Create a cave app instance in folder $1
   touch .env
 
   # Setup .env file
-  env_create "$1" "$(has_flag -save-inputs "$@")"
+  env_create "$1"
 
   # Reset the db
   reset_db -y

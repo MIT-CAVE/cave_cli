@@ -62,7 +62,7 @@ check_docker() { # Validate docker is installed, running, and is correct version
   CURRENT_DOCKER_VERSION=$(docker --version | sed -e 's/Docker version //' -e 's/, build.*//')
   validate_version "docker" "1" "$install_docker" "$MIN_DOCKER_VERSION" "$CURRENT_DOCKER_VERSION"
   if ! docker info > /dev/null 2>&1 ; then
-    echo "Docker not running... Please start docker and try again!"
+    log "Docker not running... Please start docker and try again!" "ERROR"
     exit 1
   fi
   printf "Docker Check Passed!\n" | pipe_log "DEBUG"

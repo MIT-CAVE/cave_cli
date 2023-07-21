@@ -379,6 +379,12 @@ create_cave() { # Create a cave app instance in folder $1
   # cd into the created app
   cd "$1" || exit 1
 
+  # Remove License and references
+  rm LICENSE
+  sed -i '/^## License Notice$/,$d' README.md
+  sed -i '/^Licensed under.*/,$d' NOTICE.md
+  sed -i '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+
   # Create a fake .env file to allow installation to proceed
   touch .env
 

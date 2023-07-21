@@ -260,6 +260,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   sync_cave -y \
     --include "'cave_api/docs'" \
     --exclude "'.env' '.gitignore' 'cave_api/*'" \
+    -upgrade-env \
     --url "$(get_flag "$HTTPS_URL" "--url" "$@")" \
     --branch "$(get_flag "main" "--version" "$@")" \
     "$@"
@@ -471,6 +472,14 @@ sync_cave() { # Sync files from another repo to the selected cave app
   RSYNC_COMMAND="$RSYNC_COMMAND "${path}/" ."
   eval "$RSYNC_COMMAND" 2>&1 | pipe_log "DEBUG"
   printf "Done\n" | pipe_log "INFO"
+
+  if [ "$(has_flag -upgrade-env "$@")" = "true" ]; then
+    printf "Upgrading .env..." | pipe_log "INFO"
+    export NEW_APP_URL_PATH
+    NEW_APP_URL_PATH=$(grep "^STATIC_APP_URL_PATH=" "$path/example.env") \
+      perl -pi -e 's/^STATIC_APP_URL_PATH=.*$/$ENV{NEW_APP_URL_PATH}/g' .env
+    printf "Done\n" | pipe_log "INFO"
+  fi
 
   # clean up temp files
   rm -rf "${path}"

@@ -86,7 +86,7 @@ Utility Commands:
                               EG: `cave kill --app my_app`
                               EG: `cave kill -all`
 
-  sync --url [--branch --include --exclude]
+  sync --url [--branch --include --exclude -upgrade-env]
                             Merges files from the given repo (url) into the CAVE app in the
                              current directory. This always excludes the `.git` folder.
                               `--url`: str (required)
@@ -100,6 +100,9 @@ Utility Commands:
                                 - What: A space separated string of strings (filenames) that should not be
                                         included in the sync operation (`--include` takes precedent)
                                 - Note: If not excluded, a file is automatically included
+                              `-upgrade-env`: flag (optional)
+                                - What: Copy's relevant environment variables to the project .env file even
+                                        if .env is excluded
                               EG: `cave sync --url git@github.com:mit-cave/cave_app_aws.git \
                                    --exclude "'.git' '.gitignore' 'README.md'"`
 

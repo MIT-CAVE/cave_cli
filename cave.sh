@@ -253,13 +253,23 @@ run_cave() { # Runs the cave app in the current directory
   docker network rm cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
 }
 
+upgrade_env() {
+  printf "Upgrading .env..." | pipe_log "INFO"
+  export NEW_APP_URL_PATH
+  NEW_APP_URL_PATH=$(grep "^STATIC_APP_URL_PATH=" "$1/example.env") \
+    perl -pi -e 's/^STATIC_APP_URL_PATH=.*$/$ENV{NEW_APP_URL_PATH}/g' .env
+  printf "Done\n" | pipe_log "INFO"
+}
+
 upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will potentially update all files not in 'cave_api/' or '.env' and reset your database"
   fi
+  # shellcheck disable=SC2046 # need to expand the args
   sync_cave -y \
     --include "'cave_api/docs'" \
     --exclude "'.env' '.gitignore' 'cave_api/*'" \
+    $( [[ "$(has_flag -skip-env-upgrade "$@")" != "true" ]] && printf %s '--post-sync upgrade_env' ) \
     --url "$(get_flag "$HTTPS_URL" "--url" "$@")" \
     --branch "$(get_flag "main" "--version" "$@")" \
     "$@"
@@ -441,7 +451,7 @@ sync_cave() { # Sync files from another repo to the selected cave app
   fi
   printf_header "Sync:"
 
-  printf "Downloading repo to sync..."
+  printf "Downloading repo to sync..." | pipe_log "INFO"
   local path CLONE_URL CLONE_BRANCH
   path=$(mktemp -d)
   CLONE_URL="$(get_flag "none" "--url" "$@")"
@@ -456,7 +466,7 @@ sync_cave() { # Sync files from another repo to the selected cave app
     rm -rf "${path}"
     exit 1
   fi
-  printf "Done.\n" | pipe_log "INFO"
+  printf "Done" | pipe_log "INFO"
 
   printf "Syncing files..." | pipe_log "INFO"
   RSYNC_INCLUDE=$(get_flag "" "--include" "$@")
@@ -471,6 +481,11 @@ sync_cave() { # Sync files from another repo to the selected cave app
   RSYNC_COMMAND="$RSYNC_COMMAND "${path}/" ."
   eval "$RSYNC_COMMAND" 2>&1 | pipe_log "DEBUG"
   printf "Done\n" | pipe_log "INFO"
+
+  post_sync="$(get_flag "" "--post-sync" "$@")"
+  if [ -n "$path" ]; then
+    $post_sync "$path"
+  fi
 
   # clean up temp files
   rm -rf "${path}"

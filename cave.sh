@@ -381,9 +381,21 @@ create_cave() { # Create a cave app instance in folder $1
 
   # Remove License and references
   rm LICENSE
-  sed -i '/^## License Notice$/,$d' README.md
-  sed -i '/^Licensed under.*/,$d' NOTICE.md
-  sed -i '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+  case "$(uname -s)" in
+    Linux*)
+      sed -i '/^## License Notice$/,$d' README.md
+      sed -i '/^Licensed under.*/,$d' NOTICE.md
+      sed -i '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+    ;;
+    Darwin*)
+      sed -i '' '/^## License Notice$/,$d' README.md
+      sed -i '' '/^Licensed under.*/,$d' NOTICE.md
+      sed -i '' '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+    ;;
+    *)
+      printf "Error: OS not recognized." | pipe_log "ERROR"; exit 1
+    ;;
+  esac
 
   # Create a fake .env file to allow installation to proceed
   touch .env

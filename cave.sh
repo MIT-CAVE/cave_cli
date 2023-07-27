@@ -23,7 +23,6 @@ readonly CURRENT_ENV_VARIABLES=(
   "DJANGO_ADMIN_LAST_NAME"
   "DJANGO_ADMIN_PASSWORD"
   "DJANGO_ADMIN_USERNAME"
-  "MAPBOX_TOKEN"
   "SECRET_KEY"
   "STATIC_APP_URL"
   "STATIC_APP_URL_PATH"
@@ -280,18 +279,15 @@ env_create() { # creates .env file for create_cave
   fi
   printf_header "Set up your new app environment (.env) variables:"
   echo "$newenv" > .env
+  printf "If you want to use a globe view or mapbox maps, you will need a valid Mapbox Token.\n" | pipe_log "INFO"
+  printf "This is not required, but will allow you to use the full functionality of the app.\n" | pipe_log "INFO"
   printf "Mapbox tokens can be created by making an account on 'https://mapbox.com'\n" | pipe_log "INFO"
-  if [ "${MAPBOX_TOKEN}" = "" ]; then
-    read -r -p "Please input your Mapbox Public Token: " key
-  else
-    read -r -p "Please input your Mapbox Public Token. Leave blank to use default: " key
+  read -r -p "Please input your Mapbox Public Token. Leave blank to skip: " key
+  if [ "${key}" != "" ]; then
+    line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
+    newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
+    echo "$newenv" > .env
   fi
-  if [ "${key}" = "" ]; then
-    key="${MAPBOX_TOKEN}"
-  fi
-  line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
-  newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
-  echo "$newenv" > .env
   key=""
   printf "\n"
   read -r -p "Please input an admin email. Leave blank for default(${ADMIN_EMAIL}): " key

@@ -279,6 +279,8 @@ env_create() { # creates .env file for create_cave
   fi
   printf_header "Set up your new app environment (.env) variables:"
   echo "$newenv" > .env
+  printf "If you want to use a globe view or mapbox maps, you will need a valid Mapbox Token.\n" | pipe_log "INFO"
+  printf "This is not required, but will allow you to use the full functionality of the app.\n" | pipe_log "INFO"
   printf "Mapbox tokens can be created by making an account on 'https://mapbox.com'\n" | pipe_log "INFO"
   read -r -p "Please input your Mapbox Public Token. Leave blank to skip: " key
   if [ "${key}" != "" ]; then

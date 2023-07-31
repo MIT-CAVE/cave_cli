@@ -207,10 +207,21 @@ run_cave() { # Runs the cave app in the current directory
     server_command=("$entrypoint" "$@")
   fi
 
+  if [[ "$(has_flag --docker-args "$@")" == "true" ]]; then
+    docker_args="$(get_flag "" "--docker-args" "$@")"
+    echo "docker-args: $docker_args" | pipe_log "INFO"
+  else
+    docker_args=""
+  fi
+
   docker network create cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
 
   source .env
-  docker run -d --volume "${app_name}_pg_volume:/var/lib/postgresql/data" --network cave-net:${app_name} --name "${app_name}_db_host" \
+  docker run -d \
+    ${docker_args} \
+    --volume "${app_name}_pg_volume:/var/lib/postgresql/data" \
+    --network cave-net:${app_name} \
+    --name "${app_name}_db_host" \
     -e POSTGRES_PASSWORD="$DATABASE_PASSWORD" \
     -e POSTGRES_USER="${app_name}_user" \
     -e POSTGRES_DB="${app_name}_name"\
@@ -222,8 +233,22 @@ run_cave() { # Runs the cave app in the current directory
     PORT=$(echo "$1" | perl -nle'print $& while m{(?<=:)\d\d\d[0-9]+}g')
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
     if [[ "$OPEN" = "1" ]]; then
-      docker run -d --restart unless-stopped -p "$IP:$PORT:8000" --network cave-net:${app_name} --volume "$app_dir/utils/lan_hosting:/certs" --name "${app_name}_nginx" -e CAVE_HOST="${app_name}_django" --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
-      docker run -it -p 8000 --network cave-net:${app_name} --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" \
+      docker run -d \
+        ${docker_args} \
+        --restart unless-stopped \
+        -p "$IP:$PORT:8000" \
+        --network cave-net:${app_name} \
+        --volume "$app_dir/utils/lan_hosting:/certs" \
+        --name "${app_name}_nginx" \
+        -e CAVE_HOST="${app_name}_django" \
+        --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
+      docker run -it \
+        ${docker_args} \
+        -p 8000 \
+        --network cave-net:${app_name} \
+        --volume "$app_dir:/app" \
+        --volume "$CAVE_PATH:/cave_cli" \
+        --name "${app_name}_django" \
         -e CSRF_TRUSTED_ORIGIN="$IP:$PORT" \
         -e DATABASE_HOST="${app_name}_db_host" \
         -e DATABASE_USER="${app_name}_user" \
@@ -240,7 +265,13 @@ run_cave() { # Runs the cave app in the current directory
       printf "Port 8000 is in use. Please try another." | pipe_log "ERROR"
       exit 1
     fi
-    docker run -it -p 8000:8000 --network cave-net:${app_name} --volume "$app_dir:/app" --volume "$CAVE_PATH:/cave_cli" --name "${app_name}_django" \
+    docker run -it \
+      ${docker_args} \
+      -p 8000:8000 \
+      --network cave-net:${app_name} \
+      --volume "$app_dir:/app" \
+      --volume "$CAVE_PATH:/cave_cli" \
+      --name "${app_name}_django" \
       -e DATABASE_HOST="${app_name}_db_host" \
       -e DATABASE_USER="${app_name}_user" \
       -e DATABASE_PASSWORD="$DATABASE_PASSWORD" \
@@ -299,9 +330,9 @@ env_create() { # creates .env file for create_cave
   if [ "${key}" = "" ]; then
     key="${MAPBOX_TOKEN}"
   fi
-  line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
-  newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
-  echo "$newenv" > .env
+    line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
+    newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
+    echo "$newenv" > .env
   key=""
   printf "\n"
   read -r -p "Please input an admin email. Leave blank for default(${ADMIN_EMAIL}): " key
@@ -414,7 +445,7 @@ create_cave() { # Create a cave app instance in folder $1
   env_create "$1"
 
   # Reset the db
-  reset_db -y
+  reset -y
 
   # Prep git repo
   printf_header "Version Control:" | pipe_log "INFO"
@@ -509,7 +540,7 @@ sync_cave() { # Sync files from another repo to the selected cave app
   rm -rf "${path}"
 
   # Setup docker and db again
-  reset_db -y
+  reset -y
 
   printf "Sync complete.\n" | pipe_log "INFO"
   exit 0
@@ -560,9 +591,9 @@ remove_docker_images() {
   docker rmi "cave-app:$app_name" | pipe_log "DEBUG"
 }
 
-reset_db() {
+reset() {
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
-    confirm_action "This will reset your database"
+    confirm_action "This will remove the Docker containers (deleted and recreated from scratch) for this app. All data in your database will be lost."
   fi
   remove_docker_containers
   remove_docker_pg_volume
@@ -689,13 +720,13 @@ main() {
       # Kills all containers for the app
       kill_cave "$@"
     ;;
-    reset-db)
+    reset | reset-db)
       # Requires being inside app_dir
       check_docker
       get_app
       # Runs kill, then
-      # Removes the volume for the db
-      reset_db "$@"
+      # Removes the volume for the db and app and recreates them
+      reset "$@"
     ;;
     upgrade)
       # Requires being inside app_dir

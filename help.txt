@@ -5,15 +5,20 @@ Core Commands:
                                 - What: Used to specify a cave app version (git branch name).
                                 - Default: The latest stable version (default branch).
                               EG: `cave create my_app`
-                              EG: `cave create my_app --version 1.5.1`
+                              EG: `cave create my_app --version 1.6.0`
 
-  run [<ip:port> --entrypoint -interactive(-it)]    
+  run [<ip:port> --entrypoint --docker-args -interactive(-it)]    
                             Runs the CAVE app in the current directory.
                               `<ip:port>` (optional):
                                 - The ip and port to host the app with the format <ip address>:<port>
                               `--entrypoint`: str (optional)
                                 - What: The entrypoint to run the app with
                                 - Default: `./utils/run_server.sh`
+                              `--docker-args`: str (optional)
+                                - What: Additional arguments to pass to the docker run command
+                                - Default: "" (empty string)
+                                - Note: docker-args can be passed to other cave commands that execute
+                                        `cave run` under the hood (e.g. cave reset)
                               `-it` | `-interactive`: flag (optional)
                                 - What: Trigger to run the app in interactive mode
                                 - Note: Sets the entrypoint to `bash`
@@ -29,6 +34,7 @@ Core Commands:
                               EG: `cave run -it`
                               EG  `cave run -interactive`
                               EG: `cave run --entrypoint './utils/my_script.sh'`
+                              EG: `cave run --docker-args '--volume /my/host/path:/docker/path'`
 
 
 Peripheral Commands:
@@ -39,11 +45,14 @@ Peripheral Commands:
                               - Note: This command actually runs the entrypoint script
                                       `./utils/prettify.sh` in the app's container.
 
-  reset-db                  Resets the database for the CAVE app in the current directory, as
-                              as well as kills any running process from the current directory
-                              - Note: This command removes the volume at `/var/lib/postgresql/data`
-                              - Note: This command actually runs the entrypoint script
-                                      `./utils/reset_db.sh` in the app's container.
+  reset                     Removes the Docker containers (deletes and recreates them from scratch) for the app
+                             in this directory. The database will be reset to default values.
+                              - Note: This command:
+                                1) Deletes the app specific postgresql container and volume
+                                2) Deletes the app specific docker container
+                                3) Recreates the app specific postgresql container and volume
+                                4) Recreates the app specific docker container
+                                5) Executes the entrypoint script `./utils/reset_db.sh` in the app's container
 
   test [-all]               Runs the given test python file located in /cave_api/tests/.
                               `-all`: flag (optional)
@@ -53,11 +62,14 @@ Peripheral Commands:
                               EG: `cave test test_init.py`
                               EG: `cave test -all`
 
-  upgrade [--version]       Upgrades the CAVE app in the current directory.
+  upgrade [--version -skip-env-upgrade]
+                            Upgrades the CAVE app in the current directory.
                               `--version`: str (optional)
                                 - What: Used to specify a cave app version (git branch name).
                                 - Default: The latest stable version (default branch).
-                              EG: `cave upgrade --version 1.5.1`
+                              `-skip-env-upgrade`: flag (optional)
+                                - What: Skip upgrading the project .env file, leaving it as is.
+                              EG: `cave upgrade --version 1.6.0`
 
   purge <app-path>          Removes the app in the specified directory, as well as removing
                              its associated database.
@@ -86,7 +98,7 @@ Utility Commands:
                               EG: `cave kill --app my_app`
                               EG: `cave kill -all`
 
-  sync --url [--branch --include --exclude]
+  sync --url [--branch --include --exclude --post-sync]
                             Merges files from the given repo (url) into the CAVE app in the
                              current directory. This always excludes the `.git` folder.
                               `--url`: str (required)
@@ -100,6 +112,10 @@ Utility Commands:
                                 - What: A space separated string of strings (filenames) that should not be
                                         included in the sync operation (`--include` takes precedent)
                                 - Note: If not excluded, a file is automatically included
+                              `--post-sync`: str (optional)
+                                - What: A command to run after doing the upgrade with the name of the
+                                        directory holding the dowloaded remote version of the repository
+                                        as the first argument
                               EG: `cave sync --url git@github.com:mit-cave/cave_app_aws.git \
                                    --exclude "'.git' '.gitignore' 'README.md'"`
 
@@ -109,7 +125,7 @@ Utility Commands:
                               `--version`: str (optional)
                                 - What: Used to choose a specific CAVE CLI version (git branch)
                                 - Default: The latest stable version (default branch)
-                              EG: `cave update --version 1.5.1`
+                              EG: `cave update --version 1.6.0`
 
   version                   Prints the version of your installed CAVE CLI.
 

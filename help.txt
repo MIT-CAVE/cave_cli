@@ -5,7 +5,7 @@ Core Commands:
                                 - What: Used to specify a cave app version (git branch name).
                                 - Default: The latest stable version (default branch).
                               EG: `cave create my_app`
-                              EG: `cave create my_app --version 1.6.0`
+                              EG: `cave create my_app --version 1.6.1`
 
   run [<ip:port> --entrypoint --docker-args -interactive(-it)]    
                             Runs the CAVE app in the current directory.
@@ -69,7 +69,7 @@ Peripheral Commands:
                                 - Default: The latest stable version (default branch).
                               `-skip-env-upgrade`: flag (optional)
                                 - What: Skip upgrading the project .env file, leaving it as is.
-                              EG: `cave upgrade --version 1.6.0`
+                              EG: `cave upgrade --version 1.6.1`
 
   purge <app-path>          Removes the app in the specified directory, as well as removing
                              its associated database.
@@ -125,7 +125,7 @@ Utility Commands:
                               `--version`: str (optional)
                                 - What: Used to choose a specific CAVE CLI version (git branch)
                                 - Default: The latest stable version (default branch)
-                              EG: `cave update --version 1.6.0`
+                              EG: `cave update --version 1.6.1`
 
   version                   Prints the version of your installed CAVE CLI.
 
@@ -146,4 +146,4 @@ Global Flags:
 
   `-y`:                     Automatically answer (bypass) any confirmation prompts with `y`.
                               - Note: This is useful for scripting
-                              - EG: `cave reset-db -y`
+                              - EG: `cave reset -y`

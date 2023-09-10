@@ -227,6 +227,12 @@ run_cave() { # Runs the cave app in the current directory
     -e POSTGRES_DB="${app_name}_name"\
     "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
 
+  docker run -d \
+    ${docker_args} \
+    --network cave-net:${app_name} \
+    --name "${app_name}_redis_host" \
+    "redis:7" 2>&1 | pipe_log "DEBUG"
+
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
     export PORT IP
     IP=$(echo "$1" | perl -nle'print $& while m{([0-9]{1,3}\.)+([0-9]{1,3})}g')
@@ -255,6 +261,8 @@ run_cave() { # Runs the cave app in the current directory
         -e DATABASE_PASSWORD="$DATABASE_PASSWORD" \
         -e DATABASE_NAME="${app_name}_name"\
         -e DATABASE_PORT=5432 \
+        -e REDIS_HOST="${app_name}_redis_host" \
+        -e REDIS_PORT=6379 \
         "cave-app:${app_name}" "${server_command[@]}" 2>&1
     else
       printf "The specified port is in use. Please try another." | pipe_log "ERROR"
@@ -277,6 +285,8 @@ run_cave() { # Runs the cave app in the current directory
       -e DATABASE_PASSWORD="$DATABASE_PASSWORD" \
       -e DATABASE_NAME="${app_name}_name"\
       -e DATABASE_PORT=5432 \
+      -e REDIS_HOST="${app_name}_redis_host" \
+      -e REDIS_PORT=6379 \
       "cave-app:${app_name}" "${server_command[@]}" 2>&1
   fi
   printf "Stopping Running Containers...\n" | pipe_log "DEBUG"

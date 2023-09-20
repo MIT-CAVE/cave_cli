@@ -1,14 +1,11 @@
-# cave_cli
+# CAVE CLI
 A unix based Command Line Interface (CLI) to streamline the creation and development process for `cave_app`s
 
-## Development Prerequisites
+## Prerequisits for the CLI installation
 
-- Make sure you are using a Unix based kernel (Mac or Linux).
-    - If you are using Windows, you can use Ubuntu20.04 (via WSL2).
-        - While using WSL2, make sure to follow all instructions in your WSL2 terminal
-- **Note**: Only `python` is supported (and not python derivatives like anaconda)
-
-## Ubuntu Setup:
+Click your OS below for instructions on how to install the prerequisits for the CLI installation.
+<details>
+<summary>Ubuntu</summary>
 
 ```sh
 # Install Docker
@@ -20,7 +17,9 @@ dockerd-rootless-setuptool.sh install
 docker run hello-world
 ```
 
-## Mac Setup:
+</details>
+<details>
+<summary>MacOs</summary>
 
 - Install `Command Line Tools`
     - Install `XCode` from the `App Store`
@@ -29,17 +28,43 @@ docker run hello-world
 - Install Docker
     - https://docs.docker.com/docker-for-mac/install/
 
+</details>
+<details>
+<summary>Windows</summary>
+
+- Install docker desktop **for wsl**
+    - https://docs.docker.com/desktop/wsl/
+- Install wsl2 with ubuntu 22.04
+    - https://learn.microsoft.com/en-us/windows/wsl/install#upgrade-version-from-wsl-1-to-wsl-2
+- Open your wsl ubuntu terminal and in that terminal:
+    - Check docker:
+        - `docker run hello-world`
+        - `docker --version`
+    - Install the cave cli:
+        - `bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"`
+    - Optional: Configure git and ssh for wsl2 (since this is different from windows git)
+        - Configure ssh credentials:
+            - `ssh-keygen -f ~/.ssh/id_rsa -t rsa -b 4096 -C [youremail@gmail.com](mailto:youremail@gmail.com)`
+            - `echo '# Add Git Profile' >> ~/.bashrc`
+            - `echo 'eval $(ssh-agent -s) &>/dev/null' >> ~/.bashrc`
+            - `echo 'ssh-add ~/.ssh/id_rsa &>/dev/null' >> ~/.bashrc`
+            - `source ~/.bashrc`
+        - Show your credentials:
+            - `cat ~/.ssh/id_rsa.pub`
+        - Copy your credential up to github in your profile under ssh keys
+
+</details>
+
 ## CLI Installation
 
-```
+```sh
+# Install the CLI
 bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"
 ```
-- **Note**: During installation you will be asked to choose your default python installation path.
-    - You can use the default or this can be found with: `which python3.11` in a new terminal.
-- Validate Installation:
-    ```
-    cave --version
-    ```
+```sh
+# Validate the installation succeeded
+cave --version
+```
 
 ## CLI Functions
 
@@ -47,6 +72,12 @@ bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install
     ```
     cave --help
     ```
+
+- To create and run a new app:
+    1) `cave create my_app`
+    2) `cd my_app`
+    3) `cave run`
+    4) Open a browser to `http://localhost:8000/`
 
 ## License Notice
 

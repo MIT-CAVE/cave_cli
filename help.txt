@@ -30,7 +30,9 @@ Core Commands:
                                 - Note: The webapp is not started with this command, but can be launched
                                         with `/app/utils/run_server.sh` while in interactive mode.
                               EG: `cave run`
+                                - Access with url: `localhost:8000`
                               EG: `cave run 192.168.1.1:8000`
+                                - Access with url: `https://192.168.1.1:8000`
                               EG: `cave run -it`
                               EG  `cave run -interactive`
                               EG: `cave run --entrypoint './utils/my_script.sh'`

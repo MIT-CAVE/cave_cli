@@ -189,6 +189,25 @@ print_version(){
   printf "%s" "$(cat "${CAVE_PATH}/VERSION")" | pipe_log "INFO"
 }
 
+is_local_port_open() {
+  local PORT=$1
+  OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
+  if [[ "$OPEN" = "1" ]]; then
+    echo "true"
+  else
+    echo "false"
+  fi
+}
+
+find_next_open_port() {
+  local PORT=$1
+  if [[ "$(is_local_port_open "$PORT")" = "true" ]]; then
+    echo "$PORT"
+  else
+    find_next_open_port "$((PORT + 1))"
+  fi
+}
+
 build_image() {
   remove_docker_containers
   printf "Getting Docker setup... (this may take a while)\n" | pipe_log "INFO"
@@ -240,6 +259,9 @@ run_cave() { # Runs the cave app in the current directory
     PORT=$(echo "$1" | perl -nle'print $& while m{(?<=:)\d\d\d[0-9]+}g')
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
     if [[ "$OPEN" = "1" ]]; then
+      if [[ "${server_command}" == "./utils/run_server.sh" ]]; then
+        printf "Your Cave App can be accessed from Chrome at:\nhttps://${IP}:${PORT}\n\n" | pipe_log "INFO"
+      fi
       docker run -d \
         ${docker_args} \
         --restart unless-stopped \
@@ -270,13 +292,13 @@ run_cave() { # Runs the cave app in the current directory
       exit 1
     fi
   else
-    if nc -z 127.0.0.1 8000 ; then
-      printf "Port 8000 is in use. Please try another." | pipe_log "ERROR"
-      exit 1
+    local PORT=$(find_next_open_port 8000)
+    if [[ "${server_command}" == "./utils/run_server.sh" ]]; then
+      printf "Your Cave App can be accessed from Chrome at:\nhttp://localhost:${PORT}\n\n" | pipe_log "INFO"
     fi
     docker run -it \
       ${docker_args} \
-      -p 8000:8000 \
+      -p ${PORT}:8000 \
       --network cave-net:${app_name} \
       --volume "$app_dir:/app" \
       --volume "$CAVE_PATH:/cave_cli" \

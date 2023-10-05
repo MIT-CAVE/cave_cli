@@ -188,6 +188,25 @@ print_version(){
   printf "%s" "$(cat "${CAVE_PATH}/VERSION")" | pipe_log "INFO"
 }
 
+is_local_port_open() {
+  local PORT=$1
+  OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
+  if [[ "$OPEN" = "1" ]]; then
+    echo "true"
+  else
+    echo "false"
+  fi
+}
+
+find_next_open_port() {
+  local PORT=$1
+  if [[ "$(is_local_port_open "$PORT")" = "true" ]]; then
+    echo "$PORT"
+  else
+    find_next_open_port "$((PORT + 1))"
+  fi
+}
+
 build_image() {
   remove_docker_containers
   printf "Getting Docker setup... (this may take a while)\n" | pipe_log "INFO"
@@ -226,12 +245,22 @@ run_cave() { # Runs the cave app in the current directory
     -e POSTGRES_DB="${app_name}_name"\
     "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
 
+  docker run -d \
+    ${docker_args} \
+    --volume "${app_name}_redis_volume:/data" \
+    --network cave-net:${app_name} \
+    --name "${app_name}_redis_host" \
+    "redis:7" --save 15 1 2>&1 | pipe_log "DEBUG"
+
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
     export PORT IP
     IP=$(echo "$1" | perl -nle'print $& while m{([0-9]{1,3}\.)+([0-9]{1,3})}g')
     PORT=$(echo "$1" | perl -nle'print $& while m{(?<=:)\d\d\d[0-9]+}g')
     OPEN=$(nc -z 127.0.0.1 "$PORT"; echo $?)
     if [[ "$OPEN" = "1" ]]; then
+      if [[ "${server_command}" == "./utils/run_server.sh" ]]; then
+        printf "Your Cave App can be accessed from Chrome at:\nhttps://${IP}:${PORT}\n\n" | pipe_log "INFO"
+      fi
       docker run -d \
         ${docker_args} \
         --restart unless-stopped \
@@ -254,19 +283,21 @@ run_cave() { # Runs the cave app in the current directory
         -e DATABASE_PASSWORD="$DATABASE_PASSWORD" \
         -e DATABASE_NAME="${app_name}_name"\
         -e DATABASE_PORT=5432 \
+        -e REDIS_HOST="${app_name}_redis_host" \
+        -e REDIS_PORT=6379 \
         "cave-app:${app_name}" "${server_command[@]}" 2>&1
     else
       printf "The specified port is in use. Please try another." | pipe_log "ERROR"
       exit 1
     fi
   else
-    if nc -z 127.0.0.1 8000 ; then
-      printf "Port 8000 is in use. Please try another." | pipe_log "ERROR"
-      exit 1
+    local PORT=$(find_next_open_port 8000)
+    if [[ "${server_command}" == "./utils/run_server.sh" ]]; then
+      printf "Your Cave App can be accessed from Chrome at:\nhttp://localhost:${PORT}\n\n" | pipe_log "INFO"
     fi
     docker run -it \
       ${docker_args} \
-      -p 8000:8000 \
+      -p ${PORT}:8000 \
       --network cave-net:${app_name} \
       --volume "$app_dir:/app" \
       --volume "$CAVE_PATH:/cave_cli" \
@@ -276,11 +307,12 @@ run_cave() { # Runs the cave app in the current directory
       -e DATABASE_PASSWORD="$DATABASE_PASSWORD" \
       -e DATABASE_NAME="${app_name}_name"\
       -e DATABASE_PORT=5432 \
+      -e REDIS_HOST="${app_name}_redis_host" \
+      -e REDIS_PORT=6379 \
       "cave-app:${app_name}" "${server_command[@]}" 2>&1
   fi
   printf "Stopping Running Containers...\n" | pipe_log "DEBUG"
   remove_docker_containers
-  docker network rm cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
 }
 
 upgrade_env() {
@@ -551,6 +583,7 @@ list_cave() {
     printf_header "CAVE Apps (All):"
     docker ps -a --format "{{.Names}}" | grep -E ".*_django" 2>&1 | pipe_log "INFO"
     docker ps -a --format "{{.Names}}" | grep -E ".*_postgres" 2>&1 | pipe_log "INFO"
+    docker ps -a --format "{{.Names}}" | grep -E ".*_redis" 2>&1 | pipe_log "INFO"
     docker ps -a --format "{{.Names}}" | grep -E ".*_nginx" 2>&1 | pipe_log "INFO"
   else
     printf_header "CAVE Apps (Running):"
@@ -578,8 +611,8 @@ kill_cave() {
 
 remove_docker_containers() {
   printf "Killing Running App (${app_name})..." 2>&1 | pipe_log "DEBUG"
-  docker rm --force "${app_name}_django" "${app_name}_nginx" "${app_name}_db_host" 2>&1 | pipe_log "DEBUG"
-  docker network rm "${app_name}_network" 2>&1 | pipe_log "DEBUG"
+  docker rm --force "${app_name}_django" "${app_name}_nginx" "${app_name}_db_host" "${app_name}_redis_host" 2>&1 | pipe_log "DEBUG"
+  docker network rm cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
 }
 
 remove_docker_images() {

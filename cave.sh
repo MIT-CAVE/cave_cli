@@ -454,12 +454,16 @@ create_cave() { # Create a cave app instance in folder $1
     Linux*)
       sed -i '/^## License Notice$/,$d' README.md
       sed -i '/^Licensed under.*/,$d' NOTICE.md
-      sed -i '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+      if [ -f "cave_api/setup.py" ]; then
+        sed -i '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+      fi
     ;;
     Darwin*)
       sed -i '' '/^## License Notice$/,$d' README.md
       sed -i '' '/^Licensed under.*/,$d' NOTICE.md
-      sed -i '' '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+      if [ -f "cave_api/setup.py" ]; then
+        sed -i '' '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+      fi
     ;;
     *)
       printf "Error: OS not recognized." | pipe_log "ERROR"; exit 1

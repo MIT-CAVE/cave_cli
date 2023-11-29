@@ -518,7 +518,7 @@ create_cave() { # Create a cave app instance in folder $1
   printf "App Creation Status:\n"
   printf "${CHAR_LINE}\n"
   printf "App '$1' created successfully!\n"
-  printf "Note: Created variables and addtional configuration options are availible in $1/.env\n"
+  printf "Note: Created variables and additional configuration options are available in $1/.env\n"
 }
 
 uninstall_cli() { # Remove the CAVE CLI from system

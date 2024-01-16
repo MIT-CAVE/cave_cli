@@ -355,12 +355,25 @@ env_create() { # creates .env file for create_cave
   printf "If you want to use a globe view or mapbox maps, you will need a valid Mapbox Token.\n" | pipe_log "INFO"
   printf "This is not required, but will allow you to use the full functionality of the app.\n" | pipe_log "INFO"
   printf "Mapbox tokens can be created by making an account on 'https://mapbox.com'\n" | pipe_log "INFO"
-  read -r -p "Please input your Mapbox Public Token. Leave blank to skip: " key
-  if [ "${key}" != "" ]; then
+  read -r -p "Would you like to use Mapbox? [y/N] " input
+  case ${input} in
+  [yY][eE][sS] | [yY])
+    SAVED_MAPBOX_TOKEN=$(cat "${CAVE_PATH}/MAPBOX_TOKEN")
+    read -r -p "Please input your Mapbox Public Token. Leave blank for last used token (${SAVED_MAPBOX_TOKEN}): " key
+    if [ "${key}" = "" ]; then
+      key="${SAVED_MAPBOX_TOKEN}"
+    else
+      # If a new token is inputted, save it
+      echo "$MAPBOX_TOKEN" > "${CAVE_PATH}/MAPBOX_TOKEN"
+    fi
     line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
     newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
     echo "$newenv" > .env
-  fi
+    ;;
+  *)
+    printf "Mapbox skipped\n" | pipe_log "ERROR"
+    ;;
+  esac
   key=""
   printf "\n"
   read -r -p "Please input an admin email. Leave blank for default(${ADMIN_EMAIL}): " key

@@ -358,20 +358,21 @@ env_create() { # creates .env file for create_cave
   read -r -p "Would you like to use Mapbox? [y/N] " input
   case ${input} in
   [yY][eE][sS] | [yY])
-    SAVED_MAPBOX_TOKEN=$(cat "${CAVE_PATH}/MAPBOX_TOKEN")
-    read -r -p "Please input your Mapbox Public Token. Leave blank for last used token (${SAVED_MAPBOX_TOKEN}): " key
+    SAVED_MAPBOX_TOKEN=$(cat "${CAVE_PATH}/MAPBOX_TOKEN" 2>/dev/null)
+    read -r -p "Please input your Mapbox Public Token. Leave blank for last used token (*${SAVED_MAPBOX_TOKEN:(-4)}): " key
     if [ "${key}" = "" ]; then
       key="${SAVED_MAPBOX_TOKEN}"
     else
       # If a new token is inputted, save it
-      echo "$MAPBOX_TOKEN" > "${CAVE_PATH}/MAPBOX_TOKEN"
+      printf "Saving mapbox token for future use...\n" | pipe_log "DEBUG"
+      printf "%s" "$key" > "${CAVE_PATH}/MAPBOX_TOKEN"
     fi
     line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
     newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
     echo "$newenv" > .env
     ;;
   *)
-    printf "Mapbox skipped\n" | pipe_log "ERROR"
+    printf "Mapbox skipped\n" | pipe_log "INFO"
     ;;
   esac
   key=""

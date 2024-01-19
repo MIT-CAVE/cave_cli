@@ -81,12 +81,7 @@ dockerfile_help() { # Add additional Dockerfile help if no Dockerfile is found
 
 get_app() {
   app_dir=$(find_app_dir)
-  if [ "${app_dir}" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
-  else
-    cd "${app_dir}" || exit 1
-  fi
+  cd "$app_dir" || exit 1
   app_name=$(basename "$(readlink -f "$app_dir")")
 }
 
@@ -147,7 +142,7 @@ valid_app_dir() { # Checks if current directory is the an instance of the cave a
 }
 
 find_app_dir() { # Finds path to parent app folder if present
-  path="./"
+  path="${PWD}/"
   while ! valid_app_dir; do
     cd ../
     path="${path}../"
@@ -156,7 +151,11 @@ find_app_dir() { # Finds path to parent app folder if present
       exit 1
     fi
   done
-  echo "${path}"
+  if [ "${path}" = "-1" ]; then
+    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
+    exit 1
+  fi
+  echo "${PWD}"
 }
 
 confirm_action() { # Checks user input for an action
@@ -233,7 +232,6 @@ run_cave() { # Runs the cave app in the current directory
   fi
 
   docker network create cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
-
   source .env
   docker run -d \
     ${docker_args} \
@@ -520,13 +518,7 @@ uninstall_cli() { # Remove the CAVE CLI from system
 sync_cave() { # Sync files from another repo to the selected cave app
   local app_dir
   app_dir=$(find_app_dir)
-  if [ "${app_dir}" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
-  else
-    cd "${app_dir}" || exit 1
-  fi
-
+  cd "$app_dir" || exit 1
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will reset your docker containers and database. It will also potentially update your local files"
   fi

@@ -1,3 +1,4 @@
 *.config
 CONFIG
 .DS_STORE
+MAPBOX_TOKEN

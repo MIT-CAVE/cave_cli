@@ -81,12 +81,7 @@ dockerfile_help() { # Add additional Dockerfile help if no Dockerfile is found
 
 get_app() {
   app_dir=$(find_app_dir)
-  if [ "${app_dir}" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
-  else
-    cd "${app_dir}" || exit 1
-  fi
+  cd "$app_dir" || exit 1
   app_name=$(basename "$(readlink -f "$app_dir")")
 }
 
@@ -147,7 +142,7 @@ valid_app_dir() { # Checks if current directory is the an instance of the cave a
 }
 
 find_app_dir() { # Finds path to parent app folder if present
-  path="./"
+  path="${PWD}/"
   while ! valid_app_dir; do
     cd ../
     path="${path}../"
@@ -156,7 +151,11 @@ find_app_dir() { # Finds path to parent app folder if present
       exit 1
     fi
   done
-  echo "${path}"
+  if [ "${path}" = "-1" ]; then
+    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
+    exit 1
+  fi
+  echo "${PWD}"
 }
 
 confirm_action() { # Checks user input for an action
@@ -233,7 +232,6 @@ run_cave() { # Runs the cave app in the current directory
   fi
 
   docker network create cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
-
   source .env
   docker run -d \
     ${docker_args} \
@@ -327,6 +325,8 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will potentially update all files not in 'cave_api/' or '.env' and reset your database"
   fi
+  printf_header "Upgrade:"
+  printf "Upgrading CAVE App via a Sync operation...\n\n" | pipe_log "INFO"
   # shellcheck disable=SC2046 # need to expand the args
   sync_cave -y \
     --include "'cave_api/docs'" \
@@ -335,6 +335,7 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
     --url "$(get_flag "$HTTPS_URL" "--url" "$@")" \
     --branch "$(get_flag "main" "--version" "$@")" \
     "$@"
+  remove_licence_info "$app_dir"
   printf "Upgrade complete.\n" | pipe_log "INFO"
 }
 
@@ -355,12 +356,26 @@ env_create() { # creates .env file for create_cave
   printf "If you want to use a globe view or mapbox maps, you will need a valid Mapbox Token.\n" | pipe_log "INFO"
   printf "This is not required, but will allow you to use the full functionality of the app.\n" | pipe_log "INFO"
   printf "Mapbox tokens can be created by making an account on 'https://mapbox.com'\n" | pipe_log "INFO"
-  read -r -p "Please input your Mapbox Public Token. Leave blank to skip: " key
-  if [ "${key}" != "" ]; then
+  read -r -p "Would you like to use Mapbox? [y/N] " input
+  case ${input} in
+  [yY][eE][sS] | [yY])
+    SAVED_MAPBOX_TOKEN=$(cat "${CAVE_PATH}/MAPBOX_TOKEN" 2>/dev/null)
+    read -r -p "Please input your Mapbox Public Token. Leave blank for last used token (*${SAVED_MAPBOX_TOKEN:(-4)}): " key
+    if [ "${key}" = "" ]; then
+      key="${SAVED_MAPBOX_TOKEN}"
+    else
+      # If a new token is inputted, save it
+      printf "Saving mapbox token for future use...\n" | pipe_log "DEBUG"
+      printf "%s" "$key" > "${CAVE_PATH}/MAPBOX_TOKEN"
+    fi
     line=$(grep -n --colour=auto "MAPBOX_TOKEN" .env | cut -d: -f1)
     newenv=$(awk "NR==${line} {print \"MAPBOX_TOKEN='${key}'\"; next} {print}" .env)
     echo "$newenv" > .env
-  fi
+    ;;
+  *)
+    printf "Mapbox skipped\n" | pipe_log "INFO"
+    ;;
+  esac
   key=""
   printf "\n"
   read -r -p "Please input an admin email. Leave blank for default(${ADMIN_EMAIL}): " key
@@ -389,24 +404,27 @@ env_create() { # creates .env file for create_cave
   line=$(grep -n --colour=auto "DJANGO_ADMIN_PASSWORD" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DJANGO_ADMIN_PASSWORD='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
-  key=""
-  key2=""
-  printf "\n"
-  while [ "${key2}" = "" ]; do
-    printf "\n"
-    read -r -s -p "Please input a database password. Leave blank to randomly generate one: " key
-    if [ "${key}" = "" ]; then
-      key=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
-      key2="Placeholder"
-    else
-      printf "\n"
-      read -r -s -p "Retype database password to confirm: " key2
-      if [ "${key}" != "${key2}" ]; then
-        printf "Passwords didn't match. Please try again\n"
-        key2=""
-      fi
-    fi
-  done
+  key=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
+  # Code to choose or generate a password for the database
+  # Commented out to auto-generate a password
+  # key=""
+  # key2=""
+  # printf "\n"
+  # while [ "${key2}" = "" ]; do
+  #   printf "\n"
+  #   read -r -s -p "Please input a database password. Leave blank to randomly generate one: " key
+  #   if [ "${key}" = "" ]; then
+  #     key=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
+  #     key2="Placeholder"
+  #   else
+  #     printf "\n"
+  #     read -r -s -p "Retype database password to confirm: " key2
+  #     if [ "${key}" != "${key2}" ]; then
+  #       printf "Passwords didn't match. Please try again\n"
+  #       key2=""
+  #     fi
+  #   fi
+  # done
   line=$(grep -n --colour=auto "DATABASE_PASSWORD" .env | cut -d: -f1)
   newenv=$(awk "NR==${line} {print \"DATABASE_PASSWORD='${key}'\"; next} {print}" .env)
   echo "$newenv" > .env
@@ -448,27 +466,7 @@ create_cave() { # Create a cave app instance in folder $1
   # cd into the created app
   cd "$1" || exit 1
 
-  # Remove License and references
-  rm LICENSE
-  case "$(uname -s)" in
-    Linux*)
-      sed -i '/^## License Notice$/,$d' README.md
-      sed -i '/^Licensed under.*/,$d' NOTICE.md
-      if [ -f "cave_api/setup.py" ]; then
-        sed -i '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
-      fi
-    ;;
-    Darwin*)
-      sed -i '' '/^## License Notice$/,$d' README.md
-      sed -i '' '/^Licensed under.*/,$d' NOTICE.md
-      if [ -f "cave_api/setup.py" ]; then
-        sed -i '' '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
-      fi
-    ;;
-    *)
-      printf "Error: OS not recognized." | pipe_log "ERROR"; exit 1
-    ;;
-  esac
+  remove_licence_info "$app_dir"
 
   # Create a fake .env file to allow installation to proceed
   touch .env
@@ -520,23 +518,23 @@ uninstall_cli() { # Remove the CAVE CLI from system
 sync_cave() { # Sync files from another repo to the selected cave app
   local app_dir
   app_dir=$(find_app_dir)
-  if [ "${app_dir}" = "-1" ]; then
-    printf "Ensure you are in a valid CAVE app directory\n" | pipe_log "ERROR"
-    exit 1
-  else
-    cd "${app_dir}" || exit 1
-  fi
-
+  cd "$app_dir" || exit 1
   if [[ "$(has_flag -y "$@")" != "true" ]]; then
     confirm_action "This will reset your docker containers and database. It will also potentially update your local files"
   fi
   printf_header "Sync:"
 
-  printf "Downloading repo to sync..." | pipe_log "INFO"
   local path CLONE_URL CLONE_BRANCH
   path=$(mktemp -d)
   CLONE_URL="$(get_flag "none" "--url" "$@")"
   CLONE_BRANCH="$(get_flag "none" "--branch" "$@")"
+
+  printf "Syncing files with the following parameters:\n\n" | pipe_log "INFO"
+  printf "App Location: $app_dir\n" | pipe_log "INFO"
+  printf "Using Repo: $CLONE_URL\n" | pipe_log "INFO"
+  printf "Using Branch: $CLONE_BRANCH\n\n" | pipe_log "INFO"
+  printf "Downloading repo to sync..." | pipe_log "INFO"
+
   if [[ "${CLONE_BRANCH}" != 'none' ]]; then
     git clone -b "${CLONE_BRANCH}" --single-branch "${CLONE_URL}" "$path" 2>&1 | pipe_log "DEBUG"
   else
@@ -575,7 +573,6 @@ sync_cave() { # Sync files from another repo to the selected cave app
   reset -y
 
   printf "Sync complete.\n" | pipe_log "INFO"
-  exit 0
 }
 
 get_running_apps() {
@@ -613,6 +610,33 @@ kill_cave() {
   fi
 }
 
+remove_licence_info() {
+  # cd into the app
+  cd "$1" || exit 1
+
+  # Remove License and references
+  rm LICENSE
+  case "$(uname -s)" in
+    Linux*)
+      sed -i '/^## License Notice$/,$d' README.md
+      sed -i '/^Licensed under.*/,$d' NOTICE.md
+      if [ -f "cave_api/setup.py" ]; then
+        sed -i '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+      fi
+    ;;
+    Darwin*)
+      sed -i '' '/^## License Notice$/,$d' README.md
+      sed -i '' '/^Licensed under.*/,$d' NOTICE.md
+      if [ -f "cave_api/setup.py" ]; then
+        sed -i '' '/^\s*license="MIT",$/d;/^\s*"License.*MIT License",$/d' cave_api/setup.py
+      fi
+    ;;
+    *)
+      printf "Error: OS not recognized." | pipe_log "ERROR"; exit 1
+    ;;
+  esac
+}
+
 remove_docker_containers() {
   printf "Killing Running App (${app_name})..." 2>&1 | pipe_log "DEBUG"
   docker rm --force "${app_name}_django" "${app_name}_nginx" "${app_name}_db_host" "${app_name}_redis_host" 2>&1 | pipe_log "DEBUG"
@@ -631,7 +655,7 @@ reset() {
   remove_docker_containers
   remove_docker_pg_volume
   run_cave --entrypoint "./utils/reset_db.sh" "$@"
-  printf "DB reset finished\n" | pipe_log "INFO"
+  printf "DB reset complete.\n" | pipe_log "INFO"
 }
 
 prettify_cave() { # Run api_prettify.sh and optionally prettify.sh

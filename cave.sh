@@ -206,10 +206,35 @@ find_next_open_port() {
   fi
 }
 
+# Create a function to check if an input has `ERROR` in and exit if it does, otherwise pass the input on
+check_error_and_return() {
+  while read -r line || [ -n "$line" ]; do
+    if [[ "$line" == *"ERROR"* ]]; then
+      echo "true" > "$tmp_docker_error_file"
+    fi
+    printf "%s\n" "$line" 
+  done
+}
+
 build_image() {
   remove_docker_containers
   printf "Getting Docker setup... (this may take a while)\n" | pipe_log "INFO"
-  docker build . --tag "cave-app:${app_name}" 2>&1 | pipe_log "DEBUG"
+  # Make a tmp file for this process to store the error state
+  tmp_docker_error_file=$(mktemp)
+  echo "false" > "$tmp_docker_error_file"
+  # Pass has_docker_error to check_error_and_pipe_log to update the global variable
+  docker build . --tag "cave-app:${app_name}" 2>&1 | check_error_and_return | pipe_log "DEBUG"
+
+  # Check if there was an error during the build process
+  has_docker_error=$(cat "$tmp_docker_error_file")
+  rm "$tmp_docker_error_file"
+  if [ "$has_docker_error" = true ]; then
+    printf "An ERROR was returned during the Docker container build process." | pipe_log "ERROR"
+    printf "The CAVE CLI command is exiting early due to this ERROR." | pipe_log "ERROR"
+    printf "Consider running your command again in verbose mode to get more information." | pipe_log "ERROR"
+    printf "EG: 'cave reset -verbose' or 'cave run -verbose'" | pipe_log "ERROR"
+    exit 1
+  fi
 }
 
 run_cave() { # Runs the cave app in the current directory

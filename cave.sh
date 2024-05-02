@@ -513,6 +513,12 @@ create_cave() { # Create a cave app instance in folder $1
     *)          printf "Error: OS not recognized." | pipe_log "ERROR"; exit 1;;
   esac
   git add . 2>&1 | pipe_log "DEBUG"
+  # If media is not in the gitignore, add it and add it to the commit
+  if ! grep -q "media" .gitignore; then
+    echo "# Media" >> .gitignore
+    echo "media" >> .gitignore
+  fi
+  git add .
   git commit -m "Initialize CAVE App" 2>&1 | pipe_log "DEBUG"
   git branch -M main 2>&1 | pipe_log "DEBUG"
   printf "Done.\n" | pipe_log "INFO"

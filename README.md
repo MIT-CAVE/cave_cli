@@ -52,6 +52,10 @@ docker run hello-world
         - Show your credentials:
             - `cat ~/.ssh/id_rsa.pub`
         - Copy your credential up to github in your profile under ssh keys
+    - Notes
+        - If the cave cli installation isn't working, try using Ubuntu 22.04
+        - To open projects in your code editor, cd into the project and:
+            - `code .`
 
 </details>
 

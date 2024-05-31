@@ -53,9 +53,8 @@ docker run hello-world
             - `cat ~/.ssh/id_rsa.pub`
         - Copy your credential up to github in your profile under ssh keys
     - Notes
-        - If the cave cli installation isn't working, try using Ubuntu 22.04
-        - To open projects in your code editor, cd into the project and:
-            - `code .`
+        - You should be using Ubuntu 22.04
+        - If you are using VS Code, you can easily open WSL based folders with the `code` command. For example, while in your project directory: `code .`
 
 </details>
 

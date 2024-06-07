@@ -52,6 +52,9 @@ docker run hello-world
         - Show your credentials:
             - `cat ~/.ssh/id_rsa.pub`
         - Copy your credential up to github in your profile under ssh keys
+    - Notes
+        - You should be using Ubuntu 22.04
+        - If you are using VS Code, you can easily open WSL based folders with the `code` command. For example, while in your project directory: `code .`
 
 </details>
 

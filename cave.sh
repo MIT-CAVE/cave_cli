@@ -273,7 +273,8 @@ run_cave() { # Runs the cave app in the current directory
     --volume "${app_name}_redis_volume:/data" \
     --network cave-net:${app_name} \
     --name "${app_name}_redis_host" \
-    "redis:7" --save 15 1 2>&1 | pipe_log "DEBUG"
+    "redis:7" \
+    --save 7200 1 2>&1 | pipe_log "DEBUG"
 
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
     export PORT IP
@@ -669,6 +670,8 @@ remove_licence_info() {
 }
 
 remove_docker_containers() {
+  printf "Persisting Redis Data prior to Redis Container Termination..." 2>&1 | pipe_log "DEBUG"
+  docker exec "${app_name}_redis_host" redis-cli save 2>&1 | pipe_log "DEBUG"
   printf "Killing Running App (${app_name})..." 2>&1 | pipe_log "DEBUG"
   docker rm --force "${app_name}_django" "${app_name}_nginx" "${app_name}_db_host" "${app_name}_redis_host" 2>&1 | pipe_log "DEBUG"
   docker network rm cave-net:${app_name} 2>&1 | pipe_log "DEBUG"

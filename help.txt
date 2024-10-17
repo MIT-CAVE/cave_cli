@@ -2,10 +2,12 @@ Core Commands:
   create <app-name> [--version]
                             Creates a new CAVE app in the specified directory.
                               `--version`: str (optional)
-                                - What: Used to specify a cave app version (git branch name).
+                                - What: Used to specify a cave app version (git tag or branch name).
+                                  - See: https://github.com/MIT-CAVE/cave_app/tags
+                                  - See: https://github.com/MIT-CAVE/cave_app/branches/all
                                 - Default: The latest stable version (default branch).
                               EG: `cave create my_app`
-                              EG: `cave create my_app --version 2.2.0`
+                              EG: `cave create my_app --version v3.0.0`
 
   run [<ip:port> --entrypoint --docker-args -interactive(-it)]    
                             Runs the CAVE app in the current directory.
@@ -67,11 +69,13 @@ Peripheral Commands:
   upgrade [--version -skip-env-upgrade]
                             Upgrades the CAVE app in the current directory.
                               `--version`: str (optional)
-                                - What: Used to specify a cave app version (git branch name).
+                                - What: Used to specify a cave app version (git tag or branch name).
+                                  - See: https://github.com/MIT-CAVE/cave_app/tags
+                                  - See: https://github.com/MIT-CAVE/cave_app/branches/all
                                 - Default: The latest stable version (default branch).
                               `-skip-env-upgrade`: flag (optional)
                                 - What: Skip upgrading the project .env file, leaving it as is.
-                              EG: `cave upgrade --version 2.2.0`
+                              EG: `cave upgrade --version v3.0.0`
 
   purge <app-path>          Removes the app in the specified directory, as well as removing
                              its associated database.
@@ -125,9 +129,11 @@ Utility Commands:
 
   update [--version]        Updates the CAVE CLI.
                               `--version`: str (optional)
-                                - What: Used to choose a specific CAVE CLI version (git branch)
+                                - What: Used to choose a specific CAVE CLI version (git tag or branch name)
+                                  - See: https://github.com/MIT-CAVE/cave_cli/tags
+                                  - See: https://github.com/MIT-CAVE/cave_cli/branches/all
                                 - Default: The latest stable version (default branch)
-                              EG: `cave update --version 2.2.0`
+                              EG: `cave update --version v3.0.0`
 
   version                   Prints the version of your installed CAVE CLI.
 

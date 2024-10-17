@@ -2,11 +2,13 @@ Core Commands:
   create <app-name> [--version -save-inputs] 
                             Creates a new CAVE app in the specified directory.
                               `--version`: str (optional)
-                                - What: Used to specify a cave app version (git branch name).
+                                - What: Used to specify a cave app version (git tag or branch).
+                                  - See: https://github.com/MIT-CAVE/cave_app/tags
+                                  - See: https://github.com/MIT-CAVE/cave_app/branches/all
                                 - Default: The latest stable version (default branch).
                               `-save-inputs`: flag (optional)
                                 - What: Stores all inputs to be the defaults for future `create`s
-                              EG: `cave create my_app --version 1.0.1 -save-inputs -legacy`
+                              EG: `cave create my_app --version v1.0.1 -save-inputs -legacy`
                              
   run | start [<ip:port>]   Runs the CAVE app in the current directory. 
                               `<ip:port>` (optional):
@@ -38,7 +40,7 @@ Peripheral Commands:
                               `--version`: str (optional)
                                 - What: Used to specify a cave app version (git branch name).
                                 - Default: The latest stable version (default branch).
-                              EG: `cave upgrade --version 1.0.1 -legacy`
+                              EG: `cave upgrade --version v1.0.1 -legacy`
 
   purge <app-path>          Removes the app in the specified directory, as well as removing
                              its associated database and database user.
@@ -79,7 +81,7 @@ Utility Commands:
                               `--version`: str (optional)
                                 - What: Used to choose a specific CAVE CLI version (git branch)
                                 - Default: The latest stable version (default branch)
-                              EG: `cave update --version 1.0.1 -legacy`
+                              EG: `cave update --version v1.0.1 -legacy`
                              
   version                   Prints the version of your installed CAVE CLI.
 

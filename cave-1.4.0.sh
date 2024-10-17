@@ -480,6 +480,7 @@ create_cave() { # Create a cave app instance in folder $1
   fi
   if [[ ! -d "$1" ]]; then
     printf "\nClone failed. Ensure you used a valid version.\n"
+    printf "The version must be a tag (or branch) listed at ${CLONE_URL}.\n"
     exit 1
   fi
   printf "Done\n"

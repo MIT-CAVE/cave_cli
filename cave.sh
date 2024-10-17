@@ -10,6 +10,7 @@ readonly INVALID_NAME_PATTERN_4="(_-)+"
 readonly BIN_DIR="/usr/local/bin"
 readonly CHAR_LINE="============================="
 readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
+readonly CAVE_STATIC_URL="https://github.com/MIT-CAVE/cave_static.git"
 readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
 readonly MIN_DOCKER_VERSION="23.0.6"
 # Update environment
@@ -612,6 +613,61 @@ get_running_apps() {
     docker ps -a --format "{{.Names}}" | grep -E ".*_django" | sed 's/_django//g' 2>&1
 }
 
+list_versions() {
+  lv_pattern="$(get_flag "*" "--pattern" "$@")"
+  # If lv pattern starts with a v, remove it
+  lv_pattern="${lv_pattern#v}"
+
+  if [ "$(has_flag -static "$@")" = "true" ]; then
+    GIT_URL="$CAVE_STATIC_URL"
+    stable_latest_version_branches=""
+    cave_word="Static"
+  else
+    GIT_URL="$HTTPS_URL"
+    stable_latest_version_branches="$( \
+      git ls-remote --heads "$GIT_URL" | \
+      grep -E "refs/heads/V[0-9]+$" | \
+      grep -E "refs/heads/V${lv_pattern}" | \
+      cut -d/ -f3 | \
+      cut -d^ -f1 | \
+      sort -V -r \
+    )"
+    cave_word="App"
+  fi
+
+  stable_versions="$( \
+    git ls-remote --tags "$GIT_URL" | \
+    grep -E "refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" | \
+    grep -E "refs/tags/v${lv_pattern}" | \
+    cut -d/ -f3 | \
+    cut -d^ -f1 | \
+    sort -V -r \
+  )"
+
+
+  ordered_versions=$(echo -e "${stable_versions}\n${stable_latest_version_branches}" | sort -V)
+  
+  printf "CAVE $cave_word Versions:\n"
+  for version in $stable_versions; do
+    major_version="$(echo "$version" | cut -d. -f1)"
+    if [[ "$major_version" != "$last_major_version" ]]; then
+      # Print the major version with out the v before
+      major_version_no_v="${major_version#v}"
+      printf "\n$CHAR_LINE\n"
+      printf "Version ${major_version_no_v}:\n"
+      printf "$CHAR_LINE\n"
+      # If there is a branch for the major version, print it
+      branch="V${major_version_no_v}"
+      if echo "$stable_latest_version_branches" | grep -q "$branch"; then
+        printf "  ${branch} (latest version of ${major_version})\n"
+      fi
+      last_major_version="$major_version"
+    fi
+    printf "  ${version}\n"
+  done
+}
+
+
 list_cave() {
   if [ "$(has_flag -all "$@")" = "true" ]; then
     printf_header "CAVE Apps (All):"
@@ -837,6 +893,9 @@ main() {
       check_docker
       get_app
       prettify_cave "$@"
+    ;;
+    list-versions | lv)
+      list_versions "$@"
     ;;
     test)
       # Requires being inside app_dir

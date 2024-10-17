@@ -12,14 +12,16 @@ Core Commands:
   run [<ip:port> --entrypoint --docker-args -interactive(-it)]    
                             Runs the CAVE app in the current directory.
                               `<ip:port>` (optional):
-                                - The ip and port to host the app with the format <ip address>:<port>
+                                - The ip and port to host the app with the format
+                                  <ip address>:<port>
                               `--entrypoint`: str (optional)
                                 - What: The entrypoint to run the app with
                                 - Default: `./utils/run_server.sh`
                               `--docker-args`: str (optional)
                                 - What: Additional arguments to pass to the docker run command
                                 - Default: "" (empty string)
-                                - Note: docker-args can be passed to other cave commands that execute
+                                - Note: docker-args can be passed to other cave commands that 
+                                  execute
                                         `cave run` under the hood (e.g. cave reset)
                               `-it` | `-interactive`: flag (optional)
                                 - What: Trigger to run the app in interactive mode
@@ -27,10 +29,12 @@ Core Commands:
                                 - Note: Overides `--entrypoint` if both are specified
                                 - Note: If you use a different Dockerfile base image, it must have
                                         `bash` installed and globally accessable.
-                                - Note: Your current app is volume mounted into the container as `/app`
-                                        so you can change files externally and get live updates.
-                                - Note: The webapp is not started with this command, but can be launched
-                                        with `/app/utils/run_server.sh` while in interactive mode.
+                                - Note: Your current app is volume mounted into the container as 
+                                        `/app` so you can change files externally and get live 
+                                        updates.
+                                - Note: The webapp is not started with this command, but can be 
+                                        launched with `/app/utils/run_server.sh` while in 
+                                        interactive mode.
                               EG: `cave run`
                                 - Access with url: `localhost:8000`
                               EG: `cave run 192.168.1.1:8000`
@@ -43,20 +47,22 @@ Core Commands:
 
 Peripheral Commands:
   prettify [-all]           Cleans up cave_api code for the CAVE app in the current
-                             directory using autoflake and black.
+                            directory using autoflake and black.
                               `-all`: flag (optional)
                                 - What: Trigger prettify for cave_core and cave_app.
                               - Note: This command actually runs the entrypoint script
                                       `./utils/prettify.sh` in the app's container.
 
-  reset                     Removes the Docker containers (deletes and recreates them from scratch) for the app
-                             in this directory. The database will be reset to default values.
+  reset                     Removes the Docker containers (deletes and recreates them from scratch)
+                            for the app in this directory. The database will be reset to default 
+                            values.
                               - Note: This command:
                                 1) Deletes the app specific postgresql container and volume
                                 2) Deletes the app specific docker container
                                 3) Recreates the app specific postgresql container and volume
                                 4) Recreates the app specific docker container
-                                5) Executes the entrypoint script `./utils/reset_db.sh` in the app's container
+                                5) Executes the entrypoint script `./utils/reset_db.sh` in the app's 
+                                   container
 
   test [-all]               Runs the given test python file located in /cave_api/tests/.
                               `-all`: flag (optional)
@@ -78,7 +84,7 @@ Peripheral Commands:
                               EG: `cave upgrade --version v3.0.0`
 
   purge <app-path>          Removes the app in the specified directory, as well as removing
-                             its associated database.
+                            its associated database.
                               EG: `cave purge my_app/`
 
 
@@ -94,8 +100,24 @@ Utility Commands:
                                         purposes. It is not recommended for general use.
                               EG: `cave list`
 
-  kill [--app -all]         Kills the app run from the current directory
-                             Used when a CAVE app wasn't properly shut down.
+  list-versions | lv [--pattern -static]
+                            Lists all available stable versions of the CAVE App
+                              `--pattern`: str (optional)
+                                - What: A pattern to filter the versions by
+                                - Note: This should be part or all of the version number
+                              `-static`: flag (optional)
+                                - What: Trigger to list versions for the CAVE Static Builds
+                                - Default: Not set (lists versions for the CAVE App)
+                              EG: `cave list-versions`
+                              EG: `cave lv --pattern v2`
+                              EG: `cave lv --pattern v2.1`
+                              EG: `cave lv --pattern v2.1.0`
+                              EG: `cave lv --pattern 2.1`
+                              EG: `cave lv --static`
+                              EG: `cave lv --static --pattern v2`
+
+  kill [--app -all]         Kills the app run from the current directory. This is normally
+                            used when a CAVE app wasn't properly shut down.
                               `--app`: str (optional)
                                 - What: The name of the app to kill
                                 - Default: The app in the current directory
@@ -106,22 +128,24 @@ Utility Commands:
 
   sync --url [--branch --include --exclude --post-sync]
                             Merges files from the given repo (url) into the CAVE app in the
-                             current directory. This always excludes the `.git` folder.
+                            current directory. This always excludes the `.git` folder.
                               `--url`: str (required)
                                 - What: The git `url` for a repo to which you have clone access
                               `--branch`: str (optional)
                                 - What: The branch of the git url you wish to sync
                               `--include` string of space separated substrings (optional)
-                                - What: A space separated string of strings (filenames) that should be
-                                        included (even if in an `--exclude` statement) for a sync operation
+                                - What: A space separated string of strings (filenames) that should 
+                                        be included (even if in an `--exclude` statement) for a 
+                                        sync operation.
                               `--exclude` string of space separated substrings (optional)
-                                - What: A space separated string of strings (filenames) that should not be
-                                        included in the sync operation (`--include` takes precedent)
+                                - What: A space separated string of strings (filenames) that should 
+                                        not be included in the sync operation (`--include` takes 
+                                        precedent)
                                 - Note: If not excluded, a file is automatically included
                               `--post-sync`: str (optional)
-                                - What: A command to run after doing the upgrade with the name of the
-                                        directory holding the dowloaded remote version of the repository
-                                        as the first argument
+                                - What: A command to run after doing the upgrade with the name of 
+                                        the directory holding the dowloaded remote version of the 
+                                        repository as the first argument
                               EG: `cave sync --url git@github.com:mit-cave/cave_app_aws.git \
                                    --exclude "'.git' '.gitignore' 'README.md'"`
 
@@ -129,7 +153,8 @@ Utility Commands:
 
   update [--version]        Updates the CAVE CLI.
                               `--version`: str (optional)
-                                - What: Used to choose a specific CAVE CLI version (git tag or branch name)
+                                - What: Used to choose a specific CAVE CLI version (git tag or 
+                                        branch name)
                                   - See: https://github.com/MIT-CAVE/cave_cli/tags
                                   - See: https://github.com/MIT-CAVE/cave_cli/branches/all
                                 - Default: The latest stable version (default branch)

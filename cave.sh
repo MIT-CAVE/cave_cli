@@ -15,7 +15,6 @@ readonly MIN_DOCKER_VERSION="23.0.6"
 # Update environment
 declare -xr CAVE_PATH="${HOME}/.cave_cli"
 readonly CURRENT_ENV_VARIABLES=(
-  "DATABASE_COMMAND"
   "DATABASE_IMAGE"
   "DATABASE_PASSWORD"
   "DJANGO_ADMIN_EMAIL"
@@ -256,6 +255,12 @@ run_cave() { # Runs the cave app in the current directory
     docker_args=""
   fi
 
+  # Use DATABASE_COMMAND "postgres -c listen_addresses=*" as the default command if not specified
+  if [ -z "$DATABASE_COMMAND" ]; then
+    DATABASE_COMMAND="postgres -c listen_addresses=*"
+    printf "DATABASE_COMMAND not set in '.env' file. Using "postgres -c listen_addresses=*" as default." | pipe_log "DEBUG"
+  fi
+
   docker network create cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
   source .env
   docker run -d \
@@ -268,12 +273,18 @@ run_cave() { # Runs the cave app in the current directory
     -e POSTGRES_DB="${app_name}_name"\
     "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
 
+  # Use redis:7 as the default image if not specified
+  if [ -z "$REDIS_IMAGE" ]; then
+    printf "REDIS_IMAGE not set in '.env' file. Using redis:7 as default." | pipe_log "WARN"
+    REDIS_IMAGE="redis:7"
+  fi
+
   docker run -d \
     ${docker_args} \
     --volume "${app_name}_redis_volume:/data" \
     --network cave-net:${app_name} \
     --name "${app_name}_redis_host" \
-    "redis:7" \
+    "$REDIS_IMAGE" \
     --save 7200 1 2>&1 | pipe_log "DEBUG"
 
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then
@@ -291,9 +302,12 @@ run_cave() { # Runs the cave app in the current directory
         -p "$IP:$PORT:8000" \
         --network cave-net:${app_name} \
         --volume "$app_dir/utils/lan_hosting:/certs" \
-        --name "${app_name}_nginx" \
+        --name "${app_name}_nginx_host" \
         -e CAVE_HOST="${app_name}_django" \
-        --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx 2>&1 | pipe_log "DEBUG"
+        -e CAVE_PORT=$PORT \
+        -e CAVE_IP=$IP \
+        --volume "$app_dir/utils/nginx_ssl.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+        nginx 2>&1 | pipe_log "DEBUG"
       docker run -it \
         ${docker_args} \
         -p 8000 \
@@ -609,7 +623,27 @@ sync_cave() { # Sync files from another repo to the selected cave app
 }
 
 get_running_apps() {
-    docker ps -a --format "{{.Names}}" | grep -E ".*_django" | sed 's/_django//g' 2>&1
+  echo "$(docker ps -a --format "{{.Names}}" | grep -E ".*_django" | sed 's/_django//g' 2>&1)"
+}
+
+get_running_apps_and_ip_ports() {
+  app_names=$(get_running_apps)
+  # For each app in app_names, print the app name and the ip and port it is running on
+  output=""
+  for app_name in $app_names; do
+    # If a NGINX Container is running, print the ip and port it is running on
+    if docker ps -a --format "{{.Names}}" | grep -qE "${app_name}_nginx_host"; then
+      # IP and Port are stored as environment variables as CAVE_PORT and CAVE_IP
+      ip_port="$(docker inspect -f '{{.Config.Env}}' ${app_name}_nginx_host | grep -oE "CAVE_IP=[0-9.]*" | cut -d= -f2):$(docker inspect -f '{{.Config.Env}}' ${app_name}_nginx_host | grep -oE "CAVE_PORT=[0-9]*" | cut -d= -f2)"
+      output="${output}${app_name} (https://${ip_port})\n"
+    else
+      # If no NGINX Container is running, print the port the Django Container is running on
+      ip_port="$(docker inspect -f '{{(index (index .NetworkSettings.Ports "8000/tcp") 0).HostPort}}' ${app_name}_django)"
+      output="${output}${app_name} (http://localhost:${ip_port})\n"
+    fi
+  done
+  echo -e "$output"
+
 }
 
 list_versions() {
@@ -669,14 +703,14 @@ list_versions() {
 
 list_cave() {
   if [ "$(has_flag -all "$@")" = "true" ]; then
-    printf_header "CAVE Apps (All):"
+    printf_header "CAVE App Containers (All):"
     docker ps -a --format "{{.Names}}" | grep -E ".*_django" 2>&1 | pipe_log "INFO"
-    docker ps -a --format "{{.Names}}" | grep -E ".*_postgres" 2>&1 | pipe_log "INFO"
-    docker ps -a --format "{{.Names}}" | grep -E ".*_redis" 2>&1 | pipe_log "INFO"
-    docker ps -a --format "{{.Names}}" | grep -E ".*_nginx" 2>&1 | pipe_log "INFO"
+    docker ps -a --format "{{.Names}}" | grep -E ".*_db_host" 2>&1 | pipe_log "INFO"
+    docker ps -a --format "{{.Names}}" | grep -E ".*_redis_host" 2>&1 | pipe_log "INFO"
+    docker ps -a --format "{{.Names}}" | grep -E ".*_nginx_host" 2>&1 | pipe_log "INFO"
   else
     printf_header "CAVE Apps (Running):"
-    get_running_apps | pipe_log "INFO"
+    get_running_apps_and_ip_ports | pipe_log "INFO"
   fi
 }
 
@@ -689,12 +723,12 @@ kill_cave() {
   if [ "$(has_flag -all "$@")" = "true" ]; then
     for app_name in $(get_running_apps) ; do
       remove_docker_containers
-      printf "Cave app ${app_name} killed\n" | pipe_log "INFO"
+      printf "Killed: ${app_name}\n" | pipe_log "INFO"
     done
   else
     get_app
     remove_docker_containers
-    printf "Cave app ${app_name} killed\n" | pipe_log "INFO"
+    printf "Killed: ${app_name}\n" | pipe_log "INFO"
   fi
 }
 
@@ -729,7 +763,7 @@ remove_docker_containers() {
   printf "Persisting Redis Data prior to Redis Container Termination..." 2>&1 | pipe_log "DEBUG"
   docker exec "${app_name}_redis_host" redis-cli save 2>&1 | pipe_log "DEBUG"
   printf "Killing Running App (${app_name})..." 2>&1 | pipe_log "DEBUG"
-  docker rm --force "${app_name}_django" "${app_name}_nginx" "${app_name}_db_host" "${app_name}_redis_host" 2>&1 | pipe_log "DEBUG"
+  docker rm --force "${app_name}_django" "${app_name}_nginx_host" "${app_name}_db_host" "${app_name}_redis_host" 2>&1 | pipe_log "DEBUG"
   docker network rm cave-net:${app_name} 2>&1 | pipe_log "DEBUG"
 }
 

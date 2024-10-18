@@ -10,7 +10,6 @@ readonly INVALID_NAME_PATTERN_4="(_-)+"
 readonly BIN_DIR="/usr/local/bin"
 readonly CHAR_LINE="============================="
 readonly HTTPS_URL="https://github.com/MIT-CAVE/cave_app.git"
-readonly CAVE_STATIC_URL="https://github.com/MIT-CAVE/cave_static.git"
 readonly IP_REGEX="([0-9]{1,3}\.)+([0-9]{1,3}):[0-9][0-9][0-9][0-9]+"
 readonly MIN_DOCKER_VERSION="23.0.6"
 # Update environment
@@ -614,26 +613,26 @@ get_running_apps() {
 }
 
 list_versions() {
+  # Get the provided pattern
   lv_pattern="$(get_flag "*" "--pattern" "$@")"
   # If lv pattern starts with a v, remove it
   lv_pattern="${lv_pattern#v}"
-
-  if [ "$(has_flag -static "$@")" = "true" ]; then
-    GIT_URL="$CAVE_STATIC_URL"
-    stable_latest_version_branches=""
-    cave_word="Static"
-  else
-    GIT_URL="$HTTPS_URL"
-    stable_latest_version_branches="$( \
-      git ls-remote --heads "$GIT_URL" | \
-      grep -E "refs/heads/V[0-9]+$" | \
-      grep -E "refs/heads/V${lv_pattern}" | \
-      cut -d/ -f3 | \
-      cut -d^ -f1 | \
-      sort -V -r \
-    )"
-    cave_word="App"
+  # Get the repo
+  lv_repo="$(get_flag "cave_app" "--repo" "$@")"
+  if [ "$lv_repo" != "cave_app" ] && [ "$lv_repo" != "cave_static" ] && [ "$lv_repo" != "cave_cli" ] && [ "$lv_repo" != "cave_utils" ]; then
+    printf "Error: Invalid repo provided. Must be one of 'cave_app', 'cave_static', 'cave_cli' or 'cave_utils'." | pipe_log "ERROR"
+    exit 1
   fi
+  GIT_URL="https://github.com/MIT-CAVE/${lv_repo}.git"
+
+  stable_latest_version_branches="$( \
+    git ls-remote --heads "$GIT_URL" | \
+    grep -E "refs/heads/V[0-9]+$" | \
+    grep -E "refs/heads/V${lv_pattern}" | \
+    cut -d/ -f3 | \
+    cut -d^ -f1 | \
+    sort -V -r \
+  )"
 
   stable_versions="$( \
     git ls-remote --tags "$GIT_URL" | \
@@ -647,7 +646,7 @@ list_versions() {
 
   ordered_versions=$(echo -e "${stable_versions}\n${stable_latest_version_branches}" | sort -V)
   
-  printf "CAVE $cave_word Versions:\n"
+  printf "CAVE Versions (repo: ${lv_repo}):\n"
   for version in $stable_versions; do
     major_version="$(echo "$version" | cut -d. -f1)"
     if [[ "$major_version" != "$last_major_version" ]]; then

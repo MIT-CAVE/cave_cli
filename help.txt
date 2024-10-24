@@ -7,7 +7,7 @@ Core Commands:
                                   - See: https://github.com/MIT-CAVE/cave_app/branches/all
                                 - Default: The latest stable version (default branch).
                               EG: `cave create my_app`
-                              EG: `cave create my_app --version v3.0.2`
+                              EG: `cave create my_app --version v3.0.3`
                               Note: To list available versions use `cave list-versions`
 
   run [<ip:port> --entrypoint --docker-args -interactive(-it)]    
@@ -82,7 +82,7 @@ Peripheral Commands:
                                 - Default: The latest stable version (default branch).
                               `-skip-env-upgrade`: flag (optional)
                                 - What: Skip upgrading the project .env file, leaving it as is.
-                              EG: `cave upgrade --version v3.0.2`
+                              EG: `cave upgrade --version v3.0.3`
 
   purge <app-path>          Removes the app in the specified directory, as well as removing
                             its associated database.
@@ -161,7 +161,7 @@ Utility Commands:
                                   - See: https://github.com/MIT-CAVE/cave_cli/tags
                                   - See: https://github.com/MIT-CAVE/cave_cli/branches/all
                                 - Default: The latest stable version (default branch)
-                              EG: `cave update --version v3.0.2`
+                              EG: `cave update --version v3.0.3`
 
   version                   Prints the version of your installed CAVE CLI.
 

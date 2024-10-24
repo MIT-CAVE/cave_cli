@@ -274,9 +274,9 @@ run_cave() { # Runs the cave app in the current directory
     "$DATABASE_IMAGE" $DATABASE_COMMAND 2>&1 | pipe_log "DEBUG"
 
   # Use redis:7 as the default image if not specified
-  if [ -z "$REDIS_IMAGE" ]; then
-    printf "REDIS_IMAGE not set in '.env' file. Using redis:7 as default." | pipe_log "WARN"
-    REDIS_IMAGE="redis:7"
+  if [ -z "$CACHE_IMAGE" ]; then
+    printf "CACHE_IMAGE not set in '.env' file. Using valkey/valkey:7 as default." | pipe_log "WARN"
+    CACHE_IMAGE="valkey/valkey:7"
   fi
 
   docker run -d \
@@ -284,7 +284,7 @@ run_cave() { # Runs the cave app in the current directory
     --volume "${app_name}_redis_volume:/data" \
     --network cave-net:${app_name} \
     --name "${app_name}_redis_host" \
-    "$REDIS_IMAGE" \
+    "$CACHE_IMAGE" \
     --save 7200 1 2>&1 | pipe_log "DEBUG"
 
   if [[ "$1" != "" && "$1" =~ $IP_REGEX ]]; then

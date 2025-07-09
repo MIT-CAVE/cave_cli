@@ -90,9 +90,9 @@ setup_log() {
 log() {
     local log_message=$1
     local log_priority=$2
-    
+
     if [[ " ${script_logging_levels[@]} " =~ " ${log_priority} " ]]; then
-      printf "$log_priority: $log_message\n" >&2
+      echo -en "$log_priority: $log_message\n" >&2
     fi
 }
 

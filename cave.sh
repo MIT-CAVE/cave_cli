@@ -79,6 +79,9 @@ dockerfile_help() { # Add additional Dockerfile help if no Dockerfile is found
 
 get_app() {
   app_dir=$(find_app_dir)
+  if [ "${app_dir}" = "-1" ]; then
+    exit 1
+  fi
   cd "$app_dir" || exit 1
   app_name=$(basename "$(readlink -f "$app_dir")")
 }
@@ -182,7 +185,43 @@ print_help() { # Prints the help text for cave_cli
 }
 
 print_version(){
-  printf "%s" "$(cat "${CAVE_PATH}/VERSION")" | pipe_log "INFO"
+  printf "CAVE_CLI=$(cat "${CAVE_PATH}/VERSION")" | pipe_log "INFO"
+}
+
+print_app_dir_version() { # Finds the app dir then returns the cave_static, cave_app and cave_utils version
+  get_app
+  # printf "App (${app_name}") | pipe_log "INFO"
+  printf_header "${app_name} versions:"
+  if [ -f "${app_dir}/VERSION" ]; then
+    CAVE_APP_VERSION="$(cat "${app_dir}/VERSION")"
+  else
+    CAVE_APP_VERSION="Unknown"
+  fi
+  if [ -f "${app_dir}/requirements.txt" ]; then
+    CAVE_UTILS_VERSION="v$(grep "cave_utils" "${app_dir}/requirements.txt" | cut -d'=' -f3)"
+  else
+    CAVE_UTILS_VERSION="Unknown"
+  fi
+  if [ -f "${app_dir}/.env" ]; then
+    # Get the line that starts with STATIC_APP_URL
+    STATIC_APP_URL="$(grep "STATIC_APP_URL" "${app_dir}/.env" | cut -d'=' -f2 | sed "s/'//g")"
+    # If localhost is in STATIC_APP_URL, set CAVE_STATIC_VERSION to Local
+    if [[ "${STATIC_APP_URL}" == *"localhost"* ]]; then
+      CAVE_STATIC_VERSION="Local"
+    else
+      # Get the STATIC_APP_URL_PATH from the .env file
+      STATIC_APP_URL_PATH="$(grep "STATIC_APP_URL_PATH" "${app_dir}/.env" | cut -d'=' -f2 | sed "s/'//g")"
+      # If the path is not empty, find only the verion number if it exists. The line can be something like 3.3.0/index.html
+      if [[ -n "${STATIC_APP_URL_PATH}" ]]; then
+        CAVE_STATIC_VERSION="v$(echo "${STATIC_APP_URL_PATH}" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+      else
+        CAVE_STATIC_VERSION="Unknown"
+      fi
+    fi
+  else
+    CAVE_STATIC_VERSION="Unknown"
+  fi
+  printf "CAVE_APP=${CAVE_APP_VERSION}\nCAVE_STATIC=${CAVE_STATIC_VERSION}\nCAVE_UTILS=${CAVE_UTILS_VERSION}\n" | pipe_log "INFO"
 }
 
 is_local_port_open() {
@@ -864,6 +903,7 @@ main() {
     version | --version | -v)
       # Independent CLI Command
       print_version
+      print_app_dir_version
     ;;
     update)
       # Independent CLI Command

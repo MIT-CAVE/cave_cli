@@ -211,7 +211,7 @@ print_app_dir_version() { # Finds the app dir then returns the cave_static, cave
     else
       # Get the STATIC_APP_URL_PATH from the .env file
       STATIC_APP_URL_PATH="$(grep "STATIC_APP_URL_PATH" "${app_dir}/.env" | cut -d'=' -f2 | sed "s/'//g")"
-      # If the path is not empty, find only the verion number if it exists. The line can be something like 3.3.0/index.html
+      # If the path is not empty, find only the verion number if it exists. The line can be something like 3.4.0/index.html
       if [[ -n "${STATIC_APP_URL_PATH}" ]]; then
         CAVE_STATIC_VERSION="v$(echo "${STATIC_APP_URL_PATH}" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
       else

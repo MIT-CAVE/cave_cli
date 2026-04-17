@@ -414,6 +414,8 @@ upgrade_cave() { # Upgrade cave_app while preserving .env and cave_api/
     --branch "$(get_flag "main" "--version" "$@")" \
     "$@"
   remove_licence_info "$app_dir"
+  printf "\nUpdating Docs...\n" | pipe_log "INFO"
+  run_cave --entrypoint "./utils/generate_docs.sh" 2>&1 | pipe_log "DEBUG"
   printf "Upgrade complete.\n" | pipe_log "INFO"
 }
 
@@ -575,6 +577,10 @@ create_cave() { # Create a cave app instance in folder $1
   git add .
   git commit -m "Initialize CAVE App" 2>&1 | pipe_log "DEBUG"
   git branch -M main 2>&1 | pipe_log "DEBUG"
+  printf "Done.\n" | pipe_log "INFO"
+
+  printf "Generating LLM Docs..." | pipe_log "INFO"
+  ./utils/generate_docs.sh 2>&1 | pipe_log "DEBUG"
   printf "Done.\n" | pipe_log "INFO"
 
   printf_header "App Creation Status:" | pipe_log "INFO"

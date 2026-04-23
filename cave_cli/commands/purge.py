@@ -9,6 +9,7 @@ from cave_cli.utils.docker import (
     remove_volume,
 )
 from cave_cli.utils.logger import logger
+from cave_cli.utils.subprocess import run_and_log
 from cave_cli.utils.validate import confirm_action, validate_app_dir
 
 
@@ -46,11 +47,24 @@ def purge(args: argparse.Namespace) -> None:
     logger.info("Removing files...")
     try:
         shutil.rmtree(abs_path)
-        logger.info("Done")
-        logger.info("Purge complete.")
     except PermissionError:
-        logger.error(
-            "Couldn't remove files. "
-            "You may need elevated permissions."
+        logger.debug(
+            "Some files are owned by root (created by Docker). "
+            "Removing via Docker..."
         )
-        sys.exit(1)
+        run_and_log([
+            "docker", "run", "--rm",
+            "-v", f"{abs_path}:/purge",
+            "alpine", "rm", "-rf", "/purge",
+        ])
+        if os.path.isdir(abs_path):
+            try:
+                shutil.rmtree(abs_path)
+            except PermissionError:
+                logger.error(
+                    "Couldn't remove files. "
+                    "You may need elevated permissions."
+                )
+                sys.exit(1)
+    logger.info("Done")
+    logger.info("Purge complete.")

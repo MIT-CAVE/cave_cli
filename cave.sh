@@ -34,7 +34,7 @@ else
 fi
 
 _info "Installing pip-based CAVE CLI..."
-$PIP install "${PIP_INSTALL_SPEC}"
+$PIP install "${PIP_INSTALL_SPEC}" --user
 if [ $? -ne 0 ]; then
     _error "Installation failed. Please try manually:"
     _error "  $PIP install '${PIP_INSTALL_SPEC}'"

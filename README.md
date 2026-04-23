@@ -1,9 +1,15 @@
 # CAVE CLI
-A unix based Command Line Interface (CLI) to streamline the creation and development process for `cave_app`s
 
-## Prerequisits for the CLI installation
+A cross-platform CLI for creating and managing Docker-based CAVE web applications.
 
-Click your OS below for instructions on how to install the prerequisits for the CLI installation.
+Developed by [MIT-CAVE](https://cave.mit.edu/) (Center for Transportation & Logistics). Licensed under Apache 2.0.
+
+## Prerequisites
+
+- [Python](https://www.python.org/downloads/) 3.11+
+- [Docker](https://docs.docker.com/get-docker/) 23.0.6+
+- [Git](https://git-scm.com/)
+
 <details>
 <summary>Ubuntu</summary>
 
@@ -19,68 +25,101 @@ docker run hello-world
 
 </details>
 <details>
-<summary>MacOs</summary>
+<summary>macOS</summary>
 
-- Install `Command Line Tools`
-    - Install `XCode` from the `App Store`
-    - Once `XCode` is installed, install the XCode `Command Line Tools`
-        - `menu` -> `preferences` -> `downloads` -> `command line tools`
-- Install Docker
-    - https://docs.docker.com/docker-for-mac/install/
+- Install Docker Desktop: https://docs.docker.com/docker-for-mac/install/
 
 </details>
 <details>
 <summary>Windows</summary>
 
-- Install docker desktop **for wsl**
-    - https://docs.docker.com/desktop/wsl/
-- Install wsl2 with ubuntu 22.04
-    - https://learn.microsoft.com/en-us/windows/wsl/install#upgrade-version-from-wsl-1-to-wsl-2
-- Open your wsl ubuntu terminal and in that terminal:
-    - Check docker:
-        - `docker run hello-world`
-        - `docker --version`
-    - Install the cave cli:
-        - `bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"`
-    - Optional: Configure git and ssh for wsl2 (since this is different from windows git)
-        - Configure ssh credentials:
-            - `ssh-keygen -f ~/.ssh/id_rsa -t rsa -b 4096 -C [youremail@gmail.com](mailto:youremail@gmail.com)`
-            - `echo '# Add Git Profile' >> ~/.bashrc`
-            - `echo 'eval $(ssh-agent -s) &>/dev/null' >> ~/.bashrc`
-            - `echo 'ssh-add ~/.ssh/id_rsa &>/dev/null' >> ~/.bashrc`
-            - `source ~/.bashrc`
-        - Show your credentials:
-            - `cat ~/.ssh/id_rsa.pub`
-        - Copy your credential up to github in your profile under ssh keys
-    - Notes
-        - You should be using Ubuntu 22.04
-        - If you are using VS Code, you can easily open WSL based folders with the `code` command. For example, while in your project directory: `code .`
+- Install Docker Desktop for WSL: https://docs.docker.com/desktop/wsl/
+- Install WSL2 with Ubuntu: https://learn.microsoft.com/en-us/windows/wsl/install
+- Open your WSL Ubuntu terminal for all `cave` commands
 
 </details>
 
-## CLI Installation
+## Installation
 
 ```sh
-# Install the CLI
-bash -c "$(curl https://raw.githubusercontent.com/MIT-CAVE/cave_cli/main/install.sh)"
+pip install git+https://github.com/MIT-CAVE/cave_cli.git
 ```
+
+Or with [pipx](https://pipx.pypa.io/) (recommended for CLI tools):
+
 ```sh
-# Validate the installation succeeded
+pipx install git+https://github.com/MIT-CAVE/cave_cli.git
+```
+
+Verify the installation:
+
+```sh
 cave --version
 ```
 
-## CLI Functions
+## Quick Start
 
-- All current CLI functions can be listed with:
-    ```
-    cave --help
-    ```
+```sh
+cave create my_app
+cd my_app
+cave run
+# Open http://localhost:8000/ in your browser
+```
 
-- To create and run a new app:
-    1) `cave create my_app`
-    2) `cd my_app`
-    3) `cave run`
-    4) Open a browser to `http://localhost:8000/`
+## CLI Commands
+
+```sh
+cave --help
+```
+
+### Core Commands
+
+| Command | Description |
+|---|---|
+| `cave create <name>` | Create a new CAVE app from the template repository |
+| `cave run` | Build Docker image and run the app |
+
+### Peripheral Commands
+
+| Command | Description |
+|---|---|
+| `cave reset` | Remove containers/volumes and rebuild from scratch |
+| `cave upgrade` | Upgrade app files from the upstream template |
+| `cave sync --url <url>` | Merge files from another repository into the app |
+| `cave test` | Run tests in `cave_api/tests/` |
+| `cave prettify` | Format code with autoflake and black |
+| `cave purge <path>` | Remove an app and all its Docker resources |
+
+### Utility Commands
+
+| Command | Description |
+|---|---|
+| `cave list` | List running CAVE apps |
+| `cave kill` | Stop Docker containers for an app |
+| `cave list-versions` | List available CAVE app versions |
+| `cave update` | Update the CAVE CLI itself |
+| `cave uninstall` | Remove the CAVE CLI |
+| `cave version` | Print version information |
+
+### Global Flags
+
+| Flag | Description |
+|---|---|
+| `-v`, `--verbose` | Enable verbose (DEBUG) logging output |
+| `--loglevel LEVEL` | Set log level: DEBUG, INFO, WARN, ERROR, SILENT |
+| `-y`, `--yes` | Automatically answer confirmation prompts with yes |
+
+## Updating
+
+```sh
+pip install --upgrade git+https://github.com/MIT-CAVE/cave_cli.git
+```
+
+Or:
+
+```sh
+cave update
+```
 
 ## License Notice
 

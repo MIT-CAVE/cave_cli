@@ -42,13 +42,13 @@ docker run hello-world
 ## Installation
 
 ```sh
-pip install git+https://github.com/MIT-CAVE/cave_cli.git
+pip install cave_cli
 ```
 
-Or with [pipx](https://pipx.pypa.io/) (recommended for CLI tools):
+Or with [pipx](https://pipx.pypa.io/):
 
 ```sh
-pipx install git+https://github.com/MIT-CAVE/cave_cli.git
+pipx install cave_cli
 ```
 
 Verify the installation:

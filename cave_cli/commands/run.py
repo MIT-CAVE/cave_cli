@@ -1,7 +1,6 @@
 import argparse
 import sys
 
-from cave_cli.utils.constants import CAVE_PATH
 from cave_cli.utils.docker import (
     build_image,
     create_network,
@@ -41,11 +40,14 @@ def run_cave(
     extra_docker_args = docker_args_str.split() if docker_args_str else []
     ip_port_arg = getattr(args, "ip_port", None)
 
+    command_args = getattr(args, "command_args", []) or []
+    extra_env = getattr(args, "extra_env", {}) or {}
+
     if interactive:
         server_command = ["bash"]
         logger.header("CAVE App: (Interactive)")
     else:
-        server_command = [entrypoint]
+        server_command = [entrypoint] + command_args
         logger.header(f"CAVE App: ({entrypoint})")
 
     if extra_docker_args:
@@ -107,11 +109,11 @@ def run_cave(
         "DATABASE_PORT": "5432",
         "REDIS_HOST": f"{app_name}_redis_host",
         "REDIS_PORT": "6379",
+        **extra_env,
     }
 
     django_volumes = [
-        f"{app_dir}:/app",
-        f"{CAVE_PATH}:/cave_cli",
+        f"{app_dir}:/app"
     ]
 
     parsed = parse_ip_port(ip_port_arg) if ip_port_arg else None

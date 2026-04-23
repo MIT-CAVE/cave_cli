@@ -23,9 +23,12 @@ def is_port_available(port: int) -> bool:
         - What: True if the port is available, False if in use
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(1)
-        result = s.connect_ex(("127.0.0.1", port))
-        return result != 0
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(("0.0.0.0", port))
+            return True
+        except OSError:
+            return False
 
 
 def find_open_port(start: int = 8000) -> int:

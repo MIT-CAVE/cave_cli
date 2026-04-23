@@ -1,12 +1,16 @@
 import argparse
+import fnmatch
 import re
+from collections import defaultdict
 
 from cave_cli.utils.constants import CHAR_LINE, VALID_REPOS
-from cave_cli.utils.git import ls_remote_heads, ls_remote_tags
+from cave_cli.utils.git import ls_remote_tags
 from cave_cli.utils.logger import logger
 
+RECENT_LIMIT = 5
 
-def version_sort_key(v: str) -> list[int]:
+
+def _version_sort_key(v: str) -> list[int]:
     return [int(x) for x in re.findall(r"\d+", v)]
 
 
@@ -14,53 +18,76 @@ def list_versions(args: argparse.Namespace) -> None:
     """
     Usage:
 
-    - Lists all available stable versions of a CAVE repository
-    """
-    pattern = getattr(args, "pattern", "*")
-    if pattern.startswith("v"):
-        pattern = pattern[1:]
+    - Lists available stable versions across all CAVE repositories,
+      grouped by major version, with a presence check per repo
 
-    repo = getattr(args, "repo", "cave_app")
-    if repo not in VALID_REPOS:
-        logger.error(
-            f"Invalid repo provided. Must be one of "
-            f"{list(VALID_REPOS)}."
-        )
+    Optional:
+
+    - ``all``:
+        - Type: bool
+        - What: Show all versions instead of the 5 most recent per major
+        - Default: False
+    """
+    show_all = getattr(args, "all", False)
+    pattern = getattr(args, "pattern", None)
+
+    repo_tags: dict[str, set[str]] = {}
+    for repo in VALID_REPOS:
+        logger.info(f"Fetching versions for {repo}...")
+        git_url = f"https://github.com/MIT-CAVE/{repo}.git"
+        raw = ls_remote_tags(git_url)
+        repo_tags[repo] = {
+            t for t in raw if re.match(r"^v[0-9]+\.[0-9]+\.[0-9]+$", t)
+        }
+
+    all_versions = sorted(
+        (
+            v for v in set().union(*repo_tags.values())
+            if not pattern or fnmatch.fnmatch(v, pattern)
+        ),
+        key=_version_sort_key,
+        reverse=True,
+    )
+
+    if not all_versions:
+        logger.info("No stable versions found.")
         return
 
-    git_url = f"https://github.com/MIT-CAVE/{repo}.git"
+    by_major: dict[int, list[str]] = defaultdict(list)
+    for v in all_versions:
+        major = _version_sort_key(v)[0]
+        by_major[major].append(v)
 
-    raw_heads = ls_remote_heads(git_url)
-    stable_branches = [
-        b
-        for b in raw_heads
-        if re.match(r"^V[0-9]+$", b)
-        and (pattern == "*" or re.search(pattern, b[1:]))
-    ]
+    repos = list(VALID_REPOS)
+    version_w = max(len("Version"), max(len(v) for v in all_versions))
+    col_w = [max(len(r), 3) for r in repos]
+    pad = 2
+    indent = "  "
 
-    raw_tags = ls_remote_tags(git_url)
-    stable_tags = [
-        t
-        for t in raw_tags
-        if re.match(r"^v[0-9]+\.[0-9]+\.[0-9]+$", t)
-        and (pattern == "*" or re.search(pattern, t[1:]))
-    ]
+    col_header = indent + f"{'Version':<{version_w}}"
+    for r, w in zip(repos, col_w):
+        col_header += " " * pad + f"{r:^{w}}"
+    col_sep = indent + "-" * (len(col_header) - len(indent))
 
-    stable_tags.sort(key=version_sort_key)
-    stable_branches.sort(key=version_sort_key)
+    for major in sorted(by_major.keys(), reverse=True):
+        versions = by_major[major]
+        shown = versions if show_all else versions[:RECENT_LIMIT]
+        hidden = len(versions) - len(shown)
 
-    print(f"CAVE Versions (repo: {repo}):")
+        print(CHAR_LINE)
+        print(f"Version {major}")
+        print(CHAR_LINE)
+        print(col_header)
+        print(col_sep)
 
-    last_major = None
-    for tag in stable_tags:
-        major = tag.split(".")[0]
-        if major != last_major:
-            major_no_v = major.lstrip("v")
-            print(f"\n{CHAR_LINE}")
-            print(f"Version {major_no_v}:")
-            print(CHAR_LINE)
-            branch = f"V{major_no_v}"
-            if branch in stable_branches:
-                print(f"  {branch} (latest version of {major})")
-            last_major = major
-        print(f"  {tag}")
+        for v in shown:
+            row = indent + f"{v:<{version_w}}"
+            for r, w in zip(repos, col_w):
+                mark = "✓" if v in repo_tags[r] else ""
+                row += " " * pad + f"{mark:^{w}}"
+            print(row)
+
+        if hidden:
+            print(f"\n  +{hidden} older, pass --all to show")
+
+        print()

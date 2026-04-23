@@ -19,7 +19,7 @@ Examples:
     cave kill
     cave purge my_app
     cave list-versions
-    cave lv --repo cave_static --pattern v3
+    cave lv  --all --pattern v3*
     cave update
     cave version
 """
@@ -297,20 +297,16 @@ def main():
     )
     add_global_args(p_lv)
     p_lv.add_argument(
-        "--pattern",
-        default="*",
-        metavar="PATTERN",
-        help="Filter versions by pattern (e.g. v3, 3.1)",
+        "--all",
+        action="store_true",
+        default=False,
+        help="Show all versions (default: 5 most recent per major version)",
     )
     p_lv.add_argument(
-        "--repo",
-        default="cave_app",
-        metavar="REPO",
-        help=(
-            "Repository to list versions for: "
-            "cave_app, cave_static, cave_cli, cave_utils "
-            "(default: cave_app)"
-        ),
+        "--pattern",
+        default=None,
+        metavar="PATTERN",
+        help="Glob pattern to filter versions (e.g. v3.*, v3.4.*)",
     )
 
     # ------------------------------------------------------------------ #

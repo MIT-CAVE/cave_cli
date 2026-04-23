@@ -6,7 +6,6 @@ from pathlib import Path
 
 from cave_cli.utils.cache import prompt_cached_entry, load_entries, save_entry
 from cave_cli.utils.constants import (
-    CAVE_PATH,
     CURRENT_ENV_VARIABLES,
     RETIRED_ENV_VARIABLES,
 )

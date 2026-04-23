@@ -3,7 +3,6 @@ from pathlib import Path
 
 HTTPS_URL: str = "https://github.com/MIT-CAVE/cave_app.git"
 MIN_DOCKER_VERSION: str = "23.0.6"
-CAVE_PATH: Path = Path.home() / ".cave_cli"
 CHAR_LINE: str = "============================="
 
 VALID_NAME_RE: re.Pattern = re.compile(r"^[a-z0-9_-]+$")

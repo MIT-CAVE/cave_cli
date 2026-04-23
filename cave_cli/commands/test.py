@@ -16,8 +16,17 @@ def test(args: argparse.Namespace) -> None:
 
     remaining = getattr(args, "remaining", []) or []
 
+    if remaining:
+        command_args = [remaining[0]]
+        extra_env: dict[str, str] = {}
+    else:
+        command_args = []
+        extra_env = {"ALL_FLAG": "true"}
+
     run_args = argparse.Namespace(
         entrypoint="./utils/run_test.sh",
+        command_args=command_args,
+        extra_env=extra_env,
         interactive=False,
         it=False,
         docker_args="",

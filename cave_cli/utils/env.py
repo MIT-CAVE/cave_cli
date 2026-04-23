@@ -4,6 +4,7 @@ import secrets
 import string
 from pathlib import Path
 
+from cave_cli.utils.cache import prompt_cached_entry, load_entries, save_entry
 from cave_cli.utils.constants import (
     CAVE_PATH,
     CURRENT_ENV_VARIABLES,
@@ -232,39 +233,25 @@ def create_env_interactive(
         use_mapbox = "n"
 
     if use_mapbox.strip().lower() in ("y", "yes"):
-        saved_token_path = CAVE_PATH / "MAPBOX_TOKEN"
-        saved_token = ""
-        if saved_token_path.is_file():
-            saved_token = saved_token_path.read_text().strip()
-        hint = (
-            f". Leave blank for last used token (*{saved_token[-4:]})"
-            if saved_token
-            else ""
+        token = prompt_cached_entry(
+            name="mapbox_tokens",
+            prompt_new="Enter your Mapbox Public Token: ",
+            prompt_label="Label for this token (e.g. work, personal): ",
+            mask=True,
         )
-        try:
-            token = input(
-                f"Please input your Mapbox Public Token{hint}: "
-            )
-        except (EOFError, KeyboardInterrupt):
-            token = ""
-        if not token and saved_token:
-            token = saved_token
-        elif token:
-            logger.debug("Saving mapbox token for future use...")
-            saved_token_path.write_text(token)
         if token:
             set_env_value(env_path, "MAPBOX_TOKEN", token)
     else:
         logger.info("Mapbox skipped")
 
     default_email = f"{app_name}@example.com"
-    try:
-        email = input(
-            f"\nPlease input an admin email. "
-            f"Leave blank for default({default_email}): "
-        )
-    except (EOFError, KeyboardInterrupt):
-        email = ""
+    print()
+    email = prompt_cached_entry(
+        name="admin_emails",
+        prompt_new="Enter an admin email",
+        prompt_label="Label for this email (e.g. work, personal): ",
+        default=default_email,
+    )
     if not email:
         email = default_email
     set_env_value(env_path, "DJANGO_ADMIN_EMAIL", email)

@@ -18,27 +18,41 @@ _info "The CAVE CLI has migrated to a pip-based installation."
 _info "Running one-time migration..."
 printf "%s\n\n" "$CHAR_LINE"
 
-# Find a usable pip
-if python3 -m pip --version &>/dev/null 2>&1; then
-    PIP="python3 -m pip"
-elif command -v pip3 &>/dev/null; then
-    PIP="pip3"
-elif command -v pip &>/dev/null; then
-    PIP="pip"
-else
-    _error "pip not found. Please install Python 3 with pip, then run:"
-    _error "  pip install '${PIP_INSTALL_SPEC}'"
-    _error "Then remove the old symlink:"
-    _error "  sudo rm ${BIN_DIR}/cave"
-    exit 1
+# Try pipx first (handles externally-managed environments on macOS/newer Linux)
+INSTALLED=0
+if command -v pipx &>/dev/null; then
+    _info "Installing via pipx..."
+    pipx install "${PIP_INSTALL_SPEC}" && INSTALLED=1
+    if [ $INSTALLED -ne 1 ]; then
+        _warn "pipx install failed, falling back to pip..."
+    fi
 fi
 
-_info "Installing pip-based CAVE CLI..."
-$PIP install --user "${PIP_INSTALL_SPEC}"
-if [ $? -ne 0 ]; then
-    _error "Installation failed. Please try manually:"
-    _error "  $PIP install '${PIP_INSTALL_SPEC}'"
-    exit 1
+# Fall back to pip with --break-system-packages --user
+# Safe because cave_cli has no runtime dependencies
+if [ $INSTALLED -ne 1 ]; then
+    if python3 -m pip --version &>/dev/null 2>&1; then
+        PIP="python3 -m pip"
+    elif command -v pip3 &>/dev/null; then
+        PIP="pip3"
+    elif command -v pip &>/dev/null; then
+        PIP="pip"
+    else
+        _error "Neither pipx nor pip found. Please install one, then run:"
+        _error "  pipx install '${PIP_INSTALL_SPEC}'"
+        _error "  # or: pip install '${PIP_INSTALL_SPEC}'"
+        _error "Then remove the old symlink: sudo rm ${BIN_DIR}/cave"
+        exit 1
+    fi
+
+    _info "Installing pip-based CAVE CLI..."
+    $PIP install --break-system-packages --user "${PIP_INSTALL_SPEC}"
+    if [ $? -ne 0 ]; then
+        _error "Installation failed. Please try manually:"
+        _error "  pipx install '${PIP_INSTALL_SPEC}'"
+        _error "  # or: $PIP install --break-system-packages --user '${PIP_INSTALL_SPEC}'"
+        exit 1
+    fi
 fi
 
 _info "Removing old CLI symlink (${BIN_DIR}/cave)..."

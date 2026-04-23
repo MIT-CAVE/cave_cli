@@ -1,6 +1,7 @@
 import argparse
 import os
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -78,7 +79,7 @@ def create(args: argparse.Namespace) -> None:
     logger.info("Configuring git repository...")
     git_dir = os.path.join(app_dir, ".git")
     if os.path.isdir(git_dir):
-        shutil.rmtree(git_dir)
+        rmtree_force(git_dir)
     init(app_dir)
 
     gitignore_path = os.path.join(app_dir, ".gitignore")
@@ -118,6 +119,18 @@ def create(args: argparse.Namespace) -> None:
         f"Created variables and additional configuration options "
         f"are available in {app_name}/.env"
     )
+
+
+def force_remove(func, path, exc):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def rmtree_force(path: str) -> None:
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=force_remove)
+    else:
+        shutil.rmtree(path, onerror=force_remove)
 
 
 def remove_licence_info(app_dir: str) -> None:

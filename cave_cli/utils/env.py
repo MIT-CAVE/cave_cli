@@ -77,7 +77,7 @@ def set_env_value(path: str, key: str, value: str) -> None:
         - What: The value to assign
     """
     p = Path(path)
-    lines = p.read_text().splitlines()
+    lines = p.read_text().replace("\r\n", "\n").replace("\r", "\n").splitlines()
     pattern = re.compile(rf"^{re.escape(key)}\s*=")
     replaced = False
     for i, line in enumerate(lines):
@@ -87,7 +87,7 @@ def set_env_value(path: str, key: str, value: str) -> None:
             break
     if not replaced:
         lines.append(f"{key}='{value}'")
-    p.write_text("\n".join(lines) + "\n")
+    p.write_text("\n".join(lines) + "\n", newline="\n")
 
 
 def validate_env(path: str) -> list[str]:
@@ -201,7 +201,8 @@ def create_env_interactive(
     p = Path(env_path)
     template = Path(template_path)
     if template.is_file():
-        p.write_text(template.read_text())
+        content = template.read_text().replace("\r\n", "\n").replace("\r", "\n")
+        p.write_text(content, newline="\n")
     elif p.is_file():
         pass
     else:

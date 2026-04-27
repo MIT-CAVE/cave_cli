@@ -9,7 +9,7 @@ Core capabilities:
 - **App creation** -- clone the `cave_app` template, configure `.env`, build Docker images, and initialize git
 - **App lifecycle** -- run, reset, upgrade, sync, test, prettify, kill, and purge CAVE apps
 - **Docker orchestration** -- manages multi-container stacks (Django, Postgres, Redis/Valkey, Nginx)
-- **CLI self-management** -- update and uninstall the CLI itself via pip
+- **CLI self-management** -- update and uninstall the CLI itself via pipx
 
 Repo: `MIT-CAVE/cave_cli` on GitHub
 
@@ -34,8 +34,8 @@ cave_cli/
     kill.py                # Stop Docker containers for an app (or all apps)
     purge.py               # Remove an app directory and all its Docker resources
     list_versions.py       # List available CAVE app versions from remote git tags
-    update.py              # Update the CLI itself via pip install --upgrade from GitHub
-    uninstall.py           # Remove the CLI package via pip uninstall
+    update.py              # Update the CLI itself via pipx upgrade / pipx install --force
+    uninstall.py           # Remove the CLI package via pipx uninstall
     version.py             # Print CLI version and app-specific versions
   utils/
     __init__.py
@@ -98,8 +98,8 @@ After installation, the `cave` command is available globally. In editable mode, 
 | `cave kill` | | Stop containers for an app |
 | `cave purge <path>` | | Remove an app and all its Docker resources |
 | `cave list-versions` | `lv` | List available CAVE app versions |
-| `cave update` | | Update the CLI itself via pip |
-| `cave uninstall` | | Remove the CLI package |
+| `cave update` | | Update the CLI itself via pipx |
+| `cave uninstall` | | Remove the CLI package via pipx |
 | `cave version` | | Print CLI and app version information |
 
 ### Global Flags

@@ -1,15 +1,18 @@
 import argparse
+import shutil
 import subprocess
 import sys
 
 from cave_cli.utils.logger import logger
+
+PIPX_DOCS_URL = "https://pipx.pypa.io/stable/installation/"
 
 
 def uninstall(args: argparse.Namespace) -> None:
     """
     Usage:
 
-    - Removes the CAVE CLI package
+    - Removes the CAVE CLI package via pipx.
     """
     try:
         response = input(
@@ -24,9 +27,17 @@ def uninstall(args: argparse.Namespace) -> None:
         logger.error("Uninstall canceled")
         return
 
+    pipx = shutil.which("pipx")
+    if not pipx:
+        logger.error(
+            "pipx not found. Please uninstall cave_cli manually."
+        )
+        logger.error(f"See: {PIPX_DOCS_URL}")
+        sys.exit(1)
+
     logger.info("Removing installation...")
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "uninstall", "cave_cli", "-y"],
+        [pipx, "uninstall", "cave_cli"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

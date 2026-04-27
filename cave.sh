@@ -8,7 +8,7 @@ readonly CAVE_PATH="${HOME}/.cave_cli"
 readonly BIN_DIR="/usr/local/bin"
 readonly CHAR_LINE="============================="
 readonly PIPX_INSTALL_SPEC="cave_cli"
-readonly PIPX_DOCS_URL="https://pipx.pypa.io/stable/installation/"
+readonly PIPX_DOCS_URL="https://pipx.pypa.io/stable"
 
 _info()  { printf "INFO: %s\n"  "$1"; }
 _warn()  { printf "WARN: %s\n"  "$1"; }

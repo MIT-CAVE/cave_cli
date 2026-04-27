@@ -41,15 +41,38 @@ docker run hello-world
 
 ## Installation
 
-```sh
-pip install cave_cli
-```
-
-Or with [pipx](https://pipx.pypa.io/):
+Install with [pipx](https://pipx.pypa.io/) (recommended — keeps the CLI isolated from your system Python):
 
 ```sh
 pipx install cave_cli
 ```
+
+If you don't have pipx, install it first:
+
+<details>
+<summary>macOS</summary>
+
+```sh
+# With Homebrew (recommended)
+brew install pipx
+pipx ensurepath
+
+# Or with pip
+pip3 install --user pipx
+pipx ensurepath
+```
+
+</details>
+<details>
+<summary>Other Linux / Windows (WSL)</summary>
+
+```sh
+python3 -m pip install --user pipx
+pipx ensurepath
+```
+</details>
+
+For more options see the [pipx installation guide](https://pipx.pypa.io/stable/installation/).
 
 Verify the installation:
 
@@ -112,13 +135,13 @@ cave --help
 ## Updating
 
 ```sh
-pip install --upgrade git+https://github.com/MIT-CAVE/cave_cli.git
+cave update
 ```
 
-Or:
+Or directly via pipx:
 
 ```sh
-cave update
+pipx upgrade cave_cli
 ```
 
 ## License Notice

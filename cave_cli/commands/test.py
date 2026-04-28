@@ -1,7 +1,7 @@
 import argparse
 
 from cave_cli.commands.run import run_cave
-from cave_cli.utils.logger import logger
+from cave_cli.utils.display import print_section
 from cave_cli.utils.validate import get_app
 
 
@@ -12,16 +12,17 @@ def test(args: argparse.Namespace) -> None:
     - Runs tests for the CAVE app in the current directory
     """
     app_dir, app_name = get_app()
-    logger.info("Testing cave_api...")
+    print_section("Test")
 
     remaining = getattr(args, "remaining", []) or []
 
-    if remaining:
-        command_args = [remaining[0]]
-        extra_env: dict[str, str] = {}
-    else:
+    # If no specific test is provided, run all tests
+    if not remaining:
         command_args = []
         extra_env = {"ALL_FLAG": "true"}
+    else:
+        command_args = [remaining[0]]
+        extra_env = {}
 
     run_args = argparse.Namespace(
         entrypoint="./utils/run_test.sh",
@@ -35,4 +36,4 @@ def test(args: argparse.Namespace) -> None:
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )
-    run_cave(app_dir, app_name, run_args)
+    run_cave(app_dir, app_name, run_args, skip_header=True)

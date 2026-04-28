@@ -1,4 +1,14 @@
 import sys
+from cave_cli.utils.display import (
+    BOLD,
+    DIM,
+    GREEN,
+    RED,
+    RESET,
+    YELLOW,
+    CYAN,
+    print_section,
+)
 
 
 class CaveLogger:
@@ -16,6 +26,7 @@ class CaveLogger:
     LEVELS: dict[str, int] = {
         "DEBUG": 0,
         "INFO": 1,
+        "SUCCESS": 1,
         "WARN": 2,
         "ERROR": 3,
         "SILENT": 4,
@@ -46,7 +57,18 @@ class CaveLogger:
 
     def log(self, message: str, level: str) -> None:
         if self.LEVELS.get(level, 0) >= self._level:
-            sys.stderr.write(f"{level}: {message}\n")
+            color = ""
+            if level == "ERROR":
+                color = RED
+            elif level == "WARN":
+                color = YELLOW
+            elif level == "SUCCESS":
+                color = GREEN
+            elif level == "DEBUG":
+                color = DIM
+
+            prefix = f"{color}{level}:{RESET} " if level != "INFO" else ""
+            sys.stderr.write(f"{prefix}{message}\n")
             sys.stderr.flush()
 
     def debug(self, message: str) -> None:
@@ -54,6 +76,9 @@ class CaveLogger:
 
     def info(self, message: str) -> None:
         self.log(message, "INFO")
+
+    def success(self, message: str) -> None:
+        self.log(message, "SUCCESS")
 
     def warn(self, message: str) -> None:
         self.log(message, "WARN")
@@ -67,11 +92,8 @@ class CaveLogger:
 
         - Prints a header block with separator lines at INFO level
         """
-        from cave_cli.utils.constants import CHAR_LINE
-
-        self.info(CHAR_LINE)
-        self.info(text)
-        self.info(CHAR_LINE)
+        if self._level <= self.LEVELS["INFO"]:
+            print_section(text)
 
 
 logger = CaveLogger()

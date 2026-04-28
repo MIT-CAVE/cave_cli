@@ -142,6 +142,13 @@ def main():
         default=False,
         help="Run in interactive mode (entrypoint set to bash)",
     )
+    p_run.add_argument(
+        "--all",
+        dest="show_all",
+        action="store_true",
+        default=False,
+        help="Show raw container output instead of the TUI dashboard (also enabled by --verbose)",
+    )
 
     # ------------------------------------------------------------------ #
     # reset                                                                #
@@ -265,6 +272,13 @@ def main():
         help="Stop Docker containers for a CAVE app",
     )
     add_global_args(p_kill)
+    p_kill.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        metavar="app-name",
+        help="Name of the CAVE app to kill",
+    )
     p_kill.add_argument(
         "-a",
         "--all",

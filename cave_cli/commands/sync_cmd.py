@@ -5,6 +5,7 @@ import tempfile
 
 from cave_cli.commands.reset import reset
 from cave_cli.utils.constants import HTTPS_URL
+from cave_cli.utils.display import print_section, step_done, step_start, print_key_value
 from cave_cli.utils.git import clone
 from cave_cli.utils.logger import logger
 from cave_cli.utils.sync import sync_files
@@ -26,7 +27,7 @@ def sync_cmd(args: argparse.Namespace) -> None:
             "It will also potentially update your local files"
         )
 
-    logger.header("Sync:")
+    print_section("Sync")
 
     url = getattr(args, "url", None)
     if not url:
@@ -37,16 +38,17 @@ def sync_cmd(args: argparse.Namespace) -> None:
     includes = getattr(args, "include", None) or []
     excludes = getattr(args, "exclude", None) or []
 
-    logger.info("Syncing files with the following parameters:\n")
-    logger.info(f"App Location: {app_dir}")
-    logger.info(f"Using Repo: {url}")
-    logger.info(f"Using Branch: {branch or 'default'}\n")
-    logger.info("Downloading repo to sync...")
+    print_key_value("App Location", app_dir)
+    print_key_value("Using Repo", url)
+    print_key_value("Using Branch", branch or "default")
+    print("")
 
+    step_start("Downloading repo to sync")
     temp_dir = tempfile.mkdtemp()
     success = clone(url, temp_dir, branch=branch)
 
     if not success or not os.listdir(temp_dir):
+        step_done("Downloading repo to sync")
         logger.error(
             f"Failed!\n"
             f"Ensure you have access rights to the repository: {url}\n"
@@ -54,18 +56,16 @@ def sync_cmd(args: argparse.Namespace) -> None:
         )
         shutil.rmtree(temp_dir, ignore_errors=True)
         return
+    step_done("Downloading repo to sync")
 
-    logger.info("Done")
-    logger.info("Syncing files...")
-
+    step_start("Syncing files")
     sync_files(
         source=temp_dir,
         dest=app_dir,
         includes=includes,
         excludes=excludes,
     )
-
-    logger.info("Done")
+    step_done("Syncing files")
 
     shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -76,4 +76,4 @@ def sync_cmd(args: argparse.Namespace) -> None:
     )
     reset(reset_args)
 
-    logger.info("Sync complete.")
+    logger.success("Sync complete.")

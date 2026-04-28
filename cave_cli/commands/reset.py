@@ -1,8 +1,8 @@
 import argparse
 
 from cave_cli.commands.run import run_cave
+from cave_cli.utils.display import print_section, step_done, step_start
 from cave_cli.utils.docker import remove_containers, remove_volume
-from cave_cli.utils.logger import logger
 from cave_cli.utils.validate import confirm_action, get_app
 
 
@@ -26,8 +26,16 @@ def reset(
 
     if app_dir is None or app_name is None:
         app_dir, app_name = get_app()
+
+    print_section("Reset")
+
+    step_start("Removing containers")
     remove_containers(app_name)
+    step_done("Removing containers")
+
+    step_start("Removing database volume")
     remove_volume(app_name)
+    step_done("Removing database volume")
 
     reset_args = argparse.Namespace(
         entrypoint="./utils/reset_db.sh",
@@ -39,5 +47,5 @@ def reset(
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )
-    run_cave(app_dir, app_name, reset_args)
-    logger.info("DB reset complete.")
+    run_cave(app_dir, app_name, reset_args, skip_header=True)
+    step_done("Reset complete")

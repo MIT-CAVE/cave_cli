@@ -128,7 +128,7 @@ cave --help
 
 | Flag | Description |
 |---|---|
-| `-v`, `--verbose` | Enable verbose (DEBUG) logging output |
+| `-v`, `--verbose` | Enable verbose (DEBUG) logging output (enables --all for 'cave run') |
 | `--loglevel LEVEL` | Set log level: DEBUG, INFO, WARN, ERROR, SILENT |
 | `-y`, `--yes` | Automatically answer confirmation prompts with yes |
 

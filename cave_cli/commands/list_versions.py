@@ -3,7 +3,15 @@ import fnmatch
 import re
 from collections import defaultdict
 
-from cave_cli.utils.constants import CHAR_LINE, VALID_REPOS
+from cave_cli.utils.constants import VALID_REPOS
+from cave_cli.utils.display import (
+    GREEN,
+    RED,
+    RESET,
+    print_section,
+    step_done,
+    step_start,
+)
 from cave_cli.utils.git import ls_remote_tags
 from cave_cli.utils.logger import logger
 
@@ -33,12 +41,13 @@ def list_versions(args: argparse.Namespace) -> None:
 
     repo_tags: dict[str, set[str]] = {}
     for repo in VALID_REPOS:
-        logger.info(f"Fetching versions for {repo}...")
+        step_start(f"Fetching {repo}")
         git_url = f"https://github.com/MIT-CAVE/{repo}.git"
         raw = ls_remote_tags(git_url)
         repo_tags[repo] = {
             t for t in raw if re.match(r"^v[0-9]+\.[0-9]+\.[0-9]+$", t)
         }
+        step_done(f"Fetching {repo}")
 
     all_versions = sorted(
         (
@@ -74,20 +83,18 @@ def list_versions(args: argparse.Namespace) -> None:
         shown = versions if show_all else versions[:RECENT_LIMIT]
         hidden = len(versions) - len(shown)
 
-        print(CHAR_LINE)
-        print(f"Version {major}")
-        print(CHAR_LINE)
+        print_section(f"v{major}.x.x Releases")
         print(col_header)
         print(col_sep)
 
         for v in shown:
             row = indent + f"{v:<{version_w}}"
             for r, w in zip(repos, col_w):
-                mark = "✓" if v in repo_tags[r] else ""
-                row += " " * pad + f"{mark:^{w}}"
+                mark = f"{GREEN}✓{RESET}" if v in repo_tags[r] else ""
+                row += " " * pad + f"{mark:^{w + len(GREEN) + len(RESET) if mark else w}}"
             print(row)
 
         if hidden:
-            print(f"\n  +{hidden} older, pass --all to show")
+            print(f"\n  +{hidden} older versions, pass --all to see them")
 
-        print()
+    print("")

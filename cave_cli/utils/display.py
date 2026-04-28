@@ -1,9 +1,12 @@
 import queue
 import re
+import select
 import shutil
 import sys
+import termios
 import threading
 import time
+import tty
 from dataclasses import dataclass
 
 
@@ -56,6 +59,11 @@ class LogLine:
 
     Optional:
 
+    - ``raw``:
+        - Type: str
+        - What: The original unstripped log line.
+        - Default: ""
+
     - ``is_validation``:
         - Type: bool
         - What: Whether this line belongs in the Validation Issues panel.
@@ -64,13 +72,14 @@ class LogLine:
 
     timestamp: str
     text: str
+    raw: str = ""
     is_validation: bool = False
 
 
 # ── Log filtering ──────────────────────────────────────────────────────────
 
 _LEVEL_PREFIX_RE = re.compile(
-    r"^(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL): ", re.IGNORECASE
+    r"^(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL):[ \t]?", re.IGNORECASE
 )
 
 # Lines to silently drop in clean mode (very noisy, no user value).
@@ -301,6 +310,8 @@ class DashboardRenderer:
         log_lines: list[LogLine],
         validation_count: int,
         current_error_block: list[LogLine],
+        show_all: bool = False,
+        scroll_offset: int = 0,
     ) -> None:
         """
         Usage:
@@ -336,41 +347,22 @@ class DashboardRenderer:
         - ``current_error_block``:
             - Type: list[LogLine]
             - What: Lines of the most recent error event (shown in panel body).
+
+        - ``show_all``:
+            - Type: bool
+            - What: If True, renders all logs without filtering or panels.
+            - Default: False
+
+        - ``scroll_offset``:
+            - Type: int
+            - What: Number of lines to scroll up from the bottom in show_all mode.
+            - Default: 0
         """
         cols, rows = shutil.get_terminal_size(fallback=(80, 24))
         bar_width = max(10, cols - 4)
 
         # Budget: rows - 1 ensures no trailing-newline scroll on a full screen.
         budget = rows - 1
-
-        has_validation = bool(current_error_block) or validation_count > 0
-
-        # Determine how many error lines to show, shrinking if the terminal
-        # is too short to guarantee _MIN_LOG_LINES of activity log.
-        desired_v = min(len(current_error_block), self._MAX_ERROR_LINES)
-        if has_validation:
-            available_log = (
-                budget - self._FIXED_BASE - self._VAL_FIXED - desired_v
-            )
-            if available_log < self._MIN_LOG_LINES:
-                desired_v = max(
-                    0,
-                    budget
-                    - self._FIXED_BASE
-                    - self._VAL_FIXED
-                    - self._MIN_LOG_LINES,
-                )
-                if desired_v == 0:
-                    has_validation = False
-        shown_errors = current_error_block[-desired_v:] if desired_v > 0 else []
-
-        val_section_height = (
-            self._VAL_FIXED + len(shown_errors) if has_validation else 0
-        )
-        max_log_lines = max(
-            0, budget - self._FIXED_BASE - val_section_height
-        )
-        visible_logs = log_lines[-max_log_lines:]
 
         lines: list[str] = []
 
@@ -381,43 +373,109 @@ class DashboardRenderer:
             if ws_clients > 0
             else ""
         )
+        mode_str = f"  │  {YELLOW}{BOLD}ALL LOGS{RESET}" if show_all else ""
         title = (
             f"  {BOLD}{CYAN}CAVE{RESET}"
             f"  │  {BOLD}{app_name}{RESET}"
             f"  │  {self._status_str(status)}"
             f"{ws_str}"
+            f"{mode_str}"
             f"  │  {DIM}{url}{RESET}"
         )
         lines.append(title)
         lines.append(f"  {BOLD}{'━' * bar_width}{RESET}")
         lines.append("")
 
-        # ── Recent Activity ────────────────────────────────────────────────
-        lines.append(f"  {BOLD}Recent Activity{RESET}")
-        lines.append(f"  {'─' * bar_width}")
-        for entry in visible_logs:
-            ts = f"{DIM}{entry.timestamp}{RESET}"
-            text = self._truncate(entry.text, cols - 14)
-            lines.append(f"  {ts}  {text}")
-        lines.append(f"  {'─' * bar_width}")
+        if show_all:
+            # ── All Logs Mode ──────────────────────────────────────────────
+            max_log_lines = max(0, budget - self._HEADER_LINES - self._FOOTER_LINES)
+            
+            # Clamp scroll_offset so we don't scroll past the first line
+            # (i.e., ensure we always show a full screen of logs if available)
+            max_scroll = max(0, len(log_lines) - max_log_lines)
+            effective_scroll = min(scroll_offset, max_scroll)
 
-        # ── Validation Issues ──────────────────────────────────────────────
-        if has_validation:
-            lines.append("")
-            count_str = f"{validation_count} issue{'s' if validation_count != 1 else ''}"
-            lines.append(
-                f"  {BOLD}Validation Issues{RESET}  {RED}({count_str}){RESET}"
+            end_idx = len(log_lines) - effective_scroll
+            start_idx = max(0, end_idx - max_log_lines)
+            visible_logs = log_lines[start_idx:end_idx]
+
+            for entry in visible_logs:
+                ts = f"{DIM}{entry.timestamp}{RESET}"
+                # Use raw text if available in show_all mode, otherwise stripped text
+                display_text = entry.raw if entry.raw else entry.text
+                
+                # If it's a validation issue, ensure it shows as ERROR: in show_all mode
+                if entry.is_validation and _LEVEL_PREFIX_RE.match(display_text):
+                    display_text = _LEVEL_PREFIX_RE.sub("ERROR: ", display_text, count=1)
+
+                text = self._truncate(display_text, cols - 14)
+                color = RED if entry.is_validation else ""
+                lines.append(f"  {ts}  {color}{text}{RESET}")
+            
+            # Fill remaining space to keep footer at bottom
+            for _ in range(max_log_lines - len(visible_logs)):
+                lines.append("")
+        else:
+            # ── Minimal Mode (Default) ─────────────────────────────────────
+            # ... (unchanged Minimal Mode logic)
+            has_validation = bool(current_error_block) or validation_count > 0
+
+            # Determine how many error lines to show, shrinking if the terminal
+            # is too short to guarantee _MIN_LOG_LINES of activity log.
+            desired_v = min(len(current_error_block), self._MAX_ERROR_LINES)
+            if has_validation:
+                available_log = (
+                    budget - self._FIXED_BASE - self._VAL_FIXED - desired_v
+                )
+                if available_log < self._MIN_LOG_LINES:
+                    desired_v = max(
+                        0,
+                        budget
+                        - self._FIXED_BASE
+                        - self._VAL_FIXED
+                        - self._MIN_LOG_LINES,
+                    )
+                    if desired_v == 0:
+                        has_validation = False
+            shown_errors = current_error_block[-desired_v:] if desired_v > 0 else []
+
+            val_section_height = (
+                self._VAL_FIXED + len(shown_errors) if has_validation else 0
             )
+            max_log_lines = max(
+                0, budget - self._FIXED_BASE - val_section_height
+            )
+            visible_logs = log_lines[-max_log_lines:]
+
+            # ── Recent Activity ────────────────────────────────────────────────
+            lines.append(f"  {BOLD}Recent Activity{RESET}")
             lines.append(f"  {'─' * bar_width}")
-            for entry in shown_errors:
+            for entry in visible_logs:
                 ts = f"{DIM}{entry.timestamp}{RESET}"
                 text = self._truncate(entry.text, cols - 14)
-                lines.append(f"  {ts}  {RED}{text}{RESET}")
+                lines.append(f"  {ts}  {text}")
             lines.append(f"  {'─' * bar_width}")
+
+            # ── Errors ────────────────────────────────────────────────────────
+            if has_validation:
+                lines.append("")
+                count_str = f"{validation_count} error{'s' if validation_count != 1 else ''}"
+                lines.append(
+                    f"  {BOLD}Errors{RESET}  {RED}({count_str}){RESET}"
+                )
+                lines.append(f"  {'─' * bar_width}")
+                for entry in shown_errors:
+                    ts = f"{DIM}{entry.timestamp}{RESET}"
+                    text = self._truncate(entry.text, cols - 14)
+                    lines.append(f"  {ts}  {RED}{text}{RESET}")
+                lines.append(f"  {'─' * bar_width}")
 
         # ── Footer ─────────────────────────────────────────────────────────
         lines.append("")
-        lines.append(f"  {DIM}Ctrl+C to stop  │  --all for raw output{RESET}")
+        if show_all:
+            lines.append(f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle mode  │  ↑/↓ to scroll{RESET}")
+        else:
+            lines.append(f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle output mode{RESET}")
 
         # Write the full frame atomically: move to top-left, write each line
         # with CLEAR_EOL to erase leftover characters.
@@ -459,12 +517,16 @@ class RunDashboard:
 
     REFRESH_INTERVAL: float = 0.2
 
-    def __init__(self, app_name: str, url: str, stop_event: threading.Event | None = None) -> None:
+    def __init__(self, app_name: str, url: str, stop_event: threading.Event | None = None, max_logs: int = 10000) -> None:
         self._app_name = app_name
         self._url = url
+        self._max_logs = max_logs
         self._status: str = BUILDING
         self._ws_clients: int = 0
         self._log_lines: list[LogLine] = []
+        self._all_log_lines: list[LogLine] = []
+        self._show_all: bool = False
+        self._scroll_offset: int = 0
         self._validation_count: int = 0
         self._current_error_block: list[LogLine] = []
         self._last_was_validation: bool = False
@@ -496,18 +558,69 @@ class RunDashboard:
         """
         self._status = status
 
+    def toggle_show_all(self) -> None:
+        """
+        Usage:
+
+        - Toggles between minimal and all logs output mode.
+        """
+        self._show_all = not self._show_all
+        self._scroll_offset = 0
+
+    def scroll_up(self, amount: int = 1) -> None:
+        """
+        Usage:
+
+        - Scrolls up in show_all mode.
+        """
+        if self._show_all:
+            # We allow it to go up to len() here, but the renderer will clamp 
+            # it precisely based on the terminal height to ensure a full screen.
+            self._scroll_offset = min(len(self._all_log_lines), self._scroll_offset + amount)
+
+    def scroll_down(self, amount: int = 1) -> None:
+        """
+        Usage:
+
+        - Scrolls down in show_all mode.
+        """
+        if self._show_all:
+            self._scroll_offset = max(0, self._scroll_offset - amount)
+
     def _process_line(self, raw: str) -> None:
         stripped = self._filter.strip_level_prefix(raw).expandtabs()
         ts = time.strftime("%H:%M:%S")
+
+        def add_minimal(entry: LogLine) -> None:
+            self._log_lines.append(entry)
+            if len(self._log_lines) > self._max_logs:
+                self._log_lines.pop(0)
+
+        def add_all(entry: LogLine) -> None:
+            self._all_log_lines.append(entry)
+            if len(self._all_log_lines) > self._max_logs:
+                self._all_log_lines.pop(0)
+                # If we pruned a line while scrolled up, we must decrement offset
+                # to keep the view static relative to the content.
+                if self._scroll_offset > 0:
+                    self._scroll_offset = max(0, self._scroll_offset - 1)
 
         # Status transitions (always checked)
         new_status = self._filter.classify_status(stripped)
         if new_status:
             self._status = new_status
             if new_status == LOADING:
-                self._log_lines.append(LogLine(timestamp=ts, text="App Loading"))
+                loading_entry = LogLine(timestamp=ts, text="App Loading", raw="INFO: App Loading")
+                add_minimal(loading_entry)
+                add_all(loading_entry)
+                if self._show_all and self._scroll_offset > 0:
+                    self._scroll_offset += 1
             elif new_status == READY:
-                self._log_lines.append(LogLine(timestamp=ts, text="Ready"))
+                ready_entry = LogLine(timestamp=ts, text="Ready", raw="INFO: Ready")
+                add_minimal(ready_entry)
+                add_all(ready_entry)
+                if self._show_all and self._scroll_offset > 0:
+                    self._scroll_offset += 1
 
         # WebSocket client count (before noise filter so we never miss events)
         ws_ev = self._filter.ws_event(stripped)
@@ -516,26 +629,33 @@ class RunDashboard:
         elif ws_ev == "disconnect":
             self._ws_clients = max(0, self._ws_clients - 1)
 
-        if self._filter.is_validation_issue(raw, stripped):
-            entry = LogLine(timestamp=ts, text=stripped, is_validation=True)
+        is_validation = self._filter.is_validation_issue(raw, stripped)
+        is_noise = self._filter.is_noise(stripped)
+
+        entry = LogLine(timestamp=ts, text=stripped, raw=raw, is_validation=is_validation)
+        add_all(entry)
+        if self._show_all and self._scroll_offset > 0:
+            self._scroll_offset += 1
+
+        if is_validation:
             is_indented = bool(stripped) and stripped[0] in (" ", "\t")
             if is_indented or self._last_was_validation:
                 # Continuation of the current error block
                 self._current_error_block.append(entry)
+                if len(self._current_error_block) > self._max_logs:
+                    self._current_error_block.pop(0)
             else:
                 # New error event: start a fresh block
                 self._validation_count += 1
                 self._current_error_block = [entry]
             self._last_was_validation = True
-        elif self._filter.is_noise(stripped):
-            # Noise (WS RECEIVE, static files, etc.) — drop silently.
-            # Does NOT reset _last_was_validation so noise between traceback
-            # lines doesn't break the block grouping.
+        elif is_noise:
+            # Noise (WS RECEIVE, static files, etc.) — drop from minimal log.
             pass
         else:
             # Real content line: marks the end of the current error context.
             self._last_was_validation = False
-            self._log_lines.append(LogLine(timestamp=ts, text=stripped))
+            add_minimal(entry)
 
     def _display_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -548,23 +668,54 @@ class RunDashboard:
                     self._process_line(line)
             except queue.Empty:
                 pass
+            
             self._renderer.render(
                 app_name=self._app_name,
                 status=self._status,
                 url=self._url,
                 ws_clients=self._ws_clients,
-                log_lines=self._log_lines,
+                log_lines=self._all_log_lines if self._show_all else self._log_lines,
                 validation_count=self._validation_count,
                 current_error_block=self._current_error_block,
+                show_all=self._show_all,
+                scroll_offset=self._scroll_offset,
             )
             self._stop_event.wait(self.REFRESH_INTERVAL)
+
+    def _input_loop(self) -> None:
+        fd = sys.stdin.fileno()
+        try:
+            old_settings = termios.tcgetattr(fd)
+        except termios.error:
+            return
+
+        try:
+            tty.setcbreak(fd)
+            while not self._stop_event.is_set():
+                if select.select([sys.stdin], [], [], 0.1)[0]:
+                    ch = sys.stdin.read(1)
+                    if ch == "\x01":  # Ctrl+A
+                        self.toggle_show_all()
+                    elif ch == "\x1b":  # ESC
+                        # Handle arrow keys (ANSI escape sequences: ESC [ A/B)
+                        if select.select([sys.stdin], [], [], 0.05)[0]:
+                            next_ch = sys.stdin.read(1)
+                            if next_ch == "[":
+                                if select.select([sys.stdin], [], [], 0.05)[0]:
+                                    direction = sys.stdin.read(1)
+                                    if direction == "A":  # Up
+                                        self.scroll_up()
+                                    elif direction == "B":  # Down
+                                        self.scroll_down()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
     def start(self) -> None:
         """
         Usage:
 
         - Enters the alternate screen buffer, hides the cursor, and starts
-          the background display loop thread.
+          the background display and input loop threads.
 
         Notes:
 
@@ -577,7 +728,11 @@ class RunDashboard:
         self._display_thread = threading.Thread(
             target=self._display_loop, daemon=True
         )
+        self._input_thread = threading.Thread(
+            target=self._input_loop, daemon=True
+        )
         self._display_thread.start()
+        self._input_thread.start()
 
     def stop(self) -> None:
         """
@@ -590,6 +745,8 @@ class RunDashboard:
         self._log_queue.put(None)
         if self._display_thread is not None:
             self._display_thread.join(timeout=2.0)
+        if hasattr(self, "_input_thread") and self._input_thread is not None:
+            self._input_thread.join(timeout=2.0)
         sys.stdout.write(CURSOR_SHOW + ALT_SCREEN_EXIT)
         sys.stdout.flush()
 

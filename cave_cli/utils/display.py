@@ -1,13 +1,19 @@
 import queue
 import re
-import select
 import shutil
 import sys
-import termios
 import threading
 import time
-import tty
 from dataclasses import dataclass
+
+try:
+    import select
+    import termios
+    import tty
+    IS_WINDOWS = False
+except ImportError:
+    import msvcrt
+    IS_WINDOWS = True
 
 
 # ── ANSI escape codes ──────────────────────────────────────────────────────
@@ -692,10 +698,32 @@ class RunDashboard:
             self._stop_event.wait(self.REFRESH_INTERVAL)
 
     def _input_loop(self) -> None:
+        if IS_WINDOWS:
+            self._input_loop_windows()
+        else:
+            self._input_loop_unix()
+
+    def _input_loop_windows(self) -> None:
+        while not self._stop_event.is_set():
+            if msvcrt.kbhit():
+                ch = msvcrt.getch()
+                if ch == b"\x01":  # Ctrl+A
+                    self.toggle_show_all()
+                elif ch == b"\xe0":  # Special key prefix
+                    next_ch = msvcrt.getch()
+                    if next_ch == b"H":  # Up
+                        self.scroll_up()
+                    elif next_ch == b"P":  # Down
+                        self.scroll_down()
+                elif ch == b"\x00":  # Alternative special key prefix
+                    msvcrt.getch()  # consume it
+            time.sleep(0.1)
+
+    def _input_loop_unix(self) -> None:
         fd = sys.stdin.fileno()
         try:
             old_settings = termios.tcgetattr(fd)
-        except termios.error:
+        except (termios.error, ValueError):
             return
 
         try:

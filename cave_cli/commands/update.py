@@ -2,11 +2,13 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from cave_cli.utils.display import step_done, step_start
 from cave_cli.utils.logger import logger
 
 PIPX_DOCS_URL = "https://pipx.pypa.io/stable/installation/"
+CLI_REPO_URL = "https://github.com/MIT-CAVE/cave_cli.git"
 
 
 def update(args: argparse.Namespace) -> None:
@@ -17,9 +19,12 @@ def update(args: argparse.Namespace) -> None:
 
     Notes:
 
-    - Without ``--version``, runs ``pipx upgrade cave_cli``.
+    - Without ``--version``, installs the latest version from PyPI via
+      ``pipx install --force cave_cli``.
     - With ``--version``, reinstalls via ``pipx install --force`` from the
       specified git tag or branch.
+    - On Windows, the update runs in a new console window because Windows
+      locks running executables and cave.exe cannot replace itself.
     """
     pipx = shutil.which("pipx")
     if not pipx:
@@ -31,19 +36,37 @@ def update(args: argparse.Namespace) -> None:
 
     version = getattr(args, "version", None)
     if version:
-        spec = (
-            f"cave_cli @ "
-            f"git+https://github.com/MIT-CAVE/cave_cli.git@{version}"
-        )
-        cmd = [pipx, "install", "--force", spec]
         label = f"Reinstalling CAVE CLI ({version})"
+        spec = f"cave_cli @ git+{CLI_REPO_URL}@{version}"
     else:
-        cmd = [pipx, "upgrade", "cave_cli"]
         label = "Updating CAVE CLI"
+        spec = "cave_cli"
 
     step_start(label)
+
+    if sys.platform == "win32":
+        # Windows locks running executables, so cave.exe cannot be replaced
+        # while this process is alive. Write a temp batch file and spawn a
+        # new console window that waits for this process to exit first.
+        # A batch file avoids quoting issues with paths containing spaces.
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".bat", delete=False
+        ) as f:
+            f.write("@echo off\r\n")
+            f.write("timeout /t 1 /nobreak >nul\r\n")
+            f.write(f'"{pipx}" install --force "{spec}"\r\n')
+            f.write('del "%~f0"\r\n')
+            bat_path = f.name
+        subprocess.Popen(
+            ["cmd", "/k", bat_path],
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+        step_done(label)
+        logger.success("CAVE CLI update started in a new window.")
+        return
+
     result = subprocess.run(
-        cmd,
+        [pipx, "install", "--force", spec],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

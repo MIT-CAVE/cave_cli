@@ -8,6 +8,7 @@ from pathlib import Path
 from cave_cli.commands.reset import reset
 from cave_cli.commands.run import run_cave
 from cave_cli.utils.constants import HTTPS_URL
+from cave_cli.utils.display import print_section, step_done, step_fail, step_start
 from cave_cli.utils.docker import build_image, check_docker, generate_secret_key
 from cave_cli.utils.env import create_env_interactive
 from cave_cli.utils.git import add, branch_rename, clone, commit, init
@@ -37,29 +38,31 @@ def create(args: argparse.Namespace) -> None:
     clone_url = getattr(args, "url", None) or HTTPS_URL
     version = getattr(args, "version", None)
 
-    logger.header("App Creation:")
-    logger.info("Downloading the app template...")
+    print_section("App Creation")
 
+    step_start("Downloading app template")
     success = clone(clone_url, app_name, branch=version)
     if not success or not os.path.isdir(app_name):
+        step_fail("Downloading app template")
         logger.error("Clone failed. Ensure you used a valid version.")
         logger.error(
             f"The version must be a tag (or branch) listed at {clone_url}."
         )
         sys.exit(1)
-
-    logger.info("Done")
+    step_done("Downloading app template")
 
     app_dir = os.path.abspath(app_name)
     remove_licence_info(app_dir)
-
     Path(os.path.join(app_dir, ".env")).touch()
 
     example_env = os.path.join(app_dir, "example.env")
     env_path = os.path.join(app_dir, ".env")
 
     build_image(app_name, app_dir)
+
+    step_start("Generating secret key")
     secret_key = generate_secret_key(app_name)
+    step_done("Generating secret key")
 
     create_env_interactive(
         app_name=app_name,
@@ -73,10 +76,11 @@ def create(args: argparse.Namespace) -> None:
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )
-    reset(reset_args, app_dir=app_dir, app_name=app_name)
+    reset(reset_args, app_dir=app_dir, app_name=app_name, skip_build=True)
 
-    logger.header("Version Control:")
-    logger.info("Configuring git repository...")
+    print_section("Version Control")
+
+    step_start("Configuring git repository")
     git_dir = os.path.join(app_dir, ".git")
     if os.path.isdir(git_dir):
         rmtree_force(git_dir)
@@ -97,9 +101,9 @@ def create(args: argparse.Namespace) -> None:
     add(app_dir)
     commit(app_dir, "Initialize CAVE App")
     branch_rename(app_dir, "main")
-    logger.info("Done.")
+    step_done("Configuring git repository")
 
-    logger.info("Generating LLM Docs...")
+    step_start("Generating LLM docs")
     docs_args = argparse.Namespace(
         entrypoint="./utils/generate_docs.sh",
         interactive=False,
@@ -110,15 +114,12 @@ def create(args: argparse.Namespace) -> None:
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )
-    run_cave(app_dir, app_name, docs_args)
-    logger.info("Done.")
+    run_cave(app_dir, app_name, docs_args, skip_header=True, skip_build=True)
+    step_done("Generating LLM docs")
 
-    logger.header("App Creation Status:")
-    logger.info(f"App '{app_name}' created successfully!")
-    logger.info(
-        f"Created variables and additional configuration options "
-        f"are available in {app_name}/.env"
-    )
+    print_section("Done")
+    step_done(f"App '{app_name}' created successfully!")
+    step_done(f"Configuration options available in {app_name}/.env")
 
 
 def force_remove(func, path, exc):

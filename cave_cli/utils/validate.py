@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 
 from cave_cli.utils.constants import (
-    CHAR_LINE,
     CURRENT_ENV_VARIABLES,
     RETIRED_ENV_VARIABLES,
     INVALID_NAME_END_RE,
@@ -12,6 +11,7 @@ from cave_cli.utils.constants import (
     INVALID_NAME_UNDER_HYPHEN_RE,
     VALID_NAME_RE,
 )
+from cave_cli.utils.display import YELLOW, RESET
 from cave_cli.utils.logger import logger
 
 
@@ -208,7 +208,7 @@ def confirm_action(message: str, auto_yes: bool = False) -> None:
     if auto_yes:
         return
     try:
-        response = input(f"{message}. Would you like to continue? [y/N] ")
+        response = input(f"\n  {YELLOW}⚠{RESET}  {message}. \n  Continue? [y/N] ")
     except (EOFError, KeyboardInterrupt):
         print()
         logger.error("Operation canceled.")

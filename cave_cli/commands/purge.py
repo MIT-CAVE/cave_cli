@@ -3,6 +3,7 @@ import os
 import shutil
 import sys
 
+from cave_cli.utils.display import print_section, step_done, step_start
 from cave_cli.utils.docker import (
     remove_containers,
     remove_image,
@@ -31,7 +32,6 @@ def purge(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     app_name = os.path.basename(abs_path)
-    logger.header(f"Purging CAVE App ({app_name}):")
 
     auto_yes = getattr(args, "yes", False)
     if not auto_yes:
@@ -40,11 +40,23 @@ def purge(args: argparse.Namespace) -> None:
             f"with your CAVE App ({app_name})"
         )
 
-    remove_containers(app_name)
-    remove_volume(app_name)
-    remove_image(app_name)
+    print_section(f"Purging {app_name}")
 
-    logger.info("Removing files...")
+    remove_containers(app_name, skip_header=True)
+
+    step_start("Removing database volume")
+    remove_volume(app_name)
+    step_done("Removing database volume")
+
+    step_start("Removing Redis volume")
+    remove_volume(app_name, "redis_volume")
+    step_done("Removing Redis volume")
+
+    step_start("Removing image")
+    remove_image(app_name)
+    step_done("Removing image")
+
+    step_start("Removing files")
     try:
         shutil.rmtree(abs_path)
     except PermissionError:
@@ -61,10 +73,11 @@ def purge(args: argparse.Namespace) -> None:
             try:
                 shutil.rmtree(abs_path)
             except PermissionError:
+                step_done("Removing files")
                 logger.error(
                     "Couldn't remove files. "
                     "You may need elevated permissions."
                 )
                 sys.exit(1)
-    logger.info("Done")
-    logger.info("Purge complete.")
+    step_done("Removing files")
+    logger.success("Purge complete.")

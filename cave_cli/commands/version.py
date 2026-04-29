@@ -2,10 +2,10 @@ import argparse
 import re
 
 from cave_cli import __version__
-from cave_cli.utils.constants import CHAR_LINE
+from cave_cli.utils.display import print_key_value, print_section
 from cave_cli.utils.env import parse_env
 from cave_cli.utils.logger import logger
-from cave_cli.utils.validate import find_app_dir, get_app
+from cave_cli.utils.validate import get_app
 
 
 def version(args: argparse.Namespace) -> None:
@@ -14,7 +14,8 @@ def version(args: argparse.Namespace) -> None:
 
     - Prints the CLI version and app-specific versions if inside a CAVE app directory
     """
-    logger.info(f"CAVE_CLI={__version__}")
+    print_section("CAVE CLI")
+    print_key_value("CLI Version", __version__)
     print_app_versions()
 
 
@@ -26,7 +27,7 @@ def print_app_versions() -> None:
 
     from pathlib import Path
 
-    logger.header(f"{app_name} versions:")
+    print_section(f"{app_name} Versions")
 
     version_file = Path(app_dir) / "VERSION"
     cave_app_version = (
@@ -59,6 +60,7 @@ def print_app_versions() -> None:
                 if match:
                     cave_static_version = f"v{match.group(0)}"
 
-    logger.info(f"CAVE_APP={cave_app_version}")
-    logger.info(f"CAVE_STATIC={cave_static_version}")
-    logger.info(f"CAVE_UTILS={cave_utils_version}")
+    print_key_value("CAVE App", cave_app_version)
+    print_key_value("CAVE Static", cave_static_version)
+    print_key_value("CAVE Utils", cave_utils_version)
+    print("")

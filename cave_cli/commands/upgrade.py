@@ -8,9 +8,10 @@ from cave_cli.commands.run import run_cave
 from cave_cli.commands.sync_cmd import sync_cmd
 from cave_cli.utils.constants import HTTPS_URL
 from cave_cli.utils.env import upgrade_env
+from cave_cli.utils.display import print_section, step_done, step_start
+from cave_cli.utils.env import upgrade_env
 from cave_cli.utils.git import clone
 from cave_cli.utils.logger import logger
-from cave_cli.utils.sync import sync_files
 from cave_cli.utils.validate import confirm_action, find_app_dir, get_app
 
 
@@ -27,8 +28,8 @@ def upgrade(args: argparse.Namespace) -> None:
             "'cave_api/' or '.env' and reset your database"
         )
 
-    logger.header("Upgrade:")
-    logger.info("Upgrading CAVE App via a Sync operation...\n")
+    print_section("Upgrade")
+    logger.info("Upgrading CAVE App via a Sync operation...")
 
     app_dir, app_name = get_app()
     url = getattr(args, "url", None) or HTTPS_URL
@@ -47,15 +48,17 @@ def upgrade(args: argparse.Namespace) -> None:
     sync_cmd(sync_args)
 
     if not skip_env_upgrade:
+        step_start("Upgrading environment file")
         temp_dir = tempfile.mkdtemp()
         clone(url, temp_dir, branch=version or "main")
         env_path = os.path.join(app_dir, ".env")
         upgrade_env(env_path, temp_dir)
         shutil.rmtree(temp_dir, ignore_errors=True)
+        step_done("Upgrading environment file")
 
     remove_licence_info(app_dir)
 
-    logger.info("\nUpdating Docs...")
+    step_start("Updating LLM docs")
     docs_args = argparse.Namespace(
         entrypoint="./utils/generate_docs.sh",
         interactive=False,
@@ -67,4 +70,6 @@ def upgrade(args: argparse.Namespace) -> None:
         loglevel=getattr(args, "loglevel", "INFO"),
     )
     run_cave(app_dir, app_name, docs_args)
-    logger.info("Upgrade complete.")
+    step_done("Updating LLM docs")
+
+    logger.success("Upgrade complete.")

@@ -33,9 +33,7 @@ docker run hello-world
 <details>
 <summary>Windows</summary>
 
-- Install Docker Desktop for WSL: https://docs.docker.com/desktop/wsl/
-- Install WSL2 with Ubuntu: https://learn.microsoft.com/en-us/windows/wsl/install
-- Open your WSL Ubuntu terminal for all `cave` commands
+- Install Docker Desktop: https://docs.docker.com/docker-for-windows/install/
 
 </details>
 
@@ -64,7 +62,7 @@ pipx ensurepath
 
 </details>
 <details>
-<summary>Other Linux / Windows (WSL)</summary>
+<summary>Other Linux / Windows</summary>
 
 ```sh
 python3 -m pip install --user pipx
@@ -74,10 +72,10 @@ pipx ensurepath
 
 For more options see the [pipx installation guide](https://pipx.pypa.io/stable/installation/).
 
-Verify the installation:
+Verify the installation and check your environment health:
 
 ```sh
-cave --version
+cave doctor
 ```
 
 ## Quick Start
@@ -100,7 +98,8 @@ cave --help
 | Command | Description |
 |---|---|
 | `cave create <name>` | Create a new CAVE app from the template repository |
-| `cave run` | Build Docker image and run the app |
+| `cave run` | Build Docker image and run the app with a live TUI dashboard |
+| `cave doctor` | Check the health of your Docker, Git, and Pipx environment |
 
 ### Peripheral Commands
 
@@ -120,6 +119,7 @@ cave --help
 | `cave list` | List running CAVE apps |
 | `cave kill` | Stop Docker containers for an app |
 | `cave list-versions` | List available CAVE app versions |
+| `cave theme <name>` | Set the CLI color theme (dark, light, solarized, monokai) |
 | `cave update` | Update the CAVE CLI itself |
 | `cave uninstall` | Remove the CAVE CLI |
 | `cave version` | Print version information |
@@ -131,6 +131,14 @@ cave --help
 | `-v`, `--verbose` | Enable verbose (DEBUG) logging output |
 | `--loglevel LEVEL` | Set log level: DEBUG, INFO, WARN, ERROR, SILENT |
 | `-y`, `--yes` | Automatically answer confirmation prompts with yes |
+
+### `cave run` Options
+
+| Flag | Description |
+|---|---|
+| `--all` | Show raw container output instead of the TUI dashboard |
+| `-it`, `--interactive` | Run in interactive mode (drops into a bash shell) |
+| `ip:port` | Optional argument for LAN hosting (e.g. `192.168.1.1:8000`) |
 
 ## Updating
 

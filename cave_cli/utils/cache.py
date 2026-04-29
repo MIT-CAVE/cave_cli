@@ -102,6 +102,68 @@ def save_entry(name: str, label: str, value: str) -> None:
     )
 
 
+def set_setting(name: str, value: str) -> None:
+    """
+    Usage:
+
+    - Saves a single setting value to a JSON file
+
+    Requires:
+
+    - ``name``:
+        - Type: str
+        - What: The setting name (e.g. "theme")
+
+    - ``value``:
+        - Type: str
+        - What: The value to save
+    """
+    path = cache_path("settings")
+    settings = {}
+    if os.path.isfile(path):
+        try:
+            settings = json.loads(Path(path).read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    settings[name] = value
+    Path(path).write_text(json.dumps(settings, indent=2) + "\n")
+
+
+def get_setting(name: str, default: str = "") -> str:
+    """
+    Usage:
+
+    - Loads a single setting value from the settings cache
+
+    Requires:
+
+    - ``name``:
+        - Type: str
+        - What: The setting name
+
+    Optional:
+
+    - ``default``:
+        - Type: str
+        - What: Default value if not found
+        - Default: ""
+
+    Returns:
+
+    - ``value``:
+        - Type: str
+        - What: The setting value
+    """
+    path = cache_path("settings")
+    if not os.path.isfile(path):
+        return default
+    try:
+        settings = json.loads(Path(path).read_text())
+        return settings.get(name, default)
+    except (json.JSONDecodeError, OSError):
+        return default
+
+
 def _mask_value(value: str) -> str:
     if len(value) <= 4:
         return "****"

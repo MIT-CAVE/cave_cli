@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 
+from cave_cli.utils.display import RED, RESET, step_done, step_start
 from cave_cli.utils.logger import logger
 
 PIPX_DOCS_URL = "https://pipx.pypa.io/stable/installation/"
@@ -16,7 +17,7 @@ def uninstall(args: argparse.Namespace) -> None:
     """
     try:
         response = input(
-            "Are you sure you want to uninstall CAVE CLI? [y/N] "
+            f"\n  {RED}⚠{RESET}  Are you sure you want to uninstall CAVE CLI? [y/N] "
         )
     except (EOFError, KeyboardInterrupt):
         print()
@@ -35,7 +36,7 @@ def uninstall(args: argparse.Namespace) -> None:
         logger.error(f"See: {PIPX_DOCS_URL}")
         sys.exit(1)
 
-    logger.info("Removing installation...")
+    step_start("Removing installation")
     result = subprocess.run(
         [pipx, "uninstall", "cave_cli"],
         stdout=subprocess.PIPE,
@@ -43,7 +44,8 @@ def uninstall(args: argparse.Namespace) -> None:
         text=True,
     )
     if result.returncode == 0:
-        logger.info("Done.")
+        step_done("Removing installation")
+        logger.success("Uninstall complete.")
     else:
         logger.error("Failed to uninstall CAVE CLI.")
         if result.stderr:

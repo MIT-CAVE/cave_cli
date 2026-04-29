@@ -2,6 +2,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from cave_cli.utils.display import step_done, step_start
 from cave_cli.utils.logger import logger
@@ -45,14 +46,19 @@ def update(args: argparse.Namespace) -> None:
 
     if sys.platform == "win32":
         # Windows locks running executables, so cave.exe cannot be replaced
-        # while this process is alive. Spawn a new console window that waits
-        # for this process to exit before running the update.
+        # while this process is alive. Write a temp batch file and spawn a
+        # new console window that waits for this process to exit first.
+        # A batch file avoids quoting issues with paths containing spaces.
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".bat", delete=False
+        ) as f:
+            f.write("@echo off\r\n")
+            f.write("timeout /t 1 /nobreak >nul\r\n")
+            f.write(f'"{pipx}" install --force "{spec}"\r\n')
+            f.write('del "%~f0"\r\n')
+            bat_path = f.name
         subprocess.Popen(
-            [
-                "cmd",
-                "/k",
-                f'timeout /t 1 /nobreak >nul && "{pipx}" install --force "{spec}"',
-            ],
+            ["cmd", "/k", bat_path],
             creationflags=subprocess.CREATE_NEW_CONSOLE,
         )
         step_done(label)

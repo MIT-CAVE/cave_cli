@@ -42,17 +42,19 @@ def purge(args: argparse.Namespace) -> None:
 
     print_section(f"Purging {app_name}")
 
-    step_start("Removing containers")
-    remove_containers(app_name)
-    step_done("Removing containers")
+    remove_containers(app_name, skip_header=True)
 
-    step_start("Removing volumes")
+    step_start("Removing database volume")
     remove_volume(app_name)
-    step_done("Removing volumes")
+    step_done("Removing database volume")
 
-    step_start("Removing images")
+    step_start("Removing Redis volume")
+    remove_volume(app_name, "redis_volume")
+    step_done("Removing Redis volume")
+
+    step_start("Removing image")
     remove_image(app_name)
-    step_done("Removing images")
+    step_done("Removing image")
 
     step_start("Removing files")
     try:

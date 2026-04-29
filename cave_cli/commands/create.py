@@ -76,7 +76,7 @@ def create(args: argparse.Namespace) -> None:
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )
-    reset(reset_args, app_dir=app_dir, app_name=app_name)
+    reset(reset_args, app_dir=app_dir, app_name=app_name, skip_build=True)
 
     print_section("Version Control")
 
@@ -114,14 +114,12 @@ def create(args: argparse.Namespace) -> None:
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )
-    run_cave(app_dir, app_name, docs_args, skip_header=True)
+    run_cave(app_dir, app_name, docs_args, skip_header=True, skip_build=True)
     step_done("Generating LLM docs")
 
     print_section("Done")
-    logger.info(f"App '{app_name}' created successfully!")
-    logger.info(
-        f"Configuration options available in {app_name}/.env"
-    )
+    step_done(f"App '{app_name}' created successfully!")
+    step_done(f"Configuration options available in {app_name}/.env")
 
 
 def force_remove(func, path, exc):

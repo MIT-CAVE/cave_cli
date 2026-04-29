@@ -41,6 +41,7 @@ def run_cave(
     app_name: str,
     args: argparse.Namespace,
     skip_header: bool = False,
+    skip_build: bool = False,
 ) -> None:
     interactive = getattr(args, "interactive", False) or getattr(
         args, "it", False
@@ -63,8 +64,6 @@ def run_cave(
 
     if extra_docker_args:
         logger.info(f"docker-args: {docker_args_str}")
-
-    build_image(app_name, app_dir)
 
     env_vars = parse_env(f"{app_dir}/.env")
     db_password = env_vars.get("DATABASE_PASSWORD", "")
@@ -89,10 +88,13 @@ def run_cave(
         cache_image = "valkey/valkey:7"
 
     network = f"cave-net:{app_name}"
-    create_network(app_name)
 
     if not skip_header:
         print_section(f"Starting {app_name}")
+
+    if not skip_build:
+        build_image(app_name, app_dir)
+    create_network(app_name)
 
     step_start("Starting database")
     run_detached(
@@ -186,7 +188,6 @@ def run_cave(
                 extra_args=extra_docker_args or None,
                 command=server_command,
             )
-            logger.debug("Stopping Running Containers...")
             remove_containers(app_name)
 
         elif use_tui:
@@ -218,7 +219,6 @@ def run_cave(
                 extra_args=extra_docker_args or None,
                 command=server_command,
             )
-            logger.debug("Stopping Running Containers...")
             remove_containers(app_name)
 
     else:
@@ -237,7 +237,6 @@ def run_cave(
                 extra_args=extra_docker_args or None,
                 command=server_command,
             )
-            logger.debug("Stopping Running Containers...")
             remove_containers(app_name)
 
         elif use_tui:
@@ -269,7 +268,6 @@ def run_cave(
                 extra_args=extra_docker_args or None,
                 command=server_command,
             )
-            logger.debug("Stopping Running Containers...")
             remove_containers(app_name)
 
 
@@ -306,6 +304,7 @@ def _run_tui(
 
     signal.signal(signal.SIGINT, handle_sigint)
 
+    step_start("Starting Django")
     result = run_detached_logged(
         name=django_container,
         image=image,
@@ -318,10 +317,13 @@ def _run_tui(
     )
 
     if result.returncode != 0:
+        step_done("Starting Django")
         signal.signal(signal.SIGINT, original_sigint)
         logger.error("Failed to start Django container.")
         remove_containers(app_name)
         sys.exit(1)
+
+    step_done("Starting Django")
 
     log_thread = threading.Thread(
         target=stream_container_logs,
@@ -338,5 +340,4 @@ def _run_tui(
         dashboard.stop()
         log_thread.join(timeout=5.0)
         signal.signal(signal.SIGINT, original_sigint)
-        logger.debug("Stopping Running Containers...")
         remove_containers(app_name)

@@ -10,6 +10,7 @@ def reset(
     args: argparse.Namespace,
     app_dir: str | None = None,
     app_name: str | None = None,
+    skip_build: bool = False,
 ) -> None:
     """
     Usage:
@@ -29,9 +30,7 @@ def reset(
 
     print_section("Reset")
 
-    step_start("Removing containers")
-    remove_containers(app_name)
-    step_done("Removing containers")
+    remove_containers(app_name, skip_header=True)
 
     step_start("Removing database volume")
     remove_volume(app_name)
@@ -47,5 +46,5 @@ def reset(
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )
-    run_cave(app_dir, app_name, reset_args, skip_header=True)
+    run_cave(app_dir, app_name, reset_args, skip_header=True, skip_build=skip_build)
     step_done("Reset complete")

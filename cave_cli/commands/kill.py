@@ -22,21 +22,15 @@ def kill(args: argparse.Namespace) -> None:
             logger.info("No CAVE apps are currently running.")
             return
         for name in running_apps:
-            step_start(f"Stopping {name}")
             remove_containers(name)
-            step_done(f"Stopped {name}")
     elif app_name:
         if app_name not in running_apps:
             logger.error(f"App '{app_name}' is not running.")
             return
-        step_start(f"Stopping {app_name}")
         remove_containers(app_name)
-        step_done(f"Stopped {app_name}")
     else:
         _, app_name = get_app()
         if app_name not in running_apps:
             logger.info(f"App '{app_name}' is already stopped.")
             return
-        step_start(f"Stopping {app_name}")
         remove_containers(app_name)
-        step_done(f"Stopped {app_name}")

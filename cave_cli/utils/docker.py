@@ -1,6 +1,12 @@
 import subprocess
 import sys
 
+from cave_cli.utils.display import (
+    print_section,
+    step_done,
+    step_fail,
+    step_start,
+)
 from cave_cli.utils.logger import logger
 from cave_cli.utils.subprocess import run, run_and_log, version_tuple
 
@@ -82,9 +88,7 @@ def build_image(app_name: str, path: str) -> None:
     - Streams build output and checks for ERROR lines
     - Exits with code 1 if an error is detected during the build
     """
-    from cave_cli.utils.display import step_done, step_fail, step_start
-
-    remove_containers(app_name)
+    remove_containers(app_name, skip_header=True)
     step_start("Building Docker image")
     has_error = False
     error_lines: list[str] = []
@@ -443,15 +447,12 @@ def save_redis(app_name: str) -> None:
         - Type: str
         - What: The app name
     """
-    logger.debug(
-        "Persisting Redis Data prior to Redis Container Termination..."
-    )
     run_and_log(
         ["docker", "exec", f"{app_name}_redis_host", "redis-cli", "save"]
     )
 
 
-def remove_containers(app_name: str) -> None:
+def remove_containers(app_name: str, skip_header: bool = False) -> None:
     """
     Usage:
 
@@ -462,9 +463,22 @@ def remove_containers(app_name: str) -> None:
     - ``app_name``:
         - Type: str
         - What: The app name
+
+    Optional:
+
+    - ``skip_header``:
+        - Type: bool
+        - What: Whether to skip the "Shutting Down" section header
+        - Default: False
     """
+    if not skip_header:
+        print_section(f"Shutting Down {app_name}")
+
+    step_start("Persisting cache")
     save_redis(app_name)
-    logger.debug(f"Killing Running App ({app_name})...")
+    step_done("Persisting cache")
+
+    step_start("Removing containers")
     containers = [
         f"{app_name}_django",
         f"{app_name}_nginx_host",
@@ -472,7 +486,11 @@ def remove_containers(app_name: str) -> None:
         f"{app_name}_redis_host",
     ]
     run_and_log(["docker", "rm", "--force"] + containers)
+    step_done("Removing containers")
+
+    step_start("Removing network")
     remove_network(app_name)
+    step_done("Removing network")
 
 
 def remove_volume(app_name: str, suffix: str = "pg_volume") -> None:

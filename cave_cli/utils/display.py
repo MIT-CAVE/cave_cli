@@ -30,7 +30,7 @@ CLEAR_EOL = "\033[K"
 
 # ── Server status constants ────────────────────────────────────────────────
 
-BUILDING = "building"
+RELOADING = "reloading"
 LOADING = "loading"
 READY = "ready"
 ERROR = "error"
@@ -118,6 +118,7 @@ _VALIDATION_PATTERNS: tuple[str, ...] = (
 
 _LOADING_TRIGGER = "Starting ASGI"
 _READY_TRIGGER = "Quit the server with CONTROL-C"
+_RELOAD_TRIGGER = "changed, reloading"
 
 _WS_CONNECT = "WebSocket CONNECT "
 _WS_DISCONNECT = "WebSocket DISCONNECT "
@@ -181,8 +182,10 @@ class LogFilter:
         """
         if _READY_TRIGGER in stripped:
             return READY
-        if "Starting ASGI" in stripped or "Starting development server" in stripped:
+        if _LOADING_TRIGGER in stripped or "Starting development server" in stripped:
             return LOADING
+        if _RELOAD_TRIGGER in stripped:
+            return RELOADING
         return None
 
     @staticmethod
@@ -287,7 +290,7 @@ class DashboardRenderer:
     @staticmethod
     def _status_str(status: str) -> str:
         indicators: dict[str, str] = {
-            BUILDING: f"{YELLOW}● Building{RESET}",
+            RELOADING: f"{YELLOW}● Reloading{RESET}",
             LOADING: f"{YELLOW}● Loading{RESET}",
             READY: f"{GREEN}● Ready{RESET}",
             ERROR: f"{RED}● Error{RESET}",
@@ -521,10 +524,15 @@ class RunDashboard:
         self._app_name = app_name
         self._url = url
         self._max_logs = max_logs
-        self._status: str = BUILDING
+        self._status: str = LOADING
         self._ws_clients: int = 0
-        self._log_lines: list[LogLine] = []
-        self._all_log_lines: list[LogLine] = []
+
+        # Initial log entry
+        ts = time.strftime("%H:%M:%S")
+        initial_entry = LogLine(timestamp=ts, text="App Loading", raw="INFO: App Loading")
+        self._log_lines: list[LogLine] = [initial_entry]
+        self._all_log_lines: list[LogLine] = [initial_entry]
+
         self._show_all: bool = False
         self._scroll_offset: int = 0
         self._validation_count: int = 0
@@ -609,10 +617,11 @@ class RunDashboard:
         new_status = self._filter.classify_status(stripped)
         if new_status:
             self._status = new_status
-            if new_status == LOADING:
-                loading_entry = LogLine(timestamp=ts, text="App Loading", raw="INFO: App Loading")
-                add_minimal(loading_entry)
-                add_all(loading_entry)
+            if new_status == RELOADING:
+                self._ws_clients = 0
+                reloading_entry = LogLine(timestamp=ts, text="Reloading", raw=f"INFO: {stripped}")
+                add_minimal(reloading_entry)
+                add_all(reloading_entry)
                 if self._show_all and self._scroll_offset > 0:
                     self._scroll_offset += 1
             elif new_status == READY:

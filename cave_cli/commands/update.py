@@ -10,16 +10,6 @@ PIPX_DOCS_URL = "https://pipx.pypa.io/stable/installation/"
 CLI_REPO_URL = "https://github.com/MIT-CAVE/cave_cli.git"
 
 
-def _force_install(pipx: str, version: str) -> subprocess.CompletedProcess:
-    spec = f"cave_cli @ git+{CLI_REPO_URL}@{version}"
-    return subprocess.run(
-        [pipx, "install", "--force", spec],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-
 def update(args: argparse.Namespace) -> None:
     """
     Usage:
@@ -28,9 +18,8 @@ def update(args: argparse.Namespace) -> None:
 
     Notes:
 
-    - Without ``--version``, runs ``pipx upgrade cave_cli``.  If that fails
-      (e.g. the original install branch no longer exists), falls back to
-      ``pipx install --force`` from the ``main`` branch.
+    - Without ``--version``, installs the latest version from PyPI via
+      ``pipx install --force cave_cli``.
     - With ``--version``, reinstalls via ``pipx install --force`` from the
       specified git tag or branch.
     """
@@ -45,23 +34,18 @@ def update(args: argparse.Namespace) -> None:
     version = getattr(args, "version", None)
     if version:
         label = f"Reinstalling CAVE CLI ({version})"
-        step_start(label)
-        result = _force_install(pipx, version)
+        spec = f"cave_cli @ git+{CLI_REPO_URL}@{version}"
     else:
         label = "Updating CAVE CLI"
-        step_start(label)
-        result = subprocess.run(
-            [pipx, "upgrade", "cave_cli"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if result.returncode != 0:
-            # The original install spec may point to a branch that no longer
-            # exists (e.g. a feature branch that was merged and deleted).
-            # Fall back to a fresh install from main.
-            result = _force_install(pipx, "main")
+        spec = "cave_cli"
 
+    step_start(label)
+    result = subprocess.run(
+        [pipx, "install", "--force", spec],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     if result.returncode == 0:
         step_done(label)
         logger.success("CAVE CLI updated.")

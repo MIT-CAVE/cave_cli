@@ -21,10 +21,83 @@ except ImportError:
 RESET = "\033[0m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
+
+# Default (Dark) Colors
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
+BLUE = "\033[34m"
+MAGENTA = "\033[35m"
 CYAN = "\033[36m"
+WHITE = "\033[37m"
+
+THEMES = {
+    "dark": {
+        "RED": "\033[31m",
+        "GREEN": "\033[32m",
+        "YELLOW": "\033[33m",
+        "BLUE": "\033[34m",
+        "MAGENTA": "\033[35m",
+        "CYAN": "\033[36m",
+        "WHITE": "\033[37m",
+    },
+    "light": {
+        "RED": "\033[91m",
+        "GREEN": "\033[92m",
+        "YELLOW": "\033[93m",
+        "BLUE": "\033[94m",
+        "MAGENTA": "\033[95m",
+        "CYAN": "\033[96m",
+        "WHITE": "\033[97m",
+    },
+    "solarized": {
+        "RED": "\033[38;5;160m",
+        "GREEN": "\033[38;5;64m",
+        "YELLOW": "\033[38;5;136m",
+        "BLUE": "\033[38;5;33m",
+        "MAGENTA": "\033[38;5;125m",
+        "CYAN": "\033[38;5;37m",
+        "WHITE": "\033[38;5;231m",
+    },
+    "monokai": {
+        "RED": "\033[38;5;197m",
+        "GREEN": "\033[38;5;148m",
+        "YELLOW": "\033[38;5;186m",
+        "BLUE": "\033[38;5;81m",
+        "MAGENTA": "\033[38;5;141m",
+        "CYAN": "\033[38;5;81m",
+        "WHITE": "\033[38;5;231m",
+    },
+}
+
+
+def set_theme(theme_name: str) -> None:
+    """
+    Usage:
+
+    - Updates the global color variables based on a theme name
+
+    Requires:
+
+    - ``theme_name``:
+        - Type: str
+        - What: Name of the theme to apply (e.g. "solarized")
+    """
+    global RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE
+    theme = THEMES.get(theme_name.lower(), THEMES["dark"])
+    RED = theme["RED"]
+    GREEN = theme["GREEN"]
+    YELLOW = theme["YELLOW"]
+    BLUE = theme["BLUE"]
+    MAGENTA = theme["MAGENTA"]
+    CYAN = theme["CYAN"]
+    WHITE = theme["WHITE"]
+
+
+# Initial theme load
+from cave_cli.utils.cache import get_setting
+
+set_theme(get_setting("theme", "dark"))
 
 CURSOR_HIDE = "\033[?25l"
 CURSOR_SHOW = "\033[?25h"

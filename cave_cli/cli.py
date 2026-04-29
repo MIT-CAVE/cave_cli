@@ -366,6 +366,22 @@ def main():
     add_global_args(p_version)
 
     # ------------------------------------------------------------------ #
+    # theme                                                                #
+    # ------------------------------------------------------------------ #
+    p_theme = subparsers.add_parser(
+        "theme",
+        help="Set the CLI color theme",
+    )
+    add_global_args(p_theme)
+    p_theme.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        metavar="THEME",
+        help="Name of the theme to apply (dark, light, solarized, monokai)",
+    )
+
+    # ------------------------------------------------------------------ #
     # Dispatch                                                             #
     # ------------------------------------------------------------------ #
     args = parser.parse_args()
@@ -481,6 +497,11 @@ def main():
         from cave_cli.commands.doctor import doctor
 
         doctor(args)
+
+    elif args.command == "theme":
+        from cave_cli.commands.theme import theme_cmd
+
+        theme_cmd(args)
 
     elif args.command == "uninstall":
         from cave_cli.commands.uninstall import uninstall

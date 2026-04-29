@@ -38,9 +38,11 @@ cave_cli/
     uninstall.py           # Remove the CLI package via pipx uninstall
     version.py             # Print CLI version and app-specific versions
     doctor.py              # Environment health check logic (Docker, Git, Pipx)
+    theme.py               # Theme management (dark, light, solarized, monokai)
   utils/
     __init__.py
     constants.py           # Shared constants: URLs, regex patterns, env variable lists
+    cache.py               # Cache management for entries and global settings
     display.py             # TUI dashboard renderer and step-progress display logic
     docker.py              # Docker operations: build, run, remove, inspect
     env.py                 # .env file parsing, writing, validation, interactive creation
@@ -104,6 +106,7 @@ After installation, the `cave` command is available globally. In editable mode, 
 | `cave uninstall` | | Remove the CLI package via pipx |
 | `cave version` | | Print CLI and app version information |
 | `cave doctor` | | Check the health of the CAVE environment |
+| `cave theme <name>` | | Set the CLI color theme |
 
 ### Global Flags
 
@@ -145,6 +148,7 @@ The `cave run` command features a live TUI dashboard implemented in `utils/displ
 
 - **Live Status**: Real-time server status (Loading, Ready, Reloading, Error).
 - **Log Filtering**: Intelligently hides noise while highlighting errors and validation issues.
+- **Theming**: Supports dynamic color themes (dark, light, solarized, monokai) stored in cache.
 - **Interactive Controls**: Ctrl+A to toggle modes, Arrow keys to scroll.
 - **Cross-Platform**: Uses `msvcrt` on Windows and `termios`/`tty` on Unix for non-blocking input.
 

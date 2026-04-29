@@ -324,6 +324,15 @@ def main():
     )
 
     # ------------------------------------------------------------------ #
+    # doctor                                                               #
+    # ------------------------------------------------------------------ #
+    p_doctor = subparsers.add_parser(
+        "doctor",
+        help="Check the health of the CAVE environment",
+    )
+    add_global_args(p_doctor)
+
+    # ------------------------------------------------------------------ #
     # update                                                               #
     # ------------------------------------------------------------------ #
     p_update = subparsers.add_parser(
@@ -385,84 +394,93 @@ def main():
     # Command dispatch                                                     #
     # ------------------------------------------------------------------ #
     if args.command == "create":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.create import create
 
-        check_docker()
+        check_all()
         create(args)
 
     elif args.command == "run":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.run import run
 
-        check_docker()
+        check_all()
         run(args)
 
     elif args.command == "reset":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.reset import reset
 
-        check_docker()
+        check_all()
         reset(args)
 
     elif args.command == "upgrade":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.upgrade import upgrade
 
-        check_docker()
+        check_all()
         upgrade(args)
 
     elif args.command == "sync":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.sync_cmd import sync_cmd
 
-        check_docker()
+        check_all()
         sync_cmd(args)
 
     elif args.command == "test":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.test import test
 
-        check_docker()
+        check_all()
         test(args)
 
     elif args.command == "prettify":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.prettify import prettify
 
-        check_docker()
+        check_all()
         prettify(args)
 
     elif args.command == "list":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.list_cmd import list_cmd
 
-        check_docker()
+        check_all()
         list_cmd(args)
 
     elif args.command == "kill":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.kill import kill
 
-        check_docker()
+        check_all()
         kill(args)
 
     elif args.command == "purge":
-        from cave_cli.utils.docker import check_docker
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.purge import purge
 
-        check_docker()
+        check_all()
         purge(args)
 
     elif args.command == "list-versions":
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.list_versions import list_versions
 
+        check_all()
         list_versions(args)
 
     elif args.command == "update":
+        from cave_cli.commands.doctor import check_all
         from cave_cli.commands.update import update
 
+        check_all()
         update(args)
+
+    elif args.command == "doctor":
+        from cave_cli.commands.doctor import doctor
+
+        doctor(args)
 
     elif args.command == "uninstall":
         from cave_cli.commands.uninstall import uninstall

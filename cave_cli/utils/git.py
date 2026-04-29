@@ -1,5 +1,3 @@
-import subprocess
-
 from cave_cli.utils.subprocess import run, run_and_log
 
 

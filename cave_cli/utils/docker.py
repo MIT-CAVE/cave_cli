@@ -11,62 +11,6 @@ from cave_cli.utils.logger import logger
 from cave_cli.utils.subprocess import run, run_and_log, version_tuple
 
 
-def check_docker() -> None:
-    """
-    Usage:
-
-    - Validates that Docker is installed, running, and meets the minimum version
-
-    Notes:
-
-    - Exits with code 1 if Docker is not installed, not running, or too old
-    """
-    from cave_cli.utils.constants import MIN_DOCKER_VERSION
-
-    try:
-        result = run(["docker", "--version"])
-    except FileNotFoundError:
-        logger.error(
-            f"Docker is not installed. "
-            f"Please install Docker version {MIN_DOCKER_VERSION} or greater.\n"
-            f"For more information see: https://docs.docker.com/get-docker/"
-        )
-        sys.exit(1)
-
-    if result.returncode != 0 or not result.stdout:
-        logger.error(
-            f"Could not determine Docker version. "
-            f"Please install Docker version {MIN_DOCKER_VERSION} or greater."
-        )
-        sys.exit(1)
-
-    version_str = result.stdout.strip()
-    import re
-
-    match = re.search(r"(\d+\.\d+\.\d+)", version_str)
-    if not match:
-        logger.error(f"Could not parse Docker version from: {version_str}")
-        sys.exit(1)
-
-    current = match.group(1)
-    if version_tuple(current) < version_tuple(MIN_DOCKER_VERSION):
-        logger.error(
-            f"Your current Docker version ({current}) is too old.\n"
-            f"Please install Docker version {MIN_DOCKER_VERSION} or greater.\n"
-            f"For more information see: https://docs.docker.com/get-docker/"
-        )
-        sys.exit(1)
-
-    info_result = run(["docker", "info"])
-    if info_result.returncode != 0:
-        logger.error(
-            "Docker not running... Please start Docker and try again!"
-        )
-        sys.exit(1)
-
-    logger.debug("Docker Check Passed!")
-
-
 def build_image(app_name: str, path: str) -> None:
     """
     Usage:

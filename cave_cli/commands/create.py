@@ -9,7 +9,7 @@ from cave_cli.commands.reset import reset
 from cave_cli.commands.run import run_cave
 from cave_cli.utils.constants import HTTPS_URL
 from cave_cli.utils.display import print_section, step_done, step_fail, step_start
-from cave_cli.utils.docker import build_image, check_docker, generate_secret_key
+from cave_cli.utils.docker import build_image, generate_secret_key
 from cave_cli.utils.env import create_env_interactive
 from cave_cli.utils.git import add, branch_rename, clone, commit, init
 from cave_cli.utils.logger import logger

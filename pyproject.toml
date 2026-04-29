@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cave_cli"
-version = "3.5.3"
+version = "3.5.4"
 description = "CLI for creating and managing Docker-based CAVE web applications."
 authors = [
     {name = "MIT-CAVE", email = "cave-contact@mit.edu"}

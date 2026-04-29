@@ -22,6 +22,8 @@ def update(args: argparse.Namespace) -> None:
       ``pipx install --force cave_cli``.
     - With ``--version``, reinstalls via ``pipx install --force`` from the
       specified git tag or branch.
+    - On Windows, the update runs in a new console window because Windows
+      locks running executables and cave.exe cannot replace itself.
     """
     pipx = shutil.which("pipx")
     if not pipx:
@@ -40,6 +42,23 @@ def update(args: argparse.Namespace) -> None:
         spec = "cave_cli"
 
     step_start(label)
+
+    if sys.platform == "win32":
+        # Windows locks running executables, so cave.exe cannot be replaced
+        # while this process is alive. Spawn a new console window that waits
+        # for this process to exit before running the update.
+        subprocess.Popen(
+            [
+                "cmd",
+                "/k",
+                f'timeout /t 1 /nobreak >nul && "{pipx}" install --force "{spec}"',
+            ],
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+        step_done(label)
+        logger.success("CAVE CLI update started in a new window.")
+        return
+
     result = subprocess.run(
         [pipx, "install", "--force", spec],
         stdout=subprocess.PIPE,

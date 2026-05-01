@@ -30,7 +30,7 @@ def test(args: argparse.Namespace) -> None:
         extra_env=extra_env,
         interactive=False,
         it=False,
-        docker_args="",
+        docker_args=getattr(args, "docker_args", "") or "",
         ip_port=None,
         yes=True,
         verbose=getattr(args, "verbose", False),

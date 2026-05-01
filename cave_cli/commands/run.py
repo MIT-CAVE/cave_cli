@@ -1,4 +1,5 @@
 import argparse
+import shlex
 import signal
 import sys
 import threading
@@ -49,7 +50,7 @@ def run_cave(
     show_all = getattr(args, "show_all", False) or getattr(args, "verbose", False) or getattr(args, "loglevel", "INFO").upper() == "DEBUG"
     entrypoint = getattr(args, "entrypoint", None) or "./utils/run_server.sh"
     docker_args_str = getattr(args, "docker_args", "") or ""
-    extra_docker_args = docker_args_str.split() if docker_args_str else []
+    extra_docker_args = shlex.split(docker_args_str) if docker_args_str else []
     ip_port_arg = getattr(args, "ip_port", None)
     command_args = getattr(args, "command_args", []) or []
     extra_env = getattr(args, "extra_env", {}) or {}

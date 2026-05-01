@@ -162,6 +162,12 @@ def main():
         ),
     )
     add_global_args(p_reset)
+    p_reset.add_argument(
+        "--docker-args",
+        default="",
+        metavar="ARGS",
+        help="Additional arguments to pass to docker run",
+    )
 
     # ------------------------------------------------------------------ #
     # upgrade                                                              #
@@ -234,6 +240,12 @@ def main():
     )
     add_global_args(p_test)
     p_test.add_argument(
+        "--docker-args",
+        default="",
+        metavar="ARGS",
+        help="Additional arguments to pass to docker run",
+    )
+    p_test.add_argument(
         "remaining",
         nargs="*",
         help="Additional arguments passed to the test runner",
@@ -247,6 +259,12 @@ def main():
         help="Format code with autoflake and black",
     )
     add_global_args(p_prettify)
+    p_prettify.add_argument(
+        "--docker-args",
+        default="",
+        metavar="ARGS",
+        help="Additional arguments to pass to docker run",
+    )
 
     # ------------------------------------------------------------------ #
     # list                                                                 #

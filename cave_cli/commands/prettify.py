@@ -18,7 +18,7 @@ def prettify(args: argparse.Namespace) -> None:
         entrypoint="./utils/prettify.sh",
         interactive=False,
         it=False,
-        docker_args="",
+        docker_args=getattr(args, "docker_args", "") or "",
         ip_port=None,
         yes=True,
         verbose=getattr(args, "verbose", False),

@@ -379,6 +379,79 @@ def stream_container_logs(
         log_queue.put(None)
 
 
+def is_container_ready(name: str, user: str) -> bool:
+    """
+    Usage:
+
+    - Checks if a Postgres container is ready to accept connections
+
+    Requires:
+
+    - ``name``:
+        - Type: str
+        - What: The container name
+
+    - ``user``:
+        - Type: str
+        - What: The database user to check with
+
+    Returns:
+
+    - ``ready``:
+        - Type: bool
+        - What: True if ready, False otherwise
+    """
+    result = run(
+        ["docker", "exec", name, "pg_isready", "-U", user],
+        capture=True,
+    )
+    return result.returncode == 0
+
+
+def is_db_initialized(name: str, user: str, db: str) -> bool:
+    """
+    Usage:
+
+    - Checks if the Django migrations table exists in the database
+
+    Requires:
+
+    - ``name``:
+        - Type: str
+        - What: The container name
+
+    - ``user``:
+        - Type: str
+        - What: The database user
+
+    - ``db``:
+        - Type: str
+        - What: The database name
+
+    Returns:
+
+    - ``initialized``:
+        - Type: bool
+        - What: True if initialized, False otherwise
+    """
+    result = run(
+        [
+            "docker",
+            "exec",
+            name,
+            "psql",
+            "-U",
+            user,
+            "-d",
+            db,
+            "-c",
+            "SELECT 1 FROM django_migrations LIMIT 1;",
+        ],
+        capture=True,
+    )
+    return result.returncode == 0
+
+
 def save_redis(app_name: str) -> None:
     """
     Usage:

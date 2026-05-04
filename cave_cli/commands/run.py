@@ -9,12 +9,14 @@ from cave_cli.utils.display import (
     RunDashboard,
     print_section,
     step_done,
+    step_fail,
     step_start,
 )
 from cave_cli.utils.docker import (
     build_image,
     create_network,
     remove_containers,
+    run_and_log,
     run_detached,
     run_detached_logged,
     run_interactive,
@@ -136,6 +138,50 @@ def run_cave(
     }
 
     django_volumes = [f"{app_dir}:/app"]
+
+    # Check if database needs initialization
+    if is_server_run and "postgres" in db_image.lower():
+        from cave_cli.utils.docker import is_container_ready, is_db_initialized
+        from cave_cli.utils.validate import confirm_action
+
+        db_container = f"{app_name}_db_host"
+        db_user = f"{app_name}_user"
+        db_name = f"{app_name}_name"
+
+        step_start("Checking database")
+        import time
+
+        ready = False
+        for _ in range(30):
+            if is_container_ready(db_container, db_user):
+                ready = True
+                break
+            time.sleep(1)
+
+        if ready:
+            if not is_db_initialized(db_container, db_user, db_name):
+                step_done("Checking database")
+                confirm_action(
+                    "The database for this app is not set up. "
+                    "Would you like to set it up now?"
+                )
+                step_start("Initializing database")
+                run_interactive(
+                    name=f"{app_name}_django_setup",
+                    image=f"cave-app:{app_name}",
+                    network=network,
+                    volumes=django_volumes,
+                    env_vars=django_env,
+                    command=["./utils/reset_db.sh"],
+                )
+                run_and_log(["docker", "rm", f"{app_name}_django_setup"])
+                step_done("Initializing database")
+            else:
+                step_done("Checking database")
+        else:
+            step_fail("Checking database", "Database container failed to become ready.")
+            remove_containers(app_name)
+            sys.exit(1)
 
     parsed = parse_ip_port(ip_port_arg) if ip_port_arg else None
     django_container = f"{app_name}_django"

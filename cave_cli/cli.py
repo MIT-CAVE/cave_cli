@@ -39,6 +39,13 @@ def add_global_args(parser: argparse.ArgumentParser) -> None:
         help="Enable verbose logging output (shorthand for --loglevel DEBUG)",
     )
     parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Enable quiet mode (suppress most output, shorthand for --loglevel SILENT)",
+    )
+    parser.add_argument(
         "--loglevel",
         "--ll",
         default="INFO",
@@ -419,7 +426,9 @@ def main():
     # Configure logging
     from cave_cli.utils.logger import logger
 
-    if args.verbose:
+    if getattr(args, "quiet", False):
+        logger.set_level("SILENT")
+    elif args.verbose:
         logger.set_level("DEBUG")
     else:
         logger.set_level(args.loglevel)

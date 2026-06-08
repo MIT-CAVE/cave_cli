@@ -101,6 +101,26 @@ set_theme(get_setting("theme", "dark"))
 
 CURSOR_HIDE = "\033[?25l"
 CURSOR_SHOW = "\033[?25h"
+
+_QUIET = False
+
+
+def set_quiet(quiet: bool) -> None:
+    """
+    Usage:
+
+    - Sets the global quiet mode state
+
+    Requires:
+
+    - ``quiet``:
+        - Type: bool
+        - What: If True, suppresses most CLI output
+    """
+    global _QUIET
+    _QUIET = quiet
+
+
 ALT_SCREEN_ENTER = "\033[?1049h"
 ALT_SCREEN_EXIT = "\033[?1049l"
 CURSOR_HOME = "\033[H"
@@ -887,6 +907,8 @@ def print_key_value(key: str, value: str, key_color: str = CYAN) -> None:
         - What: ANSI color code for the key.
         - Default: CYAN
     """
+    if _QUIET:
+        return
     sys.stdout.write(f"  {key_color}{key}{RESET}: {value}\n")
     sys.stdout.flush()
 
@@ -903,6 +925,8 @@ def print_section(title: str) -> None:
         - Type: str
         - What: Section label to display.
     """
+    if _QUIET:
+        return
     cols, _ = shutil.get_terminal_size(fallback=(80, 24))
     width = min(cols - 4, 60)
     sys.stdout.write(f"\n  {BOLD}{title}{RESET}\n  {'─' * width}\n")
@@ -922,6 +946,8 @@ def step_start(label: str) -> None:
         - Type: str
         - What: Description of the step being started.
     """
+    if _QUIET:
+        return
     sys.stdout.write(f"  {YELLOW}●{RESET}  {label}...\033[K\r")
     sys.stdout.flush()
 
@@ -938,6 +964,8 @@ def step_done(label: str) -> None:
         - Type: str
         - What: Description of the completed step.
     """
+    if _QUIET:
+        return
     sys.stdout.write(f"\r  {GREEN}✓{RESET}  {label}\033[K\n")
     sys.stdout.flush()
 
@@ -962,6 +990,8 @@ def step_fail(label: str, detail: str = "") -> None:
         - What: Multi-line detail text; last 8 lines are shown indented.
         - Default: ""
     """
+    if _QUIET:
+        return
     sys.stdout.write(f"\r  {RED}✗{RESET}  {label}\033[K\n")
     if detail:
         for line in detail.strip().splitlines()[-8:]:

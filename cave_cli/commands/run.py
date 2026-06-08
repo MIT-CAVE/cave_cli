@@ -56,6 +56,7 @@ def run_cave(
     ip_port_arg = getattr(args, "ip_port", None)
     command_args = getattr(args, "command_args", []) or []
     extra_env = getattr(args, "extra_env", {}) or {}
+    quiet = getattr(args, "quiet", False) or getattr(args, "loglevel", "INFO").upper() == "SILENT"
 
     is_server_run = entrypoint == "./utils/run_server.sh" and not interactive
     use_tui = is_server_run and not show_all

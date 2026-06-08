@@ -14,12 +14,9 @@ from cave_cli.utils.display import (
 )
 from cave_cli.utils.git import ls_remote_tags
 from cave_cli.utils.logger import logger
+from cave_cli.utils.version import version_tuple
 
 RECENT_LIMIT = 5
-
-
-def _version_sort_key(v: str) -> list[int]:
-    return [int(x) for x in re.findall(r"\d+", v)]
 
 
 def list_versions(args: argparse.Namespace) -> None:
@@ -54,7 +51,7 @@ def list_versions(args: argparse.Namespace) -> None:
             v for v in set().union(*repo_tags.values())
             if not pattern or fnmatch.fnmatch(v, pattern)
         ),
-        key=_version_sort_key,
+        key=version_tuple,
         reverse=True,
     )
 
@@ -64,7 +61,7 @@ def list_versions(args: argparse.Namespace) -> None:
 
     by_major: dict[int, list[str]] = defaultdict(list)
     for v in all_versions:
-        major = _version_sort_key(v)[0]
+        major = version_tuple(v)[0]
         by_major[major].append(v)
 
     repos = list(VALID_REPOS)

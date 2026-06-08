@@ -94,12 +94,26 @@ def validate_app_dir(path: str) -> list[str]:
                 "in the root project directory."
             )
 
-    for file in (".env", "manage.py", "requirements.txt", "Dockerfile"):
+    for file in (".env", "manage.py", "Dockerfile"):
         if not (p / file).is_file():
             errors.append(
                 f"The file '{file}' is missing "
                 "in the root project directory."
             )
+    # Ensure that either 'requirements.txt' or 'pyproject.toml' exists, but not both
+    has_requirements = (p / "requirements.txt").is_file()
+    has_pyproject = (p / "pyproject.toml").is_file()
+    if has_requirements and has_pyproject:
+        errors.append(
+            "Both 'requirements.txt' and 'pyproject.toml' exist. "
+            "Only one of these should be present in the root project directory."
+        )
+    elif not has_requirements and not has_pyproject:
+        errors.append(
+            "Neither 'requirements.txt' nor 'pyproject.toml' exists. "
+            "One of these must be present in the root project directory."
+        )
+
 
     env_path = p / ".env"
     if env_path.is_file():

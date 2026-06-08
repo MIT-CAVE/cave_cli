@@ -2,6 +2,7 @@ import subprocess
 import sys
 
 from cave_cli.utils.logger import logger
+from cave_cli.utils.version import version_tuple
 
 
 def run(
@@ -106,24 +107,3 @@ def run_and_log(
         for line in result.stderr.strip().splitlines():
             log_fn(line)
     return result
-
-
-def version_tuple(v: str) -> tuple[int, ...]:
-    """
-    Usage:
-
-    - Parses a version string into a comparable tuple of integers
-
-    Requires:
-
-    - ``v``:
-        - Type: str
-        - What: A version string like "23.0.6"
-
-    Returns:
-
-    - ``parts``:
-        - Type: tuple[int, ...]
-        - What: A tuple of integers for comparison
-    """
-    return tuple(int(x) for x in v.split(".") if x.isdigit())

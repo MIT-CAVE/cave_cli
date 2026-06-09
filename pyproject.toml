@@ -3,8 +3,8 @@ line-length = 80
 target-version = ['py313']
 exclude = '/.*(__pycache__).*/'
 
-[tool.setuptools]
-packages = ["cave_cli"]
+[tool.setuptools.packages.find]
+where = ["cave_cli"]
 
 [build-system]
 requires = ["setuptools>=61.0"]

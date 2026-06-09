@@ -12,3 +12,6 @@ build/
 venv/
 .venv/
 legacy/
+
+.nox
+.venv

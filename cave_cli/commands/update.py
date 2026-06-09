@@ -1,13 +1,13 @@
 import argparse
-import shutil
 import subprocess
 import sys
 import tempfile
 
 from cave_cli.utils.display import step_done, step_start
 from cave_cli.utils.logger import logger
+from cave_cli.commands.doctor import check_uv
 
-PIPX_DOCS_URL = "https://pipx.pypa.io/stable/installation/"
+UV_DOCS_URL = "https://docs.astral.sh/uv/"
 CLI_REPO_URL = "https://github.com/MIT-CAVE/cave_cli.git"
 
 
@@ -15,32 +15,30 @@ def update(args: argparse.Namespace) -> None:
     """
     Usage:
 
-    - Updates the CAVE CLI via pipx.
+    - Updates the CAVE CLI via uv.
 
     Notes:
 
-    - Without ``--version``, installs the latest version from PyPI via
-      ``pipx install --force cave_cli``.
-    - With ``--version``, reinstalls via ``pipx install --force`` from the
-      specified git tag or branch.
+    - Without ``--version``, upgrades to the latest version from PyPI via
+      ``uv tool upgrade cave_cli``.
+    - With ``--version``, reinstalls via ``uv tool install --reinstall`` from
+      the specified git tag or branch.
     - On Windows, the update runs in a new console window because Windows
       locks running executables and cave.exe cannot replace itself.
     """
-    pipx = shutil.which("pipx")
-    if not pipx:
-        logger.error(
-            "pipx not found. Please install pipx and reinstall cave_cli."
-        )
-        logger.error(f"See: {PIPX_DOCS_URL}")
+    has_uv, uv_message, uv_path= check_uv()
+    if not has_uv:
+        logger.error(uv_message)
+        logger.error(f"The cave_cli package may need to be updated manually based on how it was installed.")
         sys.exit(1)
 
     version = getattr(args, "version", None)
     if version:
         label = f"Reinstalling CAVE CLI ({version})"
-        spec = f"cave_cli @ git+{CLI_REPO_URL}@{version}"
+        cmd = [uv_path, "tool", "install", "--reinstall", f"cave_cli @ git+{CLI_REPO_URL}@{version}"]
     else:
         label = "Updating CAVE CLI"
-        spec = "cave_cli"
+        cmd = [uv_path, "tool", "upgrade", "cave_cli"]
 
     step_start(label)
 
@@ -54,7 +52,7 @@ def update(args: argparse.Namespace) -> None:
         ) as f:
             f.write("@echo off\r\n")
             f.write("timeout /t 1 /nobreak >nul\r\n")
-            f.write(f'"{pipx}" install --force "{spec}"\r\n')
+            f.write(" ".join(f'"{c}"' for c in cmd) + "\r\n")
             f.write('del "%~f0"\r\n')
             bat_path = f.name
         subprocess.Popen(
@@ -66,7 +64,7 @@ def update(args: argparse.Namespace) -> None:
         return
 
     result = subprocess.run(
-        [pipx, "install", "--force", spec],
+        cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

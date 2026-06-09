@@ -9,7 +9,7 @@ Core capabilities:
 - **App creation** -- clone the `cave_app` template, configure `.env`, build Docker images, and initialize git
 - **App lifecycle** -- run, reset, upgrade, sync, test, prettify, kill, and purge CAVE apps
 - **Docker orchestration** -- manages multi-container stacks (Django, Postgres, Redis/Valkey, Nginx)
-- **CLI self-management** -- update and uninstall the CLI itself via pipx
+- **CLI self-management** -- update and uninstall the CLI itself via uv
 
 Repo: `MIT-CAVE/cave_cli` on GitHub
 
@@ -34,10 +34,10 @@ cave_cli/
     kill.py                # Stop Docker containers for an app (or all apps)
     purge.py               # Remove an app directory and all its Docker resources
     list_versions.py       # List available CAVE app versions from remote git tags
-    update.py              # Update the CLI itself via pipx upgrade / pipx install --force
-    uninstall.py           # Remove the CLI package via pipx uninstall
+    update.py              # Update the CLI itself via uv tool upgrade / uv tool install --reinstall
+    uninstall.py           # Remove the CLI package via uv tool uninstall
     version.py             # Print CLI version and app-specific versions
-    doctor.py              # Environment health check logic (Docker, Git, Pipx)
+    doctor.py              # Environment health check logic (Docker, Git, uv)
     theme.py               # Theme management (dark, light, solarized, monokai)
   utils/
     __init__.py
@@ -118,8 +118,8 @@ After installation, the `cave` command is available globally. In editable mode, 
 | `cave kill` | | Stop containers for an app |
 | `cave purge <path>` | | Remove an app and all its Docker resources |
 | `cave list-versions` | `lv` | List available CAVE app versions |
-| `cave update` | | Update the CLI itself via pipx |
-| `cave uninstall` | | Remove the CLI package via pipx |
+| `cave update` | | Update the CLI itself via uv |
+| `cave uninstall` | | Remove the CLI package via uv |
 | `cave version` | | Print CLI and app version information |
 | `cave doctor` | | Check the health of the CAVE environment |
 | `cave theme <name>` | | Set the CLI color theme |
@@ -145,7 +145,7 @@ After installation, the `cave` command is available globally. In editable mode, 
 
 Most commands that operate on an existing app follow this pattern:
 
-1. Call `check_all()` from `commands/doctor.py` to ensure Docker, Git, and Pipx are available.
+1. Call `check_all()` from `commands/doctor.py` to ensure Docker, Git, and uv are available.
 2. Call `get_app()` to discover the app directory (walks up from `cwd` looking for `manage.py` + `cave_core/`)
 3. Perform the command's work using `app_dir` and `app_name`
 4. Many commands delegate to `run_cave(app_dir, app_name, args)` which orchestrates the Docker container stack
@@ -156,7 +156,7 @@ Validation logic for required system tools is centralized in `commands/doctor.py
 
 - **Docker**: Checks for installation, minimum version, and that the daemon is running.
 - **Git**: Checks that `git` is on the `PATH`.
-- **Pipx**: Checks for `pipx` installation, used for self-updates.
+- **uv**: Checks for `uv` installation, used for self-updates.
 
 ### TUI Dashboard
 

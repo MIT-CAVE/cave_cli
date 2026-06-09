@@ -39,38 +39,42 @@ docker run hello-world
 
 ## Installation
 
-Install with [pipx](https://pipx.pypa.io/) (recommended — keeps the CLI isolated from your system Python):
+Install with [uv](https://docs.astral.sh/uv/) (required to run cave update and cave uninstall):
 
 ```sh
-pipx install cave_cli
+uv tool install cave_cli
 ```
 
-If you don't have pipx, install it first:
+If you don't have uv, install it first:
 
 <details>
 <summary>macOS</summary>
 
 ```sh
 # With Homebrew (recommended)
-brew install pipx
-pipx ensurepath
+brew install uv
 
-# Or with pip
-pip3 install --user pipx
-pipx ensurepath
+# Or with the official installer
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 </details>
 <details>
-<summary>Other Linux / Windows</summary>
+<summary>Linux</summary>
 
 ```sh
-python3 -m pip install --user pipx
-pipx ensurepath
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+</details>
+<details>
+<summary>Windows</summary>
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 </details>
 
-For more options see the [pipx installation guide](https://pipx.pypa.io/stable/installation/).
+For more options see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
 
 Verify the installation and check your environment health:
 
@@ -99,7 +103,7 @@ cave --help
 |---|---|
 | `cave create <name>` | Create a new CAVE app from the template repository |
 | `cave run` | Build Docker image and run the app with a live TUI dashboard |
-| `cave doctor` | Check the health of your Docker, Git, and Pipx environment |
+| `cave doctor` | Check the health of your Docker, Git, and uv environment |
 
 ### Peripheral Commands
 
@@ -146,10 +150,10 @@ cave --help
 cave update
 ```
 
-Or directly via pipx:
+Or directly via uv:
 
 ```sh
-pipx upgrade cave_cli
+uv tool upgrade cave_cli
 ```
 
 ## License Notice

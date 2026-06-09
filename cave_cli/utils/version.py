@@ -53,6 +53,57 @@ def version_tuple(v: str) -> tuple[int, ...]:
     return tuple(int(x) for x in re.findall(r"\d+", v))
 
 
+# Map of (major, minor, patch) threshold to list of instruction strings
+BREAKING_CHANGES = {
+    (3, 0, 0): [
+        "The interface between CAVE App and CAVE Static has changed.",
+        "You MUST upgrade cave_static to 2.4.0 or higher (in your .env file) to be compatible with CAVE App 3.0.0 or higher.",
+        "If you choose to upgrade cave_static to 3.0.0 or higher, you will need to update your api to match the new interface."
+    ],
+    (3, 6, 0): [
+        "The following changes are required to migrate to 3.6.0:",
+        "  Replace 'requirements.txt' with 'pyproject.toml' for dependency management",
+        "  Restructure 'cave_api/cave_api/' directly into 'cave_api/'",
+        "  Move 'cave_api/tests/' to the project root as 'tests/'",
+        "  Update all 'cave_api.cave_api' import paths to 'cave_api'",
+        "  Move legacy files into 'legacy/' (requirements.txt, llm/, utils/pyproject.toml, utils/extra_requirements.txt)",
+        "  Remove the 'VERSION' file",
+        "The automated migration can handle all of the above.",
+        "Any remaining custom code referencing the old structure may need manual updates.",
+    ],
+}
+
+
+def get_breaking_instructions(current_v: str, target_v: str) -> list[str]:
+    """
+    Returns a list of instructions for all breaking changes crossed
+    when upgrading from current_v to target_v.
+    """
+    if current_v == "Unknown" or not target_v:
+        return []
+
+    c = version_tuple(current_v)
+    t = version_tuple(target_v)
+
+    if not c or not t:
+        return []
+
+    instructions = []
+    # Sort thresholds to ensure we process them in chronological order
+    for threshold in sorted(BREAKING_CHANGES.keys()):
+        # If the threshold is greater than our current version
+        # AND less than or equal to our target version, it's a break we're crossing.
+        if c < threshold <= t:
+            items = BREAKING_CHANGES[threshold]
+            if isinstance(items, str):
+                instructions.append(f"- {items}")
+            else:
+                for item in items:
+                    instructions.append(f"- {item}")
+
+    return instructions
+
+
 def is_breaking_change(current_v: str, target_v: str) -> bool:
     """
     Checks if upgrading from current_v to target_v is a breaking change.

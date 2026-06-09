@@ -225,7 +225,7 @@ def run_cave(
         url = f"https://{ip}:{port}"
 
         if interactive:
-            logger.header("CAVE App: (Interactive)")
+            logger.header("CAVE App (Interactive)")
             run_interactive(
                 name=django_container,
                 image=f"cave-app:{app_name}",
@@ -237,8 +237,8 @@ def run_cave(
                 command=server_command,
             )
             remove_containers(app_name)
-
         elif use_tui:
+            logger.header("CAVE App (TUI)")
             _run_tui(
                 app_name=app_name,
                 django_container=django_container,
@@ -253,6 +253,7 @@ def run_cave(
             )
 
         else:
+            logger.header("CAVE App (CLI)")
             if is_server_run:
                 logger.info(
                     f"Your Cave App can be accessed from Chrome at:\n{url}"
@@ -274,7 +275,7 @@ def run_cave(
         url = f"http://localhost:{port}"
 
         if interactive:
-            logger.header("CAVE App: (Interactive)")
+            logger.header("CAVE App (Interactive)")
             run_interactive(
                 name=django_container,
                 image=f"cave-app:{app_name}",
@@ -288,6 +289,7 @@ def run_cave(
             remove_containers(app_name)
 
         elif use_tui:
+            logger.header("CAVE App (TUI)")
             _run_tui(
                 app_name=app_name,
                 django_container=django_container,
@@ -302,6 +304,7 @@ def run_cave(
             )
 
         else:
+            logger.header("CAVE App (CLI)")
             if is_server_run:
                 logger.info(
                     f"Your Cave App can be accessed from Chrome at:\n{url}"

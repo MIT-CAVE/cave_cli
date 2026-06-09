@@ -200,7 +200,9 @@ def get_app(start: str | None = None) -> tuple[str, str]:
     return app_dir, app_name
 
 
-def confirm_action(message: str, auto_yes: bool = False) -> None:
+def confirm_action(
+    message: str, auto_yes: bool = False, continue_on_no: bool = False
+) -> bool:
     """
     Usage:
 
@@ -216,17 +218,40 @@ def confirm_action(message: str, auto_yes: bool = False) -> None:
 
     - ``auto_yes``:
         - Type: bool
-        - What: If True, bypasses the prompt and continues
+        - What: If True, bypasses the prompt and returns True
         - Default: False
+
+    - ``continue_on_no``:
+        - Type: bool
+        - What: If True, a "no" response returns False instead of exiting. Any
+          input that is not a yes or no variant exits the program.
+        - Default: False
+
+    Returns:
+
+    - ``confirmed``:
+        - Type: bool
+        - What: True if the user confirmed (or auto_yes), False if the user
+          declined and continue_on_no is True.
     """
     if auto_yes:
-        return
+        return True
+    bracket = "[y/n]" if continue_on_no else "[y/N]"
+    suffix = "" if message.rstrip()[-1:] in (".", "?", "!") else "."
     try:
-        response = input(f"\n  {YELLOW}⚠{RESET}  {message}. \n  Continue? [y/N] ")
+        response = input(f"\n  {YELLOW}⚠{RESET}  {message}{suffix} \n  Continue? {bracket} ")
     except (EOFError, KeyboardInterrupt):
         print()
         logger.error("Operation canceled.")
         sys.exit(1)
-    if response.strip().lower() not in ("y", "yes"):
+    normalized = response.strip()
+    if normalized in ("y", "Y", "yes", "Yes", "YES"):
+        return True
+    if continue_on_no:
+        if normalized in ("n", "N", "no", "No", "NO"):
+            return False
+        logger.error("Operation canceled.")
+        sys.exit(1)
+    else:
         logger.error("Operation canceled.")
         sys.exit(1)

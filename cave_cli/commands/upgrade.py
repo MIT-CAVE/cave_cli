@@ -229,7 +229,7 @@ def upgrade(args: argparse.Namespace) -> None:
 
     remove_licence_info(app_dir)
 
-    step_start("Updating LLM docs")
+    step_start("Updating API docs")
     docs_args = argparse.Namespace(
         entrypoint="./utils/generate_docs.sh",
         interactive=False,
@@ -241,6 +241,6 @@ def upgrade(args: argparse.Namespace) -> None:
         loglevel=getattr(args, "loglevel", "INFO"),
     )
     run_cave(app_dir, app_name, docs_args)
-    step_done("Updating LLM docs")
+    step_done("Updating API docs")
 
     logger.success("Upgrade complete.")

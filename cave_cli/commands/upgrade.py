@@ -60,45 +60,85 @@ def migrate_3_6_0(app_dir: str) -> None:
     if version_file.exists():
         version_file.unlink()
 
-    # Collect cave_api requirements before moving the directory
-    cave_api_requirements = []
+    # Move cave_core/models.py to legacy/cave_core/models.py if it exists
+    models_file = app_path / "cave_core" / "models.py"
+    if models_file.exists():
+        try:
+            legacy_cave_core = legacy_dir / "cave_core"
+            legacy_cave_core.mkdir(exist_ok=True)
+            shutil.move(models_file, legacy_cave_core / "models.py")
+        except Exception as e:
+            logger.warn(f"Failed to move cave_core/models.py to legacy/cave_core/models.py: {e}")
+
+    # Collect api requirements from cave_api/requirements.txt and cave_api/pyproject.toml
+    # before moving/restructuring the cave_api directory
+    api_requirements = []
+    
+    # 1. Pull from cave_api/requirements.txt
     cave_api_req = app_path / "cave_api" / "requirements.txt"
     if cave_api_req.exists():
         try:
-            cave_api_requirements.extend(cave_api_req.read_text().splitlines())
+            for line in cave_api_req.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    api_requirements.append(line)
         except Exception as e:
-            logger.warning(f"Failed to read cave_api requirements: {e}")
+            logger.warn(f"Failed to read cave_api requirements: {e}")
 
-    # Update pyproject.toml with cave_api optional dependencies
+    # 2. Pull from cave_api/pyproject.toml
+    cave_api_pyproject = app_path / "cave_api" / "pyproject.toml"
+    if cave_api_pyproject.exists():
+        try:
+            with open(cave_api_pyproject, "rb") as f:
+                cave_api_pyproject_data = tomllib.loads(f.read().decode())
+            deps = cave_api_pyproject_data.get("project", {}).get("dependencies", [])
+            for dep in deps:
+                dep = dep.strip()
+                if dep and dep not in api_requirements:
+                    api_requirements.append(dep)
+        except Exception as e:
+            logger.warn(f"Failed to read cave_api pyproject.toml: {e}")
+
+    # Deduplicate requirements while preserving order
+    seen = set()
+    cleaned_requirements = []
+    for req in api_requirements:
+        if req not in seen:
+            seen.add(req)
+            cleaned_requirements.append(req)
+
+    # Update pyproject.toml optional-dependencies.api section
     pyproject_path = app_path / "pyproject.toml"
-    if cave_api_requirements and pyproject_path.exists():
+    if cleaned_requirements and pyproject_path.exists():
         try:
             with open(pyproject_path, "rb") as f:
-                content = f.read()
-                pyproject = tomllib.load(f)
+                content_bytes = f.read()
+            content = content_bytes.decode()
 
-            existing_deps = pyproject.get("project", {}).get("dependencies", [])
-            new_deps = [req for req in cave_api_requirements if req not in existing_deps]
-
-            if new_deps:
-                deps_str = "\n".join(f'  "{dep}",' for dep in new_deps)
-                cave_api_block = f'\n[project.optional-dependencies]\ncave_api = [\n{deps_str}\n]\n'
-
-                if "[project.optional-dependencies]" in content.decode():
+            deps_str = "\n".join(f'  "{dep}",' for dep in cleaned_requirements)
+            
+            if "[project.optional-dependencies]" in content:
+                if re.search(r"api\s*=\s*\[", content):
                     content = re.sub(
-                        r'(\[project\.optional-dependencies\].*?cave_api\s*=\s*\[)[^\]]*(\])',
-                        f'\\1\n{deps_str}\n\\2',
-                        content.decode(),
+                        r"(api\s*=\s*\[)[^\]]*(\])",
+                        f"\\1\n{deps_str}\n\\2",
+                        content,
                         flags=re.DOTALL
-                    ).encode()
+                    )
                 else:
-                    content = content + cave_api_block.encode()
+                    content = re.sub(
+                        r"(\[project\.optional-dependencies\])",
+                        f"\\1\napi = [\n{deps_str}\n]",
+                        content
+                    )
+            else:
+                content += f'\n[project.optional-dependencies]\napi = [\n{deps_str}\n]\n'
 
-                with open(pyproject_path, "wb") as f:
-                    f.write(content)
+            with open(pyproject_path, "wb") as f:
+                f.write(content.encode())
 
         except Exception as e:
-            logger.warning(f"Failed to update pyproject.toml: {e}")
+            logger.warn(f"Failed to update pyproject.toml: {e}")
 
     # Move cave_api/tests/ to top-level tests/ before restructuring cave_api
     cave_api_tests = app_path / "cave_api" / "tests"
@@ -117,7 +157,7 @@ def migrate_3_6_0(app_dir: str) -> None:
         shutil.move(cave_api, legacy_cave_api)
         shutil.copytree(legacy_cave_api / "cave_api", cave_api)
     else:
-        logger.warning("Expected cave_api/cave_api directory not found, skipping API migration steps.")
+        logger.warn("Expected cave_api/cave_api directory not found, skipping API migration steps.")
 
     # Update code references, skipping legacy/ and tool directories
     for py_file in app_path.rglob("*.py"):
@@ -140,7 +180,7 @@ def migrate_3_6_0(app_dir: str) -> None:
             if new_content != content:
                 py_file.write_text(new_content)
         except Exception as e:
-            logger.warning(f"Failed to migrate code in {py_file}: {e}")
+            logger.warn(f"Failed to migrate code in {py_file}: {e}")
 
     step_done("Applying 3.6.0 Migrations")
 
@@ -157,7 +197,24 @@ def upgrade(args: argparse.Namespace) -> None:
     version = getattr(args, "version", None)
     skip_env_upgrade = getattr(args, "skip_env_upgrade", False)
 
+    # Collect existing api optional dependencies
+    api_deps = []
+    pyproject_path = os.path.join(app_dir, "pyproject.toml")
+    if os.path.exists(pyproject_path):
+        try:
+            import tomllib
+            with open(pyproject_path, "rb") as f:
+                pyproject = tomllib.load(f)
+            api_deps = pyproject.get("project", {}).get("optional-dependencies", {}).get("api", [])
+        except Exception:
+            pass
+
     current_v = get_app_version(app_dir)
+    current_version = version_tuple(current_v)
+    is_pre_3_6 = (
+        (current_version and current_version < (3, 6, 0)) or
+        (not current_version and os.path.exists(os.path.join(app_dir, "requirements.txt")))
+    )
     target_v = version or "main"
 
     temp_dir = None
@@ -193,9 +250,40 @@ def upgrade(args: argparse.Namespace) -> None:
 
     sync_cmd(sync_args, do_reset=False)
 
-    current_version = version_tuple(current_v)
+    if api_deps and os.path.exists(pyproject_path):
+        try:
+            with open(pyproject_path, "r") as f:
+                content = f.read()
+
+            deps_list_str = "\n".join(f'    "{dep}",' for dep in api_deps)
+
+            if "[project.optional-dependencies]" in content:
+                if re.search(r"api\s*=\s*\[", content):
+                    content = re.sub(
+                        r"(api\s*=\s*\[)[^\]]*(\])",
+                        f"\\1\n{deps_list_str}\n  \\2",
+                        content,
+                        flags=re.DOTALL,
+                    )
+                else:
+                    content = re.sub(
+                        r"(\[project\.optional-dependencies\])",
+                        f"\\1\napi = [\n{deps_list_str}\n]",
+                        content,
+                    )
+            else:
+                content += (
+                    f"\n[project.optional-dependencies]\napi = [\n{deps_list_str}\n]\n"
+                )
+
+            with open(pyproject_path, "w") as f:
+                f.write(content)
+            logger.info("Preserved 'api' optional dependencies in pyproject.toml")
+        except Exception as e:
+            logger.warn(f"Failed to preserve 'api' optional dependencies: {e}")
+
     target_version = version_tuple(target_v)
-    if current_version and target_version and current_version < (3, 6, 0) <= target_version:
+    if is_pre_3_6 and target_version and target_version >= (3, 6, 0):
         should_migrate = confirm_action(
             "Upgrading to 3.6.0 requires structural changes to your codebase "
             "(directory layout, import paths, and dependency files). "

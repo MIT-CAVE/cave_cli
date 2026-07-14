@@ -84,7 +84,16 @@ def validate_app_dir(path: str) -> list[str]:
     p = Path(path)
     errors: list[str] = []
 
-    if not (p / "manage.py").is_file() or not (p / "cave_core").is_dir():
+    # Check if the directory has any characteristic CAVE project elements.
+    # If not, we immediately return "Not a CAVE app directory" to avoid printing
+    # unrelated errors for completely different directories when searching up the tree.
+    is_cave_candidate = (
+        (p / "manage.py").is_file()
+        or (p / "cave_core").is_dir()
+        or (p / "cave_api").is_dir()
+        or (p / "cave_app").is_dir()
+    )
+    if not is_cave_candidate:
         return ["Not a CAVE app directory"]
 
     for folder in ("cave_api", "cave_app", "cave_core"):
@@ -114,7 +123,6 @@ def validate_app_dir(path: str) -> list[str]:
             "One of these must be present in the root project directory."
         )
 
-
     env_path = p / ".env"
     if env_path.is_file():
         from cave_cli.utils.env import parse_env
@@ -132,9 +140,6 @@ def validate_app_dir(path: str) -> list[str]:
                     f"The env variable '{var}' is retired and "
                     "should be removed from the '.env' file."
                 )
-
-    if not (p / "Dockerfile").is_file():
-        errors.append("No Dockerfile found in current directory.")
 
     return errors
 
@@ -159,13 +164,15 @@ def find_app_dir(start: str | None = None) -> str:
         - What: The absolute path to the CAVE app directory
     """
     path = Path(start or os.getcwd()).resolve()
+    start_path = path
     while True:
         errors = validate_app_dir(str(path))
         if not errors:
             return str(path)
         parent = path.parent
         if parent == path:
-            for err in errors:
+            start_errors = validate_app_dir(str(start_path))
+            for err in start_errors:
                 logger.error(err)
             logger.error("Ensure you are in a valid CAVE app directory")
             sys.exit(1)

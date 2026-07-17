@@ -178,11 +178,19 @@ class LogLine:
 # ── Log filtering ──────────────────────────────────────────────────────────
 
 _LEVEL_PREFIX_RE = re.compile(
-    r"^(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL):[ \t]?", re.IGNORECASE
+    r"^(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL):[ \t]*", re.IGNORECASE
 )
 
+# Uvicorn's own formatter prepends a level prefix to every message (e.g.
+# "INFO:     Started server process [1]"), and the container's run script
+# wraps that again with its own level prefix, producing nested prefixes such
+# as "INFO: INFO:     ...". strip_level_prefix() below strips these
+# iteratively so a fully-clean message is left either way.
+_ACCESS_LOG_RE = re.compile(r'"[A-Z]+ \S* HTTP/\d\.\d"')
+
 # Lines to silently drop in clean mode (very noisy, no user value).
-# WebSocket CONNECT/DISCONNECT are processed for client count but not displayed.
+# WebSocket CONNECT/DISCONNECT (old Channels runserver) and SOCKET CONNECTION
+# OPENED/CLOSED (custom markers) are processed for client count but not displayed.
 _SKIP_PATTERNS: tuple[str, ...] = (
     "WS RECEIVE  ",
     "HTTP ",
@@ -192,11 +200,31 @@ _SKIP_PATTERNS: tuple[str, ...] = (
     "Django version ",
     "Starting ASGI",
     "Starting development server",
-    "Quit the server with CONTROL-C", 
+    "Quit the server with CONTROL-C",
     "Watching for file changes",
     "Performing system checks",
     "System check identified no issues",
     "changed, reloading",
+
+    # Uvicorn Startup Lines
+    "Started server process ",
+    "Waiting for application startup",
+    "Waiting for application shutdown",
+    "Application startup complete",
+    "Application shutdown complete",
+    "Uvicorn running on",
+    "Shutting down",
+    "Finished server process ",
+    "detected changes in",
+    "connection open",
+    "connection closed",
+    "Will watch for changes in these directories",
+    "Started reloader process",
+
+    # Custom socket markers (processed for client count, not displayed)
+    "SOCKET CONNECTION OPENED",
+    "SOCKET CONNECTION CLOSED",
+
     # Current Date. EG:  April 28, 2026
     f"{time.strftime('%B %d, %Y')}",
 )
@@ -215,12 +243,32 @@ _VALIDATION_PATTERNS: tuple[str, ...] = (
     "RuntimeWarning",
 )
 
-_LOADING_TRIGGER = "Starting ASGI"
-_READY_TRIGGER = "Quit the server with CONTROL-C"
-_RELOAD_TRIGGER = "changed, reloading"
+# Django (old) and Uvicorn (new) status transition triggers, checked against
+# the fully level-prefix-stripped line. Uvicorn only prints its startup
+# banner ("Uvicorn running on ...") once per process, not on every autoreload
+# cycle, so "Application startup complete" -- which does reprint each
+# reload -- is used as the READY trigger instead.
+_LOADING_TRIGGERS = (
+    "Starting ASGI",
+    "Starting development server",
+    "Started server process ",
+    "Waiting for application startup",
+    "Reloading",
+)
+_READY_TRIGGERS = (
+    "Quit the server with CONTROL-C",
+    "Application startup complete",
+    "Ready"
+)
+_RELOAD_TRIGGERS = (
+    "changed, reloading",
+    "detected changes in",
+)
 
 _WS_CONNECT = "WebSocket CONNECT "
 _WS_DISCONNECT = "WebSocket DISCONNECT "
+_SOCKET_OPENED = "SOCKET CONNECTION OPENED"
+_SOCKET_CLOSED = "SOCKET CONNECTION CLOSED"
 
 
 class LogFilter:
@@ -253,8 +301,19 @@ class LogFilter:
         - ``stripped``:
             - Type: str
             - What: The line with the level prefix removed.
+
+        Notes:
+
+        - Strips repeatedly so nested prefixes (e.g. a container run
+          script's "INFO: " wrapped around uvicorn's own "INFO:     "
+          formatter output) are fully removed, not just the outermost one.
         """
-        return _LEVEL_PREFIX_RE.sub("", line, count=1)
+        stripped = line
+        while True:
+            new = _LEVEL_PREFIX_RE.sub("", stripped, count=1)
+            if new == stripped:
+                return new
+            stripped = new
 
     @staticmethod
     def classify_status(stripped: str) -> str | None:
@@ -279,11 +338,11 @@ class LogFilter:
 
         - READY is checked first so a reload cycle correctly resets the status.
         """
-        if _READY_TRIGGER in stripped:
+        if any(t in stripped for t in _READY_TRIGGERS):
             return READY
-        if _LOADING_TRIGGER in stripped or "Starting development server" in stripped:
+        if any(t in stripped for t in _LOADING_TRIGGERS):
             return LOADING
-        if _RELOAD_TRIGGER in stripped:
+        if any(t in stripped for t in _RELOAD_TRIGGERS):
             return RELOADING
         return None
 
@@ -305,10 +364,16 @@ class LogFilter:
         - ``event``:
             - Type: str | None
             - What: ``"connect"`` or ``"disconnect"``, or None if not a WS event.
+
+        Notes:
+
+        - Recognizes both the old Django Channels runserver format
+          ("WebSocket CONNECT "/"WebSocket DISCONNECT ") and the custom
+          uvicorn app markers ("SOCKET CONNECTION OPENED"/"CLOSED").
         """
-        if _WS_CONNECT in stripped:
+        if _WS_CONNECT in stripped or _SOCKET_OPENED in stripped:
             return "connect"
-        if _WS_DISCONNECT in stripped:
+        if _WS_DISCONNECT in stripped or _SOCKET_CLOSED in stripped:
             return "disconnect"
         return None
 
@@ -326,6 +391,8 @@ class LogFilter:
             - What: Log line with the level prefix already removed.
         """
         if not stripped.strip():
+            return True
+        if _ACCESS_LOG_RE.search(stripped):
             return True
         return any(p in stripped for p in _SKIP_PATTERNS)
 
@@ -350,7 +417,12 @@ class LogFilter:
 
         - Raw-line starts with WARNING:/ERROR: are always validation.
         - Indented lines are treated as traceback continuation frames.
+        - Uvicorn's autoreload notice ("WatchFiles detected changes in
+          ...") is logged at WARNING level but is a benign status message,
+          not an error, so reload triggers are excluded first.
         """
+        if any(t in stripped for t in _RELOAD_TRIGGERS):
+            return False
         raw_upper = raw.upper()
         if raw_upper.startswith("WARNING:") or raw_upper.startswith("ERROR:"):
             return True
@@ -715,20 +787,24 @@ class RunDashboard:
         # Status transitions (always checked)
         new_status = self._filter.classify_status(stripped)
         if new_status:
-            self._status = new_status
-            if new_status == RELOADING:
-                self._ws_clients = 0
-                reloading_entry = LogLine(timestamp=ts, text="Reloading", raw=f"INFO: {stripped}")
-                add_minimal(reloading_entry)
-                add_all(reloading_entry)
-                if self._show_all and self._scroll_offset > 0:
-                    self._scroll_offset += 1
-            elif new_status == READY:
-                ready_entry = LogLine(timestamp=ts, text="Ready", raw="INFO: Ready")
-                add_minimal(ready_entry)
-                add_all(ready_entry)
-                if self._show_all and self._scroll_offset > 0:
-                    self._scroll_offset += 1
+            # During reload, do not transition status back to LOADING when the new worker process starts
+            if self._status == RELOADING and new_status == LOADING:
+                pass
+            else:
+                self._status = new_status
+                if new_status == RELOADING:
+                    self._ws_clients = 0
+                    reloading_entry = LogLine(timestamp=ts, text="Reloading", raw=f"INFO: {stripped}")
+                    add_minimal(reloading_entry)
+                    add_all(reloading_entry)
+                    if self._show_all and self._scroll_offset > 0:
+                        self._scroll_offset += 1
+                elif new_status == READY:
+                    ready_entry = LogLine(timestamp=ts, text="Ready", raw="INFO: Ready")
+                    add_minimal(ready_entry)
+                    add_all(ready_entry)
+                    if self._show_all and self._scroll_offset > 0:
+                        self._scroll_offset += 1
 
         # WebSocket client count (before noise filter so we never miss events)
         ws_ev = self._filter.ws_event(stripped)

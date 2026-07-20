@@ -83,19 +83,26 @@ class TestSyncFiles:
         assert (dst / "file.txt").read_text() == "new file content"
         assert not os.path.islink(dst / "dir_to_file")
         assert not os.path.isdir(dst / "dir_to_file")
-        assert (dst / "dir_to_file").read_text() == "new file content replacing directory"
+        assert (
+            dst / "dir_to_file"
+        ).read_text() == "new file content replacing directory"
 
     def test_can_create_symlinks(self):
         from cave_cli.utils.sync import can_create_symlinks
+
         res = can_create_symlinks()
         assert isinstance(res, bool)
 
-    def test_sync_files_fallback_when_symlinks_unsupported(self, tmp_path, monkeypatch):
+    def test_sync_files_fallback_when_symlinks_unsupported(
+        self, tmp_path, monkeypatch
+    ):
         import os
         import cave_cli.utils.sync
         from cave_cli.utils.sync import sync_files
 
-        monkeypatch.setattr(cave_cli.utils.sync, "can_create_symlinks", lambda: False)
+        monkeypatch.setattr(
+            cave_cli.utils.sync, "can_create_symlinks", lambda: False
+        )
 
         src = tmp_path / "src"
         dst = tmp_path / "dst"

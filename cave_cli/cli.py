@@ -164,8 +164,7 @@ def main():
         "reset",
         aliases=["reset-db"],
         help=(
-            "Remove Docker containers and volumes, "
-            "then rebuild from scratch"
+            "Remove Docker containers and volumes, " "then rebuild from scratch"
         ),
     )
     add_global_args(p_reset)

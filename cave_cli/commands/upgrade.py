@@ -53,7 +53,9 @@ def migrate_3_6_0(app_dir: str) -> None:
         if utils_pyproject.exists():
             shutil.move(utils_pyproject, legacy_utils_dir / "pyproject.toml")
         if utils_extra_req.exists():
-            shutil.move(utils_extra_req, legacy_utils_dir / "extra_requirements.txt")
+            shutil.move(
+                utils_extra_req, legacy_utils_dir / "extra_requirements.txt"
+            )
 
     # Remove VERSION file
     version_file = app_path / "VERSION"
@@ -68,12 +70,14 @@ def migrate_3_6_0(app_dir: str) -> None:
             legacy_cave_core.mkdir(exist_ok=True)
             shutil.move(models_file, legacy_cave_core / "models.py")
         except Exception as e:
-            logger.warn(f"Failed to move cave_core/models.py to legacy/cave_core/models.py: {e}")
+            logger.warn(
+                f"Failed to move cave_core/models.py to legacy/cave_core/models.py: {e}"
+            )
 
     # Collect api requirements from cave_api/requirements.txt and cave_api/pyproject.toml
     # before moving/restructuring the cave_api directory
     api_requirements = []
-    
+
     # 1. Pull from cave_api/requirements.txt
     cave_api_req = app_path / "cave_api" / "requirements.txt"
     if cave_api_req.exists():
@@ -91,7 +95,9 @@ def migrate_3_6_0(app_dir: str) -> None:
         try:
             with open(cave_api_pyproject, "rb") as f:
                 cave_api_pyproject_data = tomllib.loads(f.read().decode())
-            deps = cave_api_pyproject_data.get("project", {}).get("dependencies", [])
+            deps = cave_api_pyproject_data.get("project", {}).get(
+                "dependencies", []
+            )
             for dep in deps:
                 dep = dep.strip()
                 if dep and dep not in api_requirements:
@@ -116,23 +122,23 @@ def migrate_3_6_0(app_dir: str) -> None:
             content = content_bytes.decode()
 
             deps_str = "\n".join(f'  "{dep}",' for dep in cleaned_requirements)
-            
+
             if "[project.optional-dependencies]" in content:
                 if re.search(r"api\s*=\s*\[", content):
                     content = re.sub(
                         r"(api\s*=\s*\[)[^\]]*(\])",
                         f"\\1\n{deps_str}\n\\2",
                         content,
-                        flags=re.DOTALL
+                        flags=re.DOTALL,
                     )
                 else:
                     content = re.sub(
                         r"(\[project\.optional-dependencies\])",
                         f"\\1\napi = [\n{deps_str}\n]",
-                        content
+                        content,
                     )
             else:
-                content += f'\n[project.optional-dependencies]\napi = [\n{deps_str}\n]\n'
+                content += f"\n[project.optional-dependencies]\napi = [\n{deps_str}\n]\n"
 
             with open(pyproject_path, "wb") as f:
                 f.write(content.encode())
@@ -157,12 +163,15 @@ def migrate_3_6_0(app_dir: str) -> None:
         shutil.move(cave_api, legacy_cave_api)
         shutil.copytree(legacy_cave_api / "cave_api", cave_api)
     else:
-        logger.warn("Expected cave_api/cave_api directory not found, skipping API migration steps.")
+        logger.warn(
+            "Expected cave_api/cave_api directory not found, skipping API migration steps."
+        )
 
     # Update code references, skipping legacy/ and tool directories
     for py_file in app_path.rglob("*.py"):
         if any(
-            part.startswith(".") or part in ("__pycache__", "venv", ".venv", ".nox", "legacy")
+            part.startswith(".")
+            or part in ("__pycache__", "venv", ".venv", ".nox", "legacy")
             for part in py_file.parts
         ):
             continue
@@ -171,10 +180,12 @@ def migrate_3_6_0(app_dir: str) -> None:
             new_content = content.replace("cave_api.cave_api", "cave_api")
             new_content = new_content.replace("cave_api/cave_api", "cave_api")
             new_content = new_content.replace(
-                'importlib.resources.files("cave_api") / "cave_api"', 'importlib.resources.files("cave_api")'
+                'importlib.resources.files("cave_api") / "cave_api"',
+                'importlib.resources.files("cave_api")',
             )
             new_content = new_content.replace(
-                "importlib.resources.files('cave_api') / 'cave_api'", "importlib.resources.files('cave_api')"
+                "importlib.resources.files('cave_api') / 'cave_api'",
+                "importlib.resources.files('cave_api')",
             )
 
             if new_content != content:
@@ -203,17 +214,22 @@ def upgrade(args: argparse.Namespace) -> None:
     if os.path.exists(pyproject_path):
         try:
             import tomllib
+
             with open(pyproject_path, "rb") as f:
                 pyproject = tomllib.load(f)
-            api_deps = pyproject.get("project", {}).get("optional-dependencies", {}).get("api", [])
+            api_deps = (
+                pyproject.get("project", {})
+                .get("optional-dependencies", {})
+                .get("api", [])
+            )
         except Exception:
             pass
 
     current_v = get_app_version(app_dir)
     current_version = version_tuple(current_v)
-    is_pre_3_6 = (
-        (current_version and current_version < (3, 6, 0)) or
-        (not current_version and os.path.exists(os.path.join(app_dir, "requirements.txt")))
+    is_pre_3_6 = (current_version and current_version < (3, 6, 0)) or (
+        not current_version
+        and os.path.exists(os.path.join(app_dir, "requirements.txt"))
     )
     target_v = version or "main"
 
@@ -230,7 +246,9 @@ def upgrade(args: argparse.Namespace) -> None:
     msg = "This will potentially update all files not in 'cave_api/', 'tests/' or '.env' and reset your database"
     if is_breaking_change(current_v, target_v):
         instructions = get_breaking_instructions(current_v, target_v)
-        instruction_text = "\n" + "\n".join(instructions) if instructions else ""
+        instruction_text = (
+            "\n" + "\n".join(instructions) if instructions else ""
+        )
         msg = f"Upgrading from {current_v} to {target_v} is a BREAKING CHANGE.{instruction_text}\n\n{msg}"
 
     confirm_action(msg, auto_yes=auto_yes)
@@ -272,13 +290,13 @@ def upgrade(args: argparse.Namespace) -> None:
                         content,
                     )
             else:
-                content += (
-                    f"\n[project.optional-dependencies]\napi = [\n{deps_list_str}\n]\n"
-                )
+                content += f"\n[project.optional-dependencies]\napi = [\n{deps_list_str}\n]\n"
 
             with open(pyproject_path, "w") as f:
                 f.write(content)
-            logger.info("Preserved 'api' optional dependencies in pyproject.toml")
+            logger.info(
+                "Preserved 'api' optional dependencies in pyproject.toml"
+            )
         except Exception as e:
             logger.warn(f"Failed to preserve 'api' optional dependencies: {e}")
 
@@ -293,7 +311,7 @@ def upgrade(args: argparse.Namespace) -> None:
         )
         if should_migrate:
             migrate_3_6_0(app_dir)
-    
+
     reset_args = argparse.Namespace(
         yes=True,
         verbose=getattr(args, "verbose", False),

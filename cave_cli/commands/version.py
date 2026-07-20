@@ -19,6 +19,7 @@ def version(args: argparse.Namespace) -> None:
     print_key_value("CLI Version", __version__)
     print_app_versions()
 
+
 def print_app_versions() -> None:
     try:
         app_dir, app_name = get_app()
@@ -35,20 +36,23 @@ def print_app_versions() -> None:
     cave_app_version = get_app_version(app_dir)
     cave_static_version = "Unknown"
     cave_utils_version = "Unknown"
-    
+
     if pyproject_file.is_file():
         try:
             import tomllib
+
             with open(pyproject_file, "rb") as f:
                 pyproject_data = tomllib.load(f)
             deps = pyproject_data.get("project", {}).get("dependencies", [])
             cave_utils_version = get_version_from_req_list("cave_utils", deps)
-        except Exception:   
+        except Exception:
             pass
     if req_file.is_file() and cave_utils_version == "Unknown":
         try:
             req_strings = req_file.read_text().splitlines()
-            cave_utils_version = get_version_from_req_list("cave_utils", req_strings)
+            cave_utils_version = get_version_from_req_list(
+                "cave_utils", req_strings
+            )
         except Exception:
             pass
 

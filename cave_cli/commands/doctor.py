@@ -59,7 +59,10 @@ def check_uv(return_path: bool = True) -> tuple[bool, str, str | None]:
                 return output
         except Exception:
             pass
-    output = False, "uv is not installed. Please install uv: https://github.com/astral-sh/uv"
+    output = (
+        False,
+        "uv is not installed. Please install uv: https://github.com/astral-sh/uv",
+    )
     if return_path:
         return output + (None,)
     return output

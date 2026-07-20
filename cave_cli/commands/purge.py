@@ -64,11 +64,19 @@ def purge(args: argparse.Namespace) -> None:
             "Some files are owned by root (created by Docker). "
             "Removing via Docker..."
         )
-        run_and_log([
-            "docker", "run", "--rm",
-            "-v", f"{abs_path}:/purge",
-            "alpine", "rm", "-rf", "/purge",
-        ])
+        run_and_log(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-v",
+                f"{abs_path}:/purge",
+                "alpine",
+                "rm",
+                "-rf",
+                "/purge",
+            ]
+        )
         if os.path.isdir(abs_path):
             try:
                 shutil.rmtree(abs_path)

@@ -49,14 +49,21 @@ def run_cave(
     interactive = getattr(args, "interactive", False) or getattr(
         args, "it", False
     )
-    show_all = getattr(args, "show_all", False) or getattr(args, "verbose", False) or getattr(args, "loglevel", "INFO").upper() == "DEBUG"
+    show_all = (
+        getattr(args, "show_all", False)
+        or getattr(args, "verbose", False)
+        or getattr(args, "loglevel", "INFO").upper() == "DEBUG"
+    )
     entrypoint = getattr(args, "entrypoint", None) or "./utils/run_server.sh"
     docker_args_str = getattr(args, "docker_args", "") or ""
     extra_docker_args = shlex.split(docker_args_str) if docker_args_str else []
     ip_port_arg = getattr(args, "ip_port", None)
     command_args = getattr(args, "command_args", []) or []
     extra_env = getattr(args, "extra_env", {}) or {}
-    quiet = getattr(args, "quiet", False) or getattr(args, "loglevel", "INFO").upper() == "SILENT"
+    quiet = (
+        getattr(args, "quiet", False)
+        or getattr(args, "loglevel", "INFO").upper() == "SILENT"
+    )
 
     is_server_run = entrypoint == "./utils/run_server.sh" and not interactive
     use_tui = is_server_run and not show_all
@@ -180,7 +187,10 @@ def run_cave(
             else:
                 step_done("Checking database")
         else:
-            step_fail("Checking database", "Database container failed to become ready.")
+            step_fail(
+                "Checking database",
+                "Database container failed to become ready.",
+            )
             remove_containers(app_name)
             sys.exit(1)
 
@@ -190,9 +200,7 @@ def run_cave(
     if parsed:
         ip, port = parsed
         if not is_port_available(port):
-            logger.error(
-                "The specified port is in use. Please try another."
-            )
+            logger.error("The specified port is in use. Please try another.")
             sys.exit(1)
 
         if is_server_run and not interactive:

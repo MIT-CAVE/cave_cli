@@ -561,9 +561,7 @@ def get_running_apps() -> list[str]:
         - Type: list[str]
         - What: A list of app names derived from container names
     """
-    result = run(
-        ["docker", "ps", "--format", "{{.Names}}"]
-    )
+    result = run(["docker", "ps", "--format", "{{.Names}}"])
     apps: list[str] = []
     if result.returncode != 0 or not result.stdout:
         return apps
@@ -635,7 +633,7 @@ def get_container_host_port(container: str) -> str:
             "docker",
             "inspect",
             "-f",
-            "{{(index (index .NetworkSettings.Ports \"8000/tcp\") 0).HostPort}}",
+            '{{(index (index .NetworkSettings.Ports "8000/tcp") 0).HostPort}}',
             container,
         ]
     )
@@ -662,9 +660,7 @@ def get_all_containers(pattern: str) -> list[str]:
         - Type: list[str]
         - What: A list of matching container names
     """
-    result = run(
-        ["docker", "ps", "-a", "--format", "{{.Names}}"]
-    )
+    result = run(["docker", "ps", "-a", "--format", "{{.Names}}"])
     containers: list[str] = []
     if result.returncode != 0 or not result.stdout:
         return containers

@@ -47,8 +47,7 @@ def validate_app_name(name: str) -> str | None:
         )
     if INVALID_NAME_END_RE.match(name):
         return (
-            "The app name cannot end with a hyphen (-) "
-            "or an underscore (_)"
+            "The app name cannot end with a hyphen (-) " "or an underscore (_)"
         )
     if INVALID_NAME_HYPHEN_UNDER_RE.search(name):
         return (
@@ -246,7 +245,9 @@ def confirm_action(
     bracket = "[y/n]" if continue_on_no else "[y/N]"
     suffix = "" if message.rstrip()[-1:] in (".", "?", "!") else "."
     try:
-        response = input(f"\n  {YELLOW}⚠{RESET}  {message}{suffix} \n  Continue? {bracket} ")
+        response = input(
+            f"\n  {YELLOW}⚠{RESET}  {message}{suffix} \n  Continue? {bracket} "
+        )
     except (EOFError, KeyboardInterrupt):
         print()
         logger.error("Operation canceled.")

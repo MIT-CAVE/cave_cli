@@ -30,7 +30,9 @@ def uninstall(args: argparse.Namespace) -> None:
     has_uv, uv_message, uv_path = check_uv()
     if not has_uv:
         logger.error(uv_message)
-        logger.error(f"You may need to uninstall CAVE CLI manually based on how it was installed.")
+        logger.error(
+            f"You may need to uninstall CAVE CLI manually based on how it was installed."
+        )
         sys.exit(1)
 
     step_start("Removing installation")

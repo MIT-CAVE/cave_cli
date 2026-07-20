@@ -2,6 +2,7 @@ import re
 import tomllib
 from pathlib import Path
 
+
 def get_version_from_req_list(req_key: str, req_strings: list[str]) -> str:
     """
     Given a req string like: cave_utils==1.2.3, cave_utils>=1.2.3, cave_utils<=1.2.3, cave_utils~=1.2.3b1
@@ -9,7 +10,9 @@ def get_version_from_req_list(req_key: str, req_strings: list[str]) -> str:
     """
     for req_string in req_strings:
         if req_key in req_string:
-            match = re.search(r"([><=~!]*)(\d+\.\d+\.\d+[a-zA-Z0-9]*)", req_string)
+            match = re.search(
+                r"([><=~!]*)(\d+\.\d+\.\d+[a-zA-Z0-9]*)", req_string
+            )
             if match:
                 return f"v{match.group(2)}"
     return "Unknown"
@@ -28,7 +31,9 @@ def get_app_version(app_dir: str) -> str:
         try:
             with open(pyproject_file, "rb") as f:
                 pyproject_data = tomllib.load(f)
-            version = pyproject_data.get("project", {}).get("version", "Unknown")
+            version = pyproject_data.get("project", {}).get(
+                "version", "Unknown"
+            )
             if version != "Unknown":
                 return f"v{version}" if not version.startswith("v") else version
         except Exception:
@@ -58,7 +63,7 @@ BREAKING_CHANGES = {
     (3, 0, 0): [
         "The interface between CAVE App and CAVE Static has changed.",
         "You MUST upgrade cave_static to 2.4.0 or higher (in your .env file) to be compatible with CAVE App 3.0.0 or higher.",
-        "If you choose to upgrade cave_static to 3.0.0 or higher, you will need to update your api to match the new interface."
+        "If you choose to upgrade cave_static to 3.0.0 or higher, you will need to update your api to match the new interface.",
     ],
     (3, 6, 0): [
         "The following changes are required to migrate to 3.6.0:",

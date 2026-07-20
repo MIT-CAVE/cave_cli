@@ -25,7 +25,9 @@ def test_migrate_3_6_0_renames_models_file(tmp_path):
 
     # Create root pyproject.toml
     pyproject_file = app_dir / "pyproject.toml"
-    pyproject_file.write_text("[project]\nname = 'myapp'\nversion = '1.0.0'\ndependencies = []\n")
+    pyproject_file.write_text(
+        "[project]\nname = 'myapp'\nversion = '1.0.0'\ndependencies = []\n"
+    )
 
     # Create cave_api directory
     cave_api_dir = app_dir / "cave_api"
@@ -37,7 +39,9 @@ def test_migrate_3_6_0_renames_models_file(tmp_path):
 
     # Create cave_api/pyproject.toml
     cave_api_pyproject = cave_api_dir / "pyproject.toml"
-    cave_api_pyproject.write_text("[project]\ndependencies = [\n  'pytest',\n  'django>=4.0'\n]\n")
+    cave_api_pyproject.write_text(
+        "[project]\ndependencies = [\n  'pytest',\n  'django>=4.0'\n]\n"
+    )
 
     # Run migration
     migrate_3_6_0(str(app_dir))
@@ -46,7 +50,9 @@ def test_migrate_3_6_0_renames_models_file(tmp_path):
     assert not models_file.exists()
     legacy_dir = app_dir / "legacy"
     assert (legacy_dir / "cave_core" / "models.py").exists()
-    assert (legacy_dir / "cave_core" / "models.py").read_text() == "class MyModel:"
+    assert (
+        legacy_dir / "cave_core" / "models.py"
+    ).read_text() == "class MyModel:"
     assert not version_file.exists()
     assert not req_file.exists()
     assert (legacy_dir / "requirements.txt").exists()

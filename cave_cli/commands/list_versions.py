@@ -48,7 +48,8 @@ def list_versions(args: argparse.Namespace) -> None:
 
     all_versions = sorted(
         (
-            v for v in set().union(*repo_tags.values())
+            v
+            for v in set().union(*repo_tags.values())
             if not pattern or fnmatch.fnmatch(v, pattern)
         ),
         key=version_tuple,
@@ -88,7 +89,10 @@ def list_versions(args: argparse.Namespace) -> None:
             row = indent + f"{v:<{version_w}}"
             for r, w in zip(repos, col_w):
                 mark = f"{GREEN}✓{RESET}" if v in repo_tags[r] else ""
-                row += " " * pad + f"{mark:^{w + len(GREEN) + len(RESET) if mark else w}}"
+                row += (
+                    " " * pad
+                    + f"{mark:^{w + len(GREEN) + len(RESET) if mark else w}}"
+                )
             print(row)
 
         if hidden:

@@ -1,5 +1,10 @@
 import pytest
-from cave_cli.utils.env import parse_env, set_env_value, validate_env, generate_password
+from cave_cli.utils.env import (
+    parse_env,
+    set_env_value,
+    validate_env,
+    generate_password,
+)
 
 
 class TestParseEnv:

@@ -10,9 +10,11 @@ try:
     import select
     import termios
     import tty
+
     IS_WINDOWS = False
 except ImportError:
     import msvcrt
+
     IS_WINDOWS = True
 
 
@@ -194,7 +196,6 @@ _ACCESS_LOG_RE = re.compile(r'"[A-Z]+ \S* HTTP/\d\.\d"')
 _SKIP_PATTERNS: tuple[str, ...] = (
     "WS RECEIVE  ",
     "HTTP ",
-
     # Django Startup Lines
     "WebSocket ",
     "Django version ",
@@ -205,7 +206,6 @@ _SKIP_PATTERNS: tuple[str, ...] = (
     "Performing system checks",
     "System check identified no issues",
     "changed, reloading",
-
     # Uvicorn Startup Lines
     "Started server process ",
     "Waiting for application startup",
@@ -223,11 +223,9 @@ _SKIP_PATTERNS: tuple[str, ...] = (
     "StatReload",
     "Reloading",
     "reloading",
-
     # Custom socket markers (processed for client count, not displayed)
     "SOCKET CONNECTION OPENED",
     "SOCKET CONNECTION CLOSED",
-
     # Current Date. EG:  April 28, 2026
     f"{time.strftime('%B %d, %Y')}",
 )
@@ -455,13 +453,13 @@ class DashboardRenderer:
     """
 
     # Fixed line counts for layout budget calculation
-    _HEADER_LINES = 4    # ━ + title + ━ + blank
-    _LOG_FIXED = 3       # "Recent Activity" + top-rule + bottom-rule
-    _FOOTER_LINES = 2    # blank + hint line
+    _HEADER_LINES = 4  # ━ + title + ━ + blank
+    _LOG_FIXED = 3  # "Recent Activity" + top-rule + bottom-rule
+    _FOOTER_LINES = 2  # blank + hint line
     _FIXED_BASE = _HEADER_LINES + _LOG_FIXED + _FOOTER_LINES  # = 9
-    _VAL_FIXED = 4       # blank + label + top-rule + bottom-rule
-    _MAX_ERROR_LINES = 8 # maximum validation lines shown from current block
-    _MIN_LOG_LINES = 3   # guaranteed minimum log lines even with validation
+    _VAL_FIXED = 4  # blank + label + top-rule + bottom-rule
+    _MAX_ERROR_LINES = 8  # maximum validation lines shown from current block
+    _MIN_LOG_LINES = 3  # guaranteed minimum log lines even with validation
 
     @staticmethod
     def _status_str(status: str) -> str:
@@ -567,8 +565,10 @@ class DashboardRenderer:
 
         if show_all:
             # ── All Logs Mode ──────────────────────────────────────────────
-            max_log_lines = max(0, budget - self._HEADER_LINES - self._FOOTER_LINES)
-            
+            max_log_lines = max(
+                0, budget - self._HEADER_LINES - self._FOOTER_LINES
+            )
+
             # Clamp scroll_offset so we don't scroll past the first line
             # (i.e., ensure we always show a full screen of logs if available)
             max_scroll = max(0, len(log_lines) - max_log_lines)
@@ -582,15 +582,17 @@ class DashboardRenderer:
                 ts = f"{DIM}{entry.timestamp}{RESET}"
                 # Use raw text if available in show_all mode, otherwise stripped text
                 display_text = entry.raw if entry.raw else entry.text
-                
+
                 # If it's a validation issue, ensure it shows as ERROR: in show_all mode
                 if entry.is_validation and _LEVEL_PREFIX_RE.match(display_text):
-                    display_text = _LEVEL_PREFIX_RE.sub("ERROR: ", display_text, count=1)
+                    display_text = _LEVEL_PREFIX_RE.sub(
+                        "ERROR: ", display_text, count=1
+                    )
 
                 text = self._truncate(display_text, cols - 14)
                 color = RED if entry.is_validation else ""
                 lines.append(f"  {ts}  {color}{text}{RESET}")
-            
+
             # Fill remaining space to keep footer at bottom
             for _ in range(max_log_lines - len(visible_logs)):
                 lines.append("")
@@ -616,7 +618,9 @@ class DashboardRenderer:
                     )
                     if desired_v == 0:
                         has_validation = False
-            shown_errors = current_error_block[-desired_v:] if desired_v > 0 else []
+            shown_errors = (
+                current_error_block[-desired_v:] if desired_v > 0 else []
+            )
 
             val_section_height = (
                 self._VAL_FIXED + len(shown_errors) if has_validation else 0
@@ -652,9 +656,13 @@ class DashboardRenderer:
         # ── Footer ─────────────────────────────────────────────────────────
         lines.append("")
         if show_all:
-            lines.append(f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle mode  │  ↑/↓ to scroll{RESET}")
+            lines.append(
+                f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle mode  │  ↑/↓ to scroll{RESET}"
+            )
         else:
-            lines.append(f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle output mode{RESET}")
+            lines.append(
+                f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle output mode{RESET}"
+            )
 
         # Write the full frame atomically: move to top-left, write each line
         # with CLEAR_EOL to erase leftover characters.
@@ -696,7 +704,13 @@ class RunDashboard:
 
     REFRESH_INTERVAL: float = 0.2
 
-    def __init__(self, app_name: str, url: str, stop_event: threading.Event | None = None, max_logs: int = 10000) -> None:
+    def __init__(
+        self,
+        app_name: str,
+        url: str,
+        stop_event: threading.Event | None = None,
+        max_logs: int = 10000,
+    ) -> None:
         self._app_name = app_name
         self._url = url
         self._max_logs = max_logs
@@ -705,7 +719,9 @@ class RunDashboard:
 
         # Initial log entry
         ts = time.strftime("%H:%M:%S")
-        initial_entry = LogLine(timestamp=ts, text="App Loading", raw="INFO: App Loading")
+        initial_entry = LogLine(
+            timestamp=ts, text="App Loading", raw="INFO: App Loading"
+        )
         self._log_lines: list[LogLine] = [initial_entry]
         self._all_log_lines: list[LogLine] = [initial_entry]
 
@@ -758,9 +774,11 @@ class RunDashboard:
         - Scrolls up in show_all mode.
         """
         if self._show_all:
-            # We allow it to go up to len() here, but the renderer will clamp 
+            # We allow it to go up to len() here, but the renderer will clamp
             # it precisely based on the terminal height to ensure a full screen.
-            self._scroll_offset = min(len(self._all_log_lines), self._scroll_offset + amount)
+            self._scroll_offset = min(
+                len(self._all_log_lines), self._scroll_offset + amount
+            )
 
     def scroll_down(self, amount: int = 1) -> None:
         """
@@ -799,13 +817,19 @@ class RunDashboard:
                 self._status = new_status
                 if new_status == RELOADING:
                     self._ws_clients = 0
-                    reloading_entry = LogLine(timestamp=ts, text="App Reloading", raw="INFO: App Reloading")
+                    reloading_entry = LogLine(
+                        timestamp=ts,
+                        text="App Reloading",
+                        raw="INFO: App Reloading",
+                    )
                     add_minimal(reloading_entry)
                     add_all(reloading_entry)
                     if self._show_all and self._scroll_offset > 0:
                         self._scroll_offset += 1
                 elif new_status == READY:
-                    ready_entry = LogLine(timestamp=ts, text="App Ready", raw="INFO: App Ready")
+                    ready_entry = LogLine(
+                        timestamp=ts, text="App Ready", raw="INFO: App Ready"
+                    )
                     add_minimal(ready_entry)
                     add_all(ready_entry)
                     if self._show_all and self._scroll_offset > 0:
@@ -821,7 +845,9 @@ class RunDashboard:
         is_validation = self._filter.is_validation_issue(raw, stripped)
         is_noise = self._filter.is_noise(stripped)
 
-        entry = LogLine(timestamp=ts, text=stripped, raw=raw, is_validation=is_validation)
+        entry = LogLine(
+            timestamp=ts, text=stripped, raw=raw, is_validation=is_validation
+        )
         add_all(entry)
         if self._show_all and self._scroll_offset > 0:
             self._scroll_offset += 1
@@ -857,13 +883,15 @@ class RunDashboard:
                     self._process_line(line)
             except queue.Empty:
                 pass
-            
+
             self._renderer.render(
                 app_name=self._app_name,
                 status=self._status,
                 url=self._url,
                 ws_clients=self._ws_clients,
-                log_lines=self._all_log_lines if self._show_all else self._log_lines,
+                log_lines=(
+                    self._all_log_lines if self._show_all else self._log_lines
+                ),
                 validation_count=self._validation_count,
                 current_error_block=self._current_error_block,
                 show_all=self._show_all,

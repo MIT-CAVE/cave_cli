@@ -5,14 +5,19 @@ import tempfile
 
 from cave_cli.commands.reset import reset
 from cave_cli.utils.constants import HTTPS_URL
-from cave_cli.utils.display import print_section, step_done, step_start, print_key_value
+from cave_cli.utils.display import (
+    print_section,
+    step_done,
+    step_start,
+    print_key_value,
+)
 from cave_cli.utils.git import clone
 from cave_cli.utils.logger import logger
 from cave_cli.utils.sync import sync_files
 from cave_cli.utils.validate import confirm_action, find_app_dir
 
 
-def sync_cmd(args: argparse.Namespace, do_reset: bool=True) -> None:
+def sync_cmd(args: argparse.Namespace, do_reset: bool = True) -> None:
     """
     Usage:
 

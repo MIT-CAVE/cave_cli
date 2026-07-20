@@ -26,16 +26,24 @@ def update(args: argparse.Namespace) -> None:
     - On Windows, the update runs in a new console window because Windows
       locks running executables and cave.exe cannot replace itself.
     """
-    has_uv, uv_message, uv_path= check_uv()
+    has_uv, uv_message, uv_path = check_uv()
     if not has_uv:
         logger.error(uv_message)
-        logger.error(f"The cave_cli package may need to be updated manually based on how it was installed.")
+        logger.error(
+            f"The cave_cli package may need to be updated manually based on how it was installed."
+        )
         sys.exit(1)
 
     version = getattr(args, "version", None)
     if version:
         label = f"Reinstalling CAVE CLI ({version})"
-        cmd = [uv_path, "tool", "install", "--reinstall", f"cave_cli @ git+{CLI_REPO_URL}@{version}"]
+        cmd = [
+            uv_path,
+            "tool",
+            "install",
+            "--reinstall",
+            f"cave_cli @ git+{CLI_REPO_URL}@{version}",
+        ]
     else:
         label = "Updating CAVE CLI"
         cmd = [uv_path, "tool", "upgrade", "cave_cli"]

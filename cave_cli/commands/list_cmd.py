@@ -21,6 +21,7 @@ def list_cmd(args: argparse.Namespace) -> None:
     if show_all:
         print_section("CAVE App Containers (All)")
         from cave_cli.utils.display import _QUIET
+
         for suffix in ("_django", "_db_host", "_redis_host", "_nginx_host"):
             for name in get_all_containers(suffix):
                 if not _QUIET:
@@ -42,7 +43,8 @@ def list_cmd(args: argparse.Namespace) -> None:
             else:
                 port = get_container_host_port(f"{app_name}_django")
                 print_key_value(app_name, f"http://localhost:{port}")
-    
+
     from cave_cli.utils.display import _QUIET
+
     if not _QUIET:
         print("")

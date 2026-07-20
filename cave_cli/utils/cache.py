@@ -97,9 +97,7 @@ def save_entry(name: str, label: str, value: str) -> None:
     entries = load_entries(name)
     entries = [e for e in entries if e["value"] != value]
     entries.append({"label": label, "value": value})
-    Path(cache_path(name)).write_text(
-        json.dumps(entries, indent=2) + "\n"
-    )
+    Path(cache_path(name)).write_text(json.dumps(entries, indent=2) + "\n")
 
 
 def set_setting(name: str, value: str) -> None:
@@ -241,9 +239,7 @@ def prompt_cached_entry(
     print(f"\n{prompt_new}")
     print(f"Saved entries:")
     for i, entry in enumerate(entries, 1):
-        display = (
-            _mask_value(entry["value"]) if mask else entry["value"]
-        )
+        display = _mask_value(entry["value"]) if mask else entry["value"]
         suffix = " (default)" if i == 1 else ""
         print(f"  [{i}] {entry['label']} ({display}){suffix}")
     print(f"  [N] Enter a new value")
@@ -277,9 +273,7 @@ def prompt_cached_entry(
             except (EOFError, KeyboardInterrupt):
                 label = ""
             if not label:
-                label = (
-                    value if not mask else f"entry-{len(entries) + 1}"
-                )
+                label = value if not mask else f"entry-{len(entries) + 1}"
             save_entry(name, label, value)
             return value
 

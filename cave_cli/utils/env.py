@@ -113,8 +113,7 @@ def validate_env(path: str) -> list[str]:
     for var in CURRENT_ENV_VARIABLES:
         if var not in env_vars:
             errors.append(
-                f"The env variable '{var}' is missing "
-                "from the '.env' file."
+                f"The env variable '{var}' is missing " "from the '.env' file."
             )
     for var in RETIRED_ENV_VARIABLES:
         if var in env_vars:

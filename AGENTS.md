@@ -9,7 +9,7 @@ Core capabilities:
 - **App creation** -- clone the `cave_app` template, configure `.env`, build Docker images, and initialize git
 - **App lifecycle** -- run, reset, upgrade, sync, test, prettify, kill, and purge CAVE apps
 - **Docker orchestration** -- manages multi-container stacks (Django, Postgres, Redis/Valkey, Nginx)
-- **CLI self-management** -- update and uninstall the CLI itself via pipx
+- **CLI self-management** -- update and uninstall the CLI itself via uv
 
 Repo: `MIT-CAVE/cave_cli` on GitHub
 
@@ -34,10 +34,10 @@ cave_cli/
     kill.py                # Stop Docker containers for an app (or all apps)
     purge.py               # Remove an app directory and all its Docker resources
     list_versions.py       # List available CAVE app versions from remote git tags
-    update.py              # Update the CLI itself via pipx upgrade / pipx install --force
-    uninstall.py           # Remove the CLI package via pipx uninstall
+    update.py              # Update the CLI itself via uv tool upgrade / uv tool install --reinstall
+    uninstall.py           # Remove the CLI package via uv tool uninstall
     version.py             # Print CLI version and app-specific versions
-    doctor.py              # Environment health check logic (Docker, Git, Pipx)
+    doctor.py              # Environment health check logic (Docker, Git, uv)
     theme.py               # Theme management (dark, light, solarized, monokai)
   utils/
     __init__.py
@@ -52,6 +52,11 @@ cave_cli/
     subprocess.py          # Subprocess wrappers: run(), run_and_log(), version_tuple()
     sync.py                # File sync with include/exclude pattern matching
     validate.py            # App name/directory validation, app discovery, user confirmation
+test/
+  test_env.py              # Tests for env.py (parse_env, set_env_value, validate_env, generate_password)
+  test_net.py              # Tests for net.py (parse_ip_port)
+  test_sync.py             # Tests for sync.py (strip_quotes, matches_any)
+  test_validate.py         # Tests for validate.py (validate_app_name)
 legacy/
   cave.sh                  # Previous Bash CLI (v2.x)
   cave-1.4.0.sh            # Legacy Bash CLI (v1.4.0)
@@ -59,22 +64,22 @@ legacy/
   help-1.4.0.txt           # Help text for v1.4.0 CLI
   install.sh               # Legacy installer script
   utils.sh                 # Legacy shared Bash utilities
-pyproject.toml             # Package metadata, entry point, black config
-setup.cfg                  # setuptools package discovery
-requirements.txt           # Dev dependencies (black, autoflake, pdoc, twine, build)
+noxfile.py                 # nox sessions: runs pytest across Python 3.11–3.14
+pyproject.toml             # Package metadata, entry point, black config, dev dependencies
+uv.lock                    # Locked dependency versions for reproducible installs
 ```
 
 ---
 
 ## Installation & Development Setup
 
-The CLI is a pure Python package with no runtime dependencies. Install in editable mode for development:
+The CLI is a pure Python package with no runtime dependencies. Install dev dependencies with:
 
 ```bash
-pip install -r requirements.txt
+uv sync --extra dev
 ```
 
-This installs dev tools (black, autoflake, pdoc, twine, build) and the package itself in editable mode (`-e .`).
+This installs dev tools (pytest, black, autoflake, nox, pdoc, twine, build) and the package itself in editable mode.
 
 The entry point is defined in `pyproject.toml`:
 
@@ -84,6 +89,17 @@ cave = "cave_cli.cli:main"
 ```
 
 After installation, the `cave` command is available globally. In editable mode, changes to the source take effect immediately.
+
+---
+
+## Development Commands
+
+| Command | What it does |
+|---|---|
+| `uv run nox` | Run tests across Python 3.11, 3.12, 3.13, 3.14 |
+| `uv run nox -s tests-3.14` | Run tests on a single Python version |
+| `uv run pytest` | Run tests in the local venv only |
+| `uv run pytest -v` | Run tests with verbose output |
 
 ---
 
@@ -102,8 +118,8 @@ After installation, the `cave` command is available globally. In editable mode, 
 | `cave kill` | | Stop containers for an app |
 | `cave purge <path>` | | Remove an app and all its Docker resources |
 | `cave list-versions` | `lv` | List available CAVE app versions |
-| `cave update` | | Update the CLI itself via pipx |
-| `cave uninstall` | | Remove the CLI package via pipx |
+| `cave update` | | Update the CLI itself via uv |
+| `cave uninstall` | | Remove the CLI package via uv |
 | `cave version` | | Print CLI and app version information |
 | `cave doctor` | | Check the health of the CAVE environment |
 | `cave theme <name>` | | Set the CLI color theme |
@@ -129,7 +145,7 @@ After installation, the `cave` command is available globally. In editable mode, 
 
 Most commands that operate on an existing app follow this pattern:
 
-1. Call `check_all()` from `commands/doctor.py` to ensure Docker, Git, and Pipx are available.
+1. Call `check_all()` from `commands/doctor.py` to ensure Docker, Git, and uv are available.
 2. Call `get_app()` to discover the app directory (walks up from `cwd` looking for `manage.py` + `cave_core/`)
 3. Perform the command's work using `app_dir` and `app_name`
 4. Many commands delegate to `run_cave(app_dir, app_name, args)` which orchestrates the Docker container stack
@@ -140,7 +156,7 @@ Validation logic for required system tools is centralized in `commands/doctor.py
 
 - **Docker**: Checks for installation, minimum version, and that the daemon is running.
 - **Git**: Checks that `git` is on the `PATH`.
-- **Pipx**: Checks for `pipx` installation, used for self-updates.
+- **uv**: Checks for `uv` installation, used for self-updates.
 
 ### TUI Dashboard
 
@@ -189,11 +205,10 @@ Volumes: `{app_name}_pg_volume`, `{app_name}_redis_volume`
 
 ### Formatting
 
-Run before committing:
+To lint your code, run:
 
 ```bash
-autoflake --remove-all-unused-imports --in-place --recursive cave_cli/
-black cave_cli/
+uv run utils/prettify.py
 ```
 
 Black is configured in `pyproject.toml`:
@@ -279,5 +294,5 @@ def method(self, param1: str, param2: int = 0) -> str:
 
 - **No runtime dependencies**: the package has zero external dependencies (only stdlib + Docker/git on PATH)
 - **Python >= 3.11**: required for `|` union types and `importlib.metadata`
-- **No automated tests**: verify changes by running CLI commands manually against a CAVE app
+- **Tests**: pure utility functions have pytest tests in `test/`; Docker-dependent commands must be verified manually against a CAVE app
 - **Sensitive files**: `.env`, `MAPBOX_TOKEN`, and `CONFIG` are gitignored -- never commit these

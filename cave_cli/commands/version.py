@@ -6,6 +6,7 @@ from cave_cli.utils.display import print_key_value, print_section
 from cave_cli.utils.env import parse_env
 from cave_cli.utils.logger import logger
 from cave_cli.utils.validate import get_app
+from cave_cli.utils.version import get_app_version, get_version_from_req_list
 
 
 def version(args: argparse.Namespace) -> None:
@@ -29,22 +30,31 @@ def print_app_versions() -> None:
 
     print_section(f"{app_name} Versions")
 
-    version_file = Path(app_dir) / "VERSION"
-    cave_app_version = (
-        version_file.read_text().strip()
-        if version_file.is_file()
-        else "Unknown"
-    )
-
+    pyproject_file = Path(app_dir) / "pyproject.toml"
     req_file = Path(app_dir) / "requirements.txt"
+
+    cave_app_version = get_app_version(app_dir)
+    cave_static_version = "Unknown"
     cave_utils_version = "Unknown"
-    if req_file.is_file():
-        for line in req_file.read_text().splitlines():
-            if "cave_utils" in line:
-                parts = line.split("==")
-                if len(parts) == 2:
-                    cave_utils_version = f"v{parts[1].strip()}"
-                break
+
+    if pyproject_file.is_file():
+        try:
+            import tomllib
+
+            with open(pyproject_file, "rb") as f:
+                pyproject_data = tomllib.load(f)
+            deps = pyproject_data.get("project", {}).get("dependencies", [])
+            cave_utils_version = get_version_from_req_list("cave_utils", deps)
+        except Exception:
+            pass
+    if req_file.is_file() and cave_utils_version == "Unknown":
+        try:
+            req_strings = req_file.read_text().splitlines()
+            cave_utils_version = get_version_from_req_list(
+                "cave_utils", req_strings
+            )
+        except Exception:
+            pass
 
     env_file = Path(app_dir) / ".env"
     cave_static_version = "Unknown"

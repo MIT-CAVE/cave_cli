@@ -34,31 +34,38 @@ def check_git() -> tuple[bool, str]:
     )
 
 
-def check_pipx() -> tuple[bool, str]:
+def check_uv(return_path: bool = True) -> tuple[bool, str, str | None]:
     """
     Usage:
 
-    - Validates that pipx is installed
+    - Validates that uv is installed
 
     Returns:
 
     - ``success``: bool
     - ``message``: str remediation or version
+    - ``path``: str|None path to uv executable if found
     """
     import shutil
 
-    pipx = shutil.which("pipx")
-    if pipx:
+    uv_path = shutil.which("uv")
+    if uv_path:
         try:
-            result = run([pipx, "--version"])
+            result = run([uv_path, "--version"])
             if result.returncode == 0:
-                return True, f"pipx version {result.stdout.strip()}"
+                output = True, f"uv version {result.stdout.strip()}"
+                if return_path:
+                    return output + (uv_path,)
+                return output
         except Exception:
             pass
-    return (
+    output = (
         False,
-        "pipx is not installed. Please install pipx: https://pipx.pypa.io/",
+        "uv is not installed. Please install uv: https://github.com/astral-sh/uv",
     )
+    if return_path:
+        return output + (None,)
+    return output
 
 
 def check_docker() -> tuple[bool, str]:
@@ -126,7 +133,7 @@ def check_all(exit_on_fail: bool = True) -> dict[str, tuple[bool, str]]:
     results = {
         "Docker": check_docker(),
         "Git": check_git(),
-        "Pipx": check_pipx(),
+        "uv": check_uv(return_path=False),
     }
 
     if exit_on_fail:
@@ -145,7 +152,7 @@ def doctor(args: argparse.Namespace) -> None:
     """
     Usage:
 
-    - Checks the health of the CAVE environment (Docker, Git, Pipx)
+    - Checks the health of the CAVE environment (Docker, Git, uv)
     """
     print_section("CAVE Doctor")
 

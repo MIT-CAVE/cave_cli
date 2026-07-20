@@ -46,5 +46,7 @@ def reset(
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )
-    run_cave(app_dir, app_name, reset_args, skip_header=True, skip_build=skip_build)
+    run_cave(
+        app_dir, app_name, reset_args, skip_header=True, skip_build=skip_build
+    )
     step_done("Reset complete")

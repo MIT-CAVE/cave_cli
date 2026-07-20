@@ -47,8 +47,7 @@ def validate_app_name(name: str) -> str | None:
         )
     if INVALID_NAME_END_RE.match(name):
         return (
-            "The app name cannot end with a hyphen (-) "
-            "or an underscore (_)"
+            "The app name cannot end with a hyphen (-) " "or an underscore (_)"
         )
     if INVALID_NAME_HYPHEN_UNDER_RE.search(name):
         return (
@@ -84,7 +83,16 @@ def validate_app_dir(path: str) -> list[str]:
     p = Path(path)
     errors: list[str] = []
 
-    if not (p / "manage.py").is_file() or not (p / "cave_core").is_dir():
+    # Check if the directory has any characteristic CAVE project elements.
+    # If not, we immediately return "Not a CAVE app directory" to avoid printing
+    # unrelated errors for completely different directories when searching up the tree.
+    is_cave_candidate = (
+        (p / "manage.py").is_file()
+        or (p / "cave_core").is_dir()
+        or (p / "cave_api").is_dir()
+        or (p / "cave_app").is_dir()
+    )
+    if not is_cave_candidate:
         return ["Not a CAVE app directory"]
 
     for folder in ("cave_api", "cave_app", "cave_core"):
@@ -94,12 +102,25 @@ def validate_app_dir(path: str) -> list[str]:
                 "in the root project directory."
             )
 
-    for file in (".env", "manage.py", "requirements.txt", "Dockerfile"):
+    for file in (".env", "manage.py", "Dockerfile"):
         if not (p / file).is_file():
             errors.append(
                 f"The file '{file}' is missing "
                 "in the root project directory."
             )
+    # Ensure that either 'requirements.txt' or 'pyproject.toml' exists, but not both
+    has_requirements = (p / "requirements.txt").is_file()
+    has_pyproject = (p / "pyproject.toml").is_file()
+    if has_requirements and has_pyproject:
+        errors.append(
+            "Both 'requirements.txt' and 'pyproject.toml' exist. "
+            "Only one of these should be present in the root project directory."
+        )
+    elif not has_requirements and not has_pyproject:
+        errors.append(
+            "Neither 'requirements.txt' nor 'pyproject.toml' exists. "
+            "One of these must be present in the root project directory."
+        )
 
     env_path = p / ".env"
     if env_path.is_file():
@@ -118,9 +139,6 @@ def validate_app_dir(path: str) -> list[str]:
                     f"The env variable '{var}' is retired and "
                     "should be removed from the '.env' file."
                 )
-
-    if not (p / "Dockerfile").is_file():
-        errors.append("No Dockerfile found in current directory.")
 
     return errors
 
@@ -145,13 +163,15 @@ def find_app_dir(start: str | None = None) -> str:
         - What: The absolute path to the CAVE app directory
     """
     path = Path(start or os.getcwd()).resolve()
+    start_path = path
     while True:
         errors = validate_app_dir(str(path))
         if not errors:
             return str(path)
         parent = path.parent
         if parent == path:
-            for err in errors:
+            start_errors = validate_app_dir(str(start_path))
+            for err in start_errors:
                 logger.error(err)
             logger.error("Ensure you are in a valid CAVE app directory")
             sys.exit(1)
@@ -186,7 +206,9 @@ def get_app(start: str | None = None) -> tuple[str, str]:
     return app_dir, app_name
 
 
-def confirm_action(message: str, auto_yes: bool = False) -> None:
+def confirm_action(
+    message: str, auto_yes: bool = False, continue_on_no: bool = False
+) -> bool:
     """
     Usage:
 
@@ -202,17 +224,42 @@ def confirm_action(message: str, auto_yes: bool = False) -> None:
 
     - ``auto_yes``:
         - Type: bool
-        - What: If True, bypasses the prompt and continues
+        - What: If True, bypasses the prompt and returns True
         - Default: False
+
+    - ``continue_on_no``:
+        - Type: bool
+        - What: If True, a "no" response returns False instead of exiting. Any
+          input that is not a yes or no variant exits the program.
+        - Default: False
+
+    Returns:
+
+    - ``confirmed``:
+        - Type: bool
+        - What: True if the user confirmed (or auto_yes), False if the user
+          declined and continue_on_no is True.
     """
     if auto_yes:
-        return
+        return True
+    bracket = "[y/n]" if continue_on_no else "[y/N]"
+    suffix = "" if message.rstrip()[-1:] in (".", "?", "!") else "."
     try:
-        response = input(f"\n  {YELLOW}⚠{RESET}  {message}. \n  Continue? [y/N] ")
+        response = input(
+            f"\n  {YELLOW}⚠{RESET}  {message}{suffix} \n  Continue? {bracket} "
+        )
     except (EOFError, KeyboardInterrupt):
         print()
         logger.error("Operation canceled.")
         sys.exit(1)
-    if response.strip().lower() not in ("y", "yes"):
+    normalized = response.strip()
+    if normalized in ("y", "Y", "yes", "Yes", "YES"):
+        return True
+    if continue_on_no:
+        if normalized in ("n", "N", "no", "No", "NO"):
+            return False
+        logger.error("Operation canceled.")
+        sys.exit(1)
+    else:
         logger.error("Operation canceled.")
         sys.exit(1)

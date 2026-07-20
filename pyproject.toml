@@ -3,13 +3,16 @@ line-length = 80
 target-version = ['py313']
 exclude = '/.*(__pycache__).*/'
 
+[tool.setuptools.packages.find]
+include = ["cave_cli*"]
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cave_cli"
-version = "3.5.5"
+version = "3.6.0"
 description = "CLI for creating and managing Docker-based CAVE web applications."
 authors = [
     {name = "MIT-CAVE", email = "cave-contact@mit.edu"}
@@ -23,6 +26,18 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.3",
+    "autoflake>=2.3.1",
+    "black>=25.1.0",
+    "build>=1.4.0",
+    "nox>=2026.4.10",
+    "nox-uv>=0.8.0",
+    "pdoc>=15.0.1",
+    "twine>=6.2.0",
+]
 
 [project.scripts]
 cave = "cave_cli.cli:main"

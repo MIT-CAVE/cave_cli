@@ -10,9 +10,11 @@ try:
     import select
     import termios
     import tty
+
     IS_WINDOWS = False
 except ImportError:
     import msvcrt
+
     IS_WINDOWS = True
 
 
@@ -101,6 +103,26 @@ set_theme(get_setting("theme", "dark"))
 
 CURSOR_HIDE = "\033[?25l"
 CURSOR_SHOW = "\033[?25h"
+
+_QUIET = False
+
+
+def set_quiet(quiet: bool) -> None:
+    """
+    Usage:
+
+    - Sets the global quiet mode state
+
+    Requires:
+
+    - ``quiet``:
+        - Type: bool
+        - What: If True, suppresses most CLI output
+    """
+    global _QUIET
+    _QUIET = quiet
+
+
 ALT_SCREEN_ENTER = "\033[?1049h"
 ALT_SCREEN_EXIT = "\033[?1049l"
 CURSOR_HOME = "\033[H"
@@ -158,25 +180,52 @@ class LogLine:
 # ── Log filtering ──────────────────────────────────────────────────────────
 
 _LEVEL_PREFIX_RE = re.compile(
-    r"^(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL):[ \t]?", re.IGNORECASE
+    r"^(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL):[ \t]*", re.IGNORECASE
 )
 
+# Uvicorn's own formatter prepends a level prefix to every message (e.g.
+# "INFO:     Started server process [1]"), and the container's run script
+# wraps that again with its own level prefix, producing nested prefixes such
+# as "INFO: INFO:     ...". strip_level_prefix() below strips these
+# iteratively so a fully-clean message is left either way.
+_ACCESS_LOG_RE = re.compile(r'"[A-Z]+ \S* HTTP/\d\.\d"')
+
 # Lines to silently drop in clean mode (very noisy, no user value).
-# WebSocket CONNECT/DISCONNECT are processed for client count but not displayed.
+# WebSocket CONNECT/DISCONNECT (old Channels runserver) and SOCKET CONNECTION
+# OPENED/CLOSED (custom markers) are processed for client count but not displayed.
 _SKIP_PATTERNS: tuple[str, ...] = (
     "WS RECEIVE  ",
     "HTTP ",
-
     # Django Startup Lines
     "WebSocket ",
     "Django version ",
     "Starting ASGI",
     "Starting development server",
-    "Quit the server with CONTROL-C", 
+    "Quit the server with CONTROL-C",
     "Watching for file changes",
     "Performing system checks",
     "System check identified no issues",
     "changed, reloading",
+    # Uvicorn Startup Lines
+    "Started server process ",
+    "Waiting for application startup",
+    "Waiting for application shutdown",
+    "Application startup complete",
+    "Application shutdown complete",
+    "Uvicorn running on",
+    "Shutting down",
+    "Finished server process ",
+    "detected changes in",
+    "connection open",
+    "connection closed",
+    "Will watch for changes in these directories",
+    "Started reloader process",
+    "StatReload",
+    "Reloading",
+    "reloading",
+    # Custom socket markers (processed for client count, not displayed)
+    "SOCKET CONNECTION OPENED",
+    "SOCKET CONNECTION CLOSED",
     # Current Date. EG:  April 28, 2026
     f"{time.strftime('%B %d, %Y')}",
 )
@@ -195,12 +244,34 @@ _VALIDATION_PATTERNS: tuple[str, ...] = (
     "RuntimeWarning",
 )
 
-_LOADING_TRIGGER = "Starting ASGI"
-_READY_TRIGGER = "Quit the server with CONTROL-C"
-_RELOAD_TRIGGER = "changed, reloading"
+# Django (old) and Uvicorn (new) status transition triggers, checked against
+# the fully level-prefix-stripped line. Uvicorn only prints its startup
+# banner ("Uvicorn running on ...") once per process, not on every autoreload
+# cycle, so "Application startup complete" -- which does reprint each
+# reload -- is used as the READY trigger instead.
+_LOADING_TRIGGERS = (
+    "Starting ASGI",
+    "Starting development server",
+    "Started server process ",
+    "Waiting for application startup",
+)
+_READY_TRIGGERS = (
+    "Quit the server with CONTROL-C",
+    "Application startup complete",
+    "Ready",
+    "App Ready",
+)
+_RELOAD_TRIGGERS = (
+    "changed, reloading",
+    "detected changes in",
+    "Reloading",
+    "reloading",
+)
 
 _WS_CONNECT = "WebSocket CONNECT "
 _WS_DISCONNECT = "WebSocket DISCONNECT "
+_SOCKET_OPENED = "SOCKET CONNECTION OPENED"
+_SOCKET_CLOSED = "SOCKET CONNECTION CLOSED"
 
 
 class LogFilter:
@@ -233,8 +304,19 @@ class LogFilter:
         - ``stripped``:
             - Type: str
             - What: The line with the level prefix removed.
+
+        Notes:
+
+        - Strips repeatedly so nested prefixes (e.g. a container run
+          script's "INFO: " wrapped around uvicorn's own "INFO:     "
+          formatter output) are fully removed, not just the outermost one.
         """
-        return _LEVEL_PREFIX_RE.sub("", line, count=1)
+        stripped = line
+        while True:
+            new = _LEVEL_PREFIX_RE.sub("", stripped, count=1)
+            if new == stripped:
+                return new
+            stripped = new
 
     @staticmethod
     def classify_status(stripped: str) -> str | None:
@@ -259,12 +341,12 @@ class LogFilter:
 
         - READY is checked first so a reload cycle correctly resets the status.
         """
-        if _READY_TRIGGER in stripped:
+        if any(t in stripped for t in _READY_TRIGGERS):
             return READY
-        if _LOADING_TRIGGER in stripped or "Starting development server" in stripped:
-            return LOADING
-        if _RELOAD_TRIGGER in stripped:
+        if any(t in stripped for t in _RELOAD_TRIGGERS):
             return RELOADING
+        if any(t in stripped for t in _LOADING_TRIGGERS):
+            return LOADING
         return None
 
     @staticmethod
@@ -285,10 +367,16 @@ class LogFilter:
         - ``event``:
             - Type: str | None
             - What: ``"connect"`` or ``"disconnect"``, or None if not a WS event.
+
+        Notes:
+
+        - Recognizes both the old Django Channels runserver format
+          ("WebSocket CONNECT "/"WebSocket DISCONNECT ") and the custom
+          uvicorn app markers ("SOCKET CONNECTION OPENED"/"CLOSED").
         """
-        if _WS_CONNECT in stripped:
+        if _WS_CONNECT in stripped or _SOCKET_OPENED in stripped:
             return "connect"
-        if _WS_DISCONNECT in stripped:
+        if _WS_DISCONNECT in stripped or _SOCKET_CLOSED in stripped:
             return "disconnect"
         return None
 
@@ -306,6 +394,8 @@ class LogFilter:
             - What: Log line with the level prefix already removed.
         """
         if not stripped.strip():
+            return True
+        if _ACCESS_LOG_RE.search(stripped):
             return True
         return any(p in stripped for p in _SKIP_PATTERNS)
 
@@ -330,7 +420,12 @@ class LogFilter:
 
         - Raw-line starts with WARNING:/ERROR: are always validation.
         - Indented lines are treated as traceback continuation frames.
+        - Uvicorn's autoreload notice ("WatchFiles detected changes in
+          ...") is logged at WARNING level but is a benign status message,
+          not an error, so reload triggers are excluded first.
         """
+        if any(t in stripped for t in _RELOAD_TRIGGERS):
+            return False
         raw_upper = raw.upper()
         if raw_upper.startswith("WARNING:") or raw_upper.startswith("ERROR:"):
             return True
@@ -358,13 +453,13 @@ class DashboardRenderer:
     """
 
     # Fixed line counts for layout budget calculation
-    _HEADER_LINES = 4    # ━ + title + ━ + blank
-    _LOG_FIXED = 3       # "Recent Activity" + top-rule + bottom-rule
-    _FOOTER_LINES = 2    # blank + hint line
+    _HEADER_LINES = 4  # ━ + title + ━ + blank
+    _LOG_FIXED = 3  # "Recent Activity" + top-rule + bottom-rule
+    _FOOTER_LINES = 2  # blank + hint line
     _FIXED_BASE = _HEADER_LINES + _LOG_FIXED + _FOOTER_LINES  # = 9
-    _VAL_FIXED = 4       # blank + label + top-rule + bottom-rule
-    _MAX_ERROR_LINES = 8 # maximum validation lines shown from current block
-    _MIN_LOG_LINES = 3   # guaranteed minimum log lines even with validation
+    _VAL_FIXED = 4  # blank + label + top-rule + bottom-rule
+    _MAX_ERROR_LINES = 8  # maximum validation lines shown from current block
+    _MIN_LOG_LINES = 3  # guaranteed minimum log lines even with validation
 
     @staticmethod
     def _status_str(status: str) -> str:
@@ -470,8 +565,10 @@ class DashboardRenderer:
 
         if show_all:
             # ── All Logs Mode ──────────────────────────────────────────────
-            max_log_lines = max(0, budget - self._HEADER_LINES - self._FOOTER_LINES)
-            
+            max_log_lines = max(
+                0, budget - self._HEADER_LINES - self._FOOTER_LINES
+            )
+
             # Clamp scroll_offset so we don't scroll past the first line
             # (i.e., ensure we always show a full screen of logs if available)
             max_scroll = max(0, len(log_lines) - max_log_lines)
@@ -485,15 +582,17 @@ class DashboardRenderer:
                 ts = f"{DIM}{entry.timestamp}{RESET}"
                 # Use raw text if available in show_all mode, otherwise stripped text
                 display_text = entry.raw if entry.raw else entry.text
-                
+
                 # If it's a validation issue, ensure it shows as ERROR: in show_all mode
                 if entry.is_validation and _LEVEL_PREFIX_RE.match(display_text):
-                    display_text = _LEVEL_PREFIX_RE.sub("ERROR: ", display_text, count=1)
+                    display_text = _LEVEL_PREFIX_RE.sub(
+                        "ERROR: ", display_text, count=1
+                    )
 
                 text = self._truncate(display_text, cols - 14)
                 color = RED if entry.is_validation else ""
                 lines.append(f"  {ts}  {color}{text}{RESET}")
-            
+
             # Fill remaining space to keep footer at bottom
             for _ in range(max_log_lines - len(visible_logs)):
                 lines.append("")
@@ -519,7 +618,9 @@ class DashboardRenderer:
                     )
                     if desired_v == 0:
                         has_validation = False
-            shown_errors = current_error_block[-desired_v:] if desired_v > 0 else []
+            shown_errors = (
+                current_error_block[-desired_v:] if desired_v > 0 else []
+            )
 
             val_section_height = (
                 self._VAL_FIXED + len(shown_errors) if has_validation else 0
@@ -555,9 +656,13 @@ class DashboardRenderer:
         # ── Footer ─────────────────────────────────────────────────────────
         lines.append("")
         if show_all:
-            lines.append(f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle mode  │  ↑/↓ to scroll{RESET}")
+            lines.append(
+                f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle mode  │  ↑/↓ to scroll{RESET}"
+            )
         else:
-            lines.append(f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle output mode{RESET}")
+            lines.append(
+                f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle output mode{RESET}"
+            )
 
         # Write the full frame atomically: move to top-left, write each line
         # with CLEAR_EOL to erase leftover characters.
@@ -599,7 +704,13 @@ class RunDashboard:
 
     REFRESH_INTERVAL: float = 0.2
 
-    def __init__(self, app_name: str, url: str, stop_event: threading.Event | None = None, max_logs: int = 10000) -> None:
+    def __init__(
+        self,
+        app_name: str,
+        url: str,
+        stop_event: threading.Event | None = None,
+        max_logs: int = 10000,
+    ) -> None:
         self._app_name = app_name
         self._url = url
         self._max_logs = max_logs
@@ -608,7 +719,9 @@ class RunDashboard:
 
         # Initial log entry
         ts = time.strftime("%H:%M:%S")
-        initial_entry = LogLine(timestamp=ts, text="App Loading", raw="INFO: App Loading")
+        initial_entry = LogLine(
+            timestamp=ts, text="App Loading", raw="INFO: App Loading"
+        )
         self._log_lines: list[LogLine] = [initial_entry]
         self._all_log_lines: list[LogLine] = [initial_entry]
 
@@ -661,9 +774,11 @@ class RunDashboard:
         - Scrolls up in show_all mode.
         """
         if self._show_all:
-            # We allow it to go up to len() here, but the renderer will clamp 
+            # We allow it to go up to len() here, but the renderer will clamp
             # it precisely based on the terminal height to ensure a full screen.
-            self._scroll_offset = min(len(self._all_log_lines), self._scroll_offset + amount)
+            self._scroll_offset = min(
+                len(self._all_log_lines), self._scroll_offset + amount
+            )
 
     def scroll_down(self, amount: int = 1) -> None:
         """
@@ -695,20 +810,30 @@ class RunDashboard:
         # Status transitions (always checked)
         new_status = self._filter.classify_status(stripped)
         if new_status:
-            self._status = new_status
-            if new_status == RELOADING:
-                self._ws_clients = 0
-                reloading_entry = LogLine(timestamp=ts, text="Reloading", raw=f"INFO: {stripped}")
-                add_minimal(reloading_entry)
-                add_all(reloading_entry)
-                if self._show_all and self._scroll_offset > 0:
-                    self._scroll_offset += 1
-            elif new_status == READY:
-                ready_entry = LogLine(timestamp=ts, text="Ready", raw="INFO: Ready")
-                add_minimal(ready_entry)
-                add_all(ready_entry)
-                if self._show_all and self._scroll_offset > 0:
-                    self._scroll_offset += 1
+            # During reload, do not transition status back to LOADING when the new worker process starts
+            if self._status == RELOADING and new_status == LOADING:
+                pass
+            else:
+                self._status = new_status
+                if new_status == RELOADING:
+                    self._ws_clients = 0
+                    reloading_entry = LogLine(
+                        timestamp=ts,
+                        text="App Reloading",
+                        raw="INFO: App Reloading",
+                    )
+                    add_minimal(reloading_entry)
+                    add_all(reloading_entry)
+                    if self._show_all and self._scroll_offset > 0:
+                        self._scroll_offset += 1
+                elif new_status == READY:
+                    ready_entry = LogLine(
+                        timestamp=ts, text="App Ready", raw="INFO: App Ready"
+                    )
+                    add_minimal(ready_entry)
+                    add_all(ready_entry)
+                    if self._show_all and self._scroll_offset > 0:
+                        self._scroll_offset += 1
 
         # WebSocket client count (before noise filter so we never miss events)
         ws_ev = self._filter.ws_event(stripped)
@@ -720,7 +845,9 @@ class RunDashboard:
         is_validation = self._filter.is_validation_issue(raw, stripped)
         is_noise = self._filter.is_noise(stripped)
 
-        entry = LogLine(timestamp=ts, text=stripped, raw=raw, is_validation=is_validation)
+        entry = LogLine(
+            timestamp=ts, text=stripped, raw=raw, is_validation=is_validation
+        )
         add_all(entry)
         if self._show_all and self._scroll_offset > 0:
             self._scroll_offset += 1
@@ -756,13 +883,15 @@ class RunDashboard:
                     self._process_line(line)
             except queue.Empty:
                 pass
-            
+
             self._renderer.render(
                 app_name=self._app_name,
                 status=self._status,
                 url=self._url,
                 ws_clients=self._ws_clients,
-                log_lines=self._all_log_lines if self._show_all else self._log_lines,
+                log_lines=(
+                    self._all_log_lines if self._show_all else self._log_lines
+                ),
                 validation_count=self._validation_count,
                 current_error_block=self._current_error_block,
                 show_all=self._show_all,
@@ -887,6 +1016,8 @@ def print_key_value(key: str, value: str, key_color: str = CYAN) -> None:
         - What: ANSI color code for the key.
         - Default: CYAN
     """
+    if _QUIET:
+        return
     sys.stdout.write(f"  {key_color}{key}{RESET}: {value}\n")
     sys.stdout.flush()
 
@@ -903,6 +1034,8 @@ def print_section(title: str) -> None:
         - Type: str
         - What: Section label to display.
     """
+    if _QUIET:
+        return
     cols, _ = shutil.get_terminal_size(fallback=(80, 24))
     width = min(cols - 4, 60)
     sys.stdout.write(f"\n  {BOLD}{title}{RESET}\n  {'─' * width}\n")
@@ -922,6 +1055,8 @@ def step_start(label: str) -> None:
         - Type: str
         - What: Description of the step being started.
     """
+    if _QUIET:
+        return
     sys.stdout.write(f"  {YELLOW}●{RESET}  {label}...\033[K\r")
     sys.stdout.flush()
 
@@ -938,6 +1073,8 @@ def step_done(label: str) -> None:
         - Type: str
         - What: Description of the completed step.
     """
+    if _QUIET:
+        return
     sys.stdout.write(f"\r  {GREEN}✓{RESET}  {label}\033[K\n")
     sys.stdout.flush()
 
@@ -962,6 +1099,8 @@ def step_fail(label: str, detail: str = "") -> None:
         - What: Multi-line detail text; last 8 lines are shown indented.
         - Default: ""
     """
+    if _QUIET:
+        return
     sys.stdout.write(f"\r  {RED}✗{RESET}  {label}\033[K\n")
     if detail:
         for line in detail.strip().splitlines()[-8:]:

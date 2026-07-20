@@ -7,9 +7,9 @@
       "Read(./cave_cli/**)",
       "Edit(./cave_cli/**)",
       "Write(./cave_cli/**)",
-      "Read(./DEVELOPMENT.md)",
-      "Edit(./DEVELOPMENT.md)",
-      "Write(./DEVELOPMENT.md)",
+      "Read(./AGENTS.md)",
+      "Edit(./AGENTS.md)",
+      "Write(./AGENTS.md)",
       "Read(./README.md)",
       "Edit(./README.md)",
       "Write(./README.md)"

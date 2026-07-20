@@ -8,6 +8,7 @@ from cave_cli.utils.display import (
     YELLOW,
     CYAN,
     print_section,
+    set_quiet,
 )
 
 
@@ -54,6 +55,7 @@ class CaveLogger:
                 f"Must be one of: {list(self.LEVELS.keys())}"
             )
         self._level = self.LEVELS[level]
+        set_quiet(level == "SILENT")
 
     def log(self, message: str, level: str) -> None:
         if self.LEVELS.get(level, 0) >= self._level:

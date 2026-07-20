@@ -1,5 +1,5 @@
 import pytest
-from cave_cli.utils.display import LogFilter, READY, LOADING, RELOADING
+from cave_cli.utils.display import LogFilter, RunDashboard, READY, LOADING, RELOADING
 
 class TestLogFilter:
     def test_strip_level_prefix(self):
@@ -31,6 +31,8 @@ class TestLogFilter:
         assert filter_obj.classify_status("Application startup complete.") == READY
         assert filter_obj.classify_status("Started server process [134449]") == LOADING
         assert filter_obj.classify_status("detected changes in 'app.py', reloading") == RELOADING
+        assert filter_obj.classify_status("StatReload detected file change in 'app.py' - Reloading...") == RELOADING
+        assert filter_obj.classify_status("Reloading...") == RELOADING
         assert filter_obj.classify_status("Just some logging") is None
 
     def test_is_noise(self):
@@ -44,3 +46,19 @@ class TestLogFilter:
         assert filter_obj.is_noise("Started reloader process [48] using StatReload") is True
         assert filter_obj.is_noise("some actual log line") is False
 
+
+class TestRunDashboard:
+    def test_reload_log_entry(self):
+        dashboard = RunDashboard(app_name="test_app", url="http://localhost:8000")
+        assert len(dashboard._log_lines) == 1
+        assert dashboard._log_lines[0].text == "App Loading"
+
+        dashboard._process_line("INFO:     Application startup complete.")
+        assert dashboard._log_lines[-1].text == "App Ready"
+
+        dashboard._process_line("WARNING:  StatReload detected file change in 'app.py' - Reloading...")
+        assert dashboard._log_lines[-1].text == "App Reloading"
+        assert dashboard._log_lines[-1].raw == "INFO: App Reloading"
+
+        dashboard._process_line("INFO:     Application startup complete.")
+        assert dashboard._log_lines[-1].text == "App Ready"

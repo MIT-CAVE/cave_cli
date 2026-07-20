@@ -220,6 +220,9 @@ _SKIP_PATTERNS: tuple[str, ...] = (
     "connection closed",
     "Will watch for changes in these directories",
     "Started reloader process",
+    "StatReload",
+    "Reloading",
+    "reloading",
 
     # Custom socket markers (processed for client count, not displayed)
     "SOCKET CONNECTION OPENED",
@@ -253,16 +256,18 @@ _LOADING_TRIGGERS = (
     "Starting development server",
     "Started server process ",
     "Waiting for application startup",
-    "Reloading",
 )
 _READY_TRIGGERS = (
     "Quit the server with CONTROL-C",
     "Application startup complete",
-    "Ready"
+    "Ready",
+    "App Ready",
 )
 _RELOAD_TRIGGERS = (
     "changed, reloading",
     "detected changes in",
+    "Reloading",
+    "reloading",
 )
 
 _WS_CONNECT = "WebSocket CONNECT "
@@ -340,10 +345,10 @@ class LogFilter:
         """
         if any(t in stripped for t in _READY_TRIGGERS):
             return READY
-        if any(t in stripped for t in _LOADING_TRIGGERS):
-            return LOADING
         if any(t in stripped for t in _RELOAD_TRIGGERS):
             return RELOADING
+        if any(t in stripped for t in _LOADING_TRIGGERS):
+            return LOADING
         return None
 
     @staticmethod
@@ -794,13 +799,13 @@ class RunDashboard:
                 self._status = new_status
                 if new_status == RELOADING:
                     self._ws_clients = 0
-                    reloading_entry = LogLine(timestamp=ts, text="Reloading", raw=f"INFO: {stripped}")
+                    reloading_entry = LogLine(timestamp=ts, text="App Reloading", raw="INFO: App Reloading")
                     add_minimal(reloading_entry)
                     add_all(reloading_entry)
                     if self._show_all and self._scroll_offset > 0:
                         self._scroll_offset += 1
                 elif new_status == READY:
-                    ready_entry = LogLine(timestamp=ts, text="Ready", raw="INFO: Ready")
+                    ready_entry = LogLine(timestamp=ts, text="App Ready", raw="INFO: App Ready")
                     add_minimal(ready_entry)
                     add_all(ready_entry)
                     if self._show_all and self._scroll_offset > 0:

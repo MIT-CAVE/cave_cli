@@ -64,3 +64,37 @@ def test_migrate_3_6_0_renames_models_file(tmp_path):
     assert '"requests>=2.0.0"' in pyproject_content
     assert '"pytest"' in pyproject_content
     assert '"django>=4.0"' in pyproject_content
+
+
+def test_migrate_3_6_0_preserves_package_data_cave_api(tmp_path):
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    # Create root pyproject.toml with package-data
+    pyproject_file = app_dir / "pyproject.toml"
+    pyproject_file.write_text(
+        "[project]\n"
+        "name = 'myapp'\n"
+        "version = '1.0.0'\n"
+        "dependencies = []\n\n"
+        "[tool.setuptools.package-data]\n"
+        'cave_api = ["**/*", "*"]\n'
+    )
+
+    # Create cave_api/pyproject.toml
+    cave_api_dir = app_dir / "cave_api"
+    cave_api_dir.mkdir()
+    cave_api_pyproject = cave_api_dir / "pyproject.toml"
+    cave_api_pyproject.write_text(
+        "[project]\ndependencies = [\n  'pytest'\n]\n"
+    )
+
+    # Run migration
+    migrate_3_6_0(str(app_dir))
+
+    # Assertions
+    pyproject_content = pyproject_file.read_text()
+    assert "[tool.setuptools.package-data]" in pyproject_content
+    assert 'cave_api = ["**/*", "*"]' in pyproject_content
+    assert "[project.optional-dependencies]" in pyproject_content
+    assert '"pytest"' in pyproject_content

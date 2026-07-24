@@ -124,9 +124,9 @@ def migrate_3_6_0(app_dir: str) -> None:
             deps_str = "\n".join(f'  "{dep}",' for dep in cleaned_requirements)
 
             if "[project.optional-dependencies]" in content:
-                if re.search(r"api\s*=\s*\[", content):
+                if re.search(r"(?<![\w-])api\s*=\s*\[", content):
                     content = re.sub(
-                        r"(api\s*=\s*\[)[^\]]*(\])",
+                        r"(?<![\w-])(api\s*=\s*\[)[^\]]*(\])",
                         f"\\1\n{deps_str}\n\\2",
                         content,
                         flags=re.DOTALL,
@@ -276,9 +276,9 @@ def upgrade(args: argparse.Namespace) -> None:
             deps_list_str = "\n".join(f'    "{dep}",' for dep in api_deps)
 
             if "[project.optional-dependencies]" in content:
-                if re.search(r"api\s*=\s*\[", content):
+                if re.search(r"(?<![\w-])api\s*=\s*\[", content):
                     content = re.sub(
-                        r"(api\s*=\s*\[)[^\]]*(\])",
+                        r"(?<![\w-])(api\s*=\s*\[)[^\]]*(\])",
                         f"\\1\n{deps_list_str}\n  \\2",
                         content,
                         flags=re.DOTALL,

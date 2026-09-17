@@ -225,6 +225,7 @@ def main():
     p_sync.add_argument(
         "--include",
         nargs="+",
+        action="extend",
         default=None,
         metavar="PATTERN",
         help="File patterns to include (overrides excludes)",
@@ -232,6 +233,7 @@ def main():
     p_sync.add_argument(
         "--exclude",
         nargs="+",
+        action="extend",
         default=None,
         metavar="PATTERN",
         help="File patterns to exclude",

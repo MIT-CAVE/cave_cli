@@ -1,5 +1,6 @@
 import fnmatch
 import os
+import shlex
 import shutil
 from pathlib import Path
 
@@ -23,6 +24,75 @@ def can_create_symlinks() -> bool:
             return True
     except OSError:
         return False
+
+
+def normalize_pattern(pattern: str) -> str:
+    """
+    Usage:
+
+    - Normalizes a file pattern by standardizing path separators, removing
+      leading relative markers (./) and trailing slashes.
+
+    Requires:
+
+    - ``pattern``:
+        - Type: str
+        - What: Pattern to normalize
+
+    Returns:
+
+    - ``normalized``:
+        - Type: str
+        - What: Clean normalized pattern string
+    """
+    p = pattern.strip().replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:]
+    if p.startswith("/") and len(p) > 1:
+        p = p.lstrip("/")
+    if p.endswith("/") and len(p) > 1:
+        p = p.rstrip("/")
+    return p
+
+
+def clean_patterns(patterns: list[str] | None) -> list[str]:
+    """
+    Usage:
+
+    - Parses a list of pattern strings that may contain whitespace-separated
+      or quoted tokens into individual normalized pattern strings.
+
+    Optional:
+
+    - ``patterns``:
+        - Type: list[str] | None
+        - What: List of raw pattern strings
+        - Default: None
+
+    Returns:
+
+    - ``cleaned``:
+        - Type: list[str]
+        - What: List of individual stripped and normalized pattern strings
+    """
+    if not patterns:
+        return []
+    result: list[str] = []
+    for item in patterns:
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            tokens = shlex.split(item)
+        except ValueError:
+            tokens = item.split()
+        for token in tokens:
+            cleaned = strip_quotes(token)
+            if cleaned:
+                cleaned = normalize_pattern(cleaned)
+                if cleaned and cleaned not in result:
+                    result.append(cleaned)
+    return result
 
 
 def sync_files(
@@ -65,9 +135,10 @@ def sync_files(
     - Include patterns override exclude patterns (matching rsync semantics)
     - Uses ``shutil.copytree`` with ``dirs_exist_ok=True`` for merge behavior
     """
-    clean_includes = [strip_quotes(p) for p in (includes or [])]
-    clean_excludes = [strip_quotes(p) for p in (excludes or [])]
-    clean_excludes.append(".git")
+    clean_includes = clean_patterns(includes)
+    clean_excludes = clean_patterns(excludes)
+    if ".git" not in clean_excludes:
+        clean_excludes.append(".git")
 
     symlinks_supported = can_create_symlinks()
 
@@ -118,6 +189,23 @@ def sync_files(
 
 
 def strip_quotes(pattern: str) -> str:
+    """
+    Usage:
+
+    - Strips matching enclosing single or double quotes from a pattern string.
+
+    Requires:
+
+    - ``pattern``:
+        - Type: str
+        - What: String to strip quotes from
+
+    Returns:
+
+    - ``stripped``:
+        - Type: str
+        - What: String without outer quotes
+    """
     pattern = pattern.strip()
     if (pattern.startswith("'") and pattern.endswith("'")) or (
         pattern.startswith('"') and pattern.endswith('"')
@@ -127,9 +215,44 @@ def strip_quotes(pattern: str) -> str:
 
 
 def matches_any(rel_path: str, name: str, patterns: list[str]) -> bool:
+    """
+    Usage:
+
+    - Checks if a relative path or filename matches any of the given patterns.
+
+    Requires:
+
+    - ``rel_path``:
+        - Type: str
+        - What: Relative path of the file or directory
+
+    - ``name``:
+        - Type: str
+        - What: Base name of the file or directory
+
+    - ``patterns``:
+        - Type: list[str]
+        - What: List of glob patterns to test against
+
+    Returns:
+
+    - ``matched``:
+        - Type: bool
+        - What: True if rel_path or name matches any pattern
+    """
+    norm_rel_path = rel_path.replace("\\", "/")
+    norm_name = name.replace("\\", "/")
     for pattern in patterns:
-        if fnmatch.fnmatch(name, pattern):
+        norm_pattern = pattern.replace("\\", "/")
+        if fnmatch.fnmatch(norm_name, norm_pattern):
             return True
-        if fnmatch.fnmatch(rel_path, pattern):
+        if fnmatch.fnmatch(norm_rel_path, norm_pattern):
+            return True
+        if (
+            "*" not in norm_pattern
+            and "?" not in norm_pattern
+            and "[" not in norm_pattern
+            and norm_rel_path.startswith(norm_pattern.rstrip("/") + "/")
+        ):
             return True
     return False

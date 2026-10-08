@@ -2,6 +2,7 @@ import argparse
 
 from cave_cli.commands.run import run_cave
 from cave_cli.utils.display import print_section
+from cave_cli.utils.lock import TestQueueLock
 from cave_cli.utils.validate import get_app
 
 
@@ -36,4 +37,5 @@ def test(args: argparse.Namespace) -> None:
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )
-    run_cave(app_dir, app_name, run_args, skip_header=True)
+    with TestQueueLock(app_dir, app_name):
+        run_cave(app_dir, app_name, run_args, skip_header=True)

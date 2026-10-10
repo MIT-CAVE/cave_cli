@@ -125,6 +125,11 @@ def create(args: argparse.Namespace) -> None:
     print_section("Done")
     step_done(f"App '{app_name}' created successfully!")
     step_done(f"Configuration options available in {app_name}/.env")
+    step_done(
+        "Admin login credentials: DJANGO_ADMIN_EMAIL and "
+        f"DJANGO_ADMIN_PASSWORD in {app_name}/.env"
+    )
+    step_done(f"Run 'cd {app_name}' then 'cave run' to start your app")
 
 
 def force_remove(func, path, exc):

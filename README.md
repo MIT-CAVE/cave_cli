@@ -2,6 +2,8 @@
 
 A cross-platform CLI for creating and managing Docker-based CAVE web applications.
 
+CAVE apps are built from the [cave_app](https://github.com/MIT-CAVE/cave_app) template repository: `cave create` clones it for you, so there is no need to clone it manually. See the cave_app repository for documentation on the app itself and its API.
+
 Developed by [MIT-CAVE](https://cave.mit.edu/) (Center for Transportation & Logistics). Licensed under Apache 2.0.
 
 ## Prerequisites
@@ -90,6 +92,11 @@ cd my_app
 cave run
 # Open http://localhost:8000/ in your browser
 ```
+
+- `cave create` creates the app in a new folder inside the current directory. All other app commands (`run`, `reset`, `kill`, etc.) must be run from inside the app folder.
+- During `cave create`, you are asked for an admin email and password. This is the admin account used to log in to the app. If no password is entered, one is generated. Both are stored in the app's `.env` file (`DJANGO_ADMIN_EMAIL` and `DJANGO_ADMIN_PASSWORD`).
+
+Next steps: see [Using The Example App](https://github.com/MIT-CAVE/cave_app#using-the-example-app) to explore the included examples, and the [API documentation](https://github.com/MIT-CAVE/cave_app/blob/main/docs/API_README.md) to connect your own model.
 
 ## CLI Commands
 

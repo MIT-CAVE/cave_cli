@@ -96,6 +96,8 @@ cave run
 - `cave create` creates the app in a new folder inside the current directory. All other app commands (`run`, `reset`, `kill`, etc.) must be run from inside the app folder.
 - During `cave create`, you are asked for an admin email and password. This is the admin account used to log in to the app. If no password is entered, one is generated. Both are stored in the app's `.env` file (`DJANGO_ADMIN_EMAIL` and `DJANGO_ADMIN_PASSWORD`).
 
+Next steps: see [Using The Example App](https://github.com/MIT-CAVE/cave_app#using-the-example-app) to explore the included examples, and the [API documentation](https://github.com/MIT-CAVE/cave_app/blob/main/docs/API_README.md) to connect your own model.
+
 ## CLI Commands
 
 ```sh

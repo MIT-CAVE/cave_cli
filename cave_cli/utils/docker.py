@@ -219,8 +219,13 @@ def run_interactive(
         - Type: list[str] | None
         - What: Command to run in the container
         - Default: None
+
+    Notes:
+
+    - A TTY is only requested when stdin is a terminal, since Docker
+      refuses to start the container otherwise (e.g. piped input or CI)
     """
-    cmd = ["docker", "run", "-it"]
+    cmd = ["docker", "run", "-it" if sys.stdin.isatty() else "-i"]
     if extra_args:
         cmd.extend(extra_args)
     for port in ports or []:

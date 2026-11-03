@@ -124,6 +124,7 @@ cave --help
 | `cave kill` | Stop Docker containers for an app |
 | `cave list-versions` | List available CAVE app versions |
 | `cave theme <name>` | Set the CLI color theme (dark, light, solarized, monokai) |
+| `cave completion` | Generate or install shell completion script for bash/zsh |
 | `cave update` | Update the CAVE CLI itself |
 | `cave uninstall` | Remove the CAVE CLI |
 | `cave version` | Print version information |

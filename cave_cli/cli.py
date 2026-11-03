@@ -22,6 +22,8 @@ Examples:
     cave lv  --all --pattern v3*
     cave update
     cave version
+    cave completion
+    cave completion --install
 """
 
 import argparse
@@ -453,6 +455,56 @@ def main():
     p_watcher.add_argument("keep_alive", type=int)
 
     # ------------------------------------------------------------------ #
+    # completion                                                           #
+    # ------------------------------------------------------------------ #
+    p_completion = subparsers.add_parser(
+        "completion",
+        help="Generate or install shell completion script for bash/zsh",
+        description=(
+            "Generate or install shell completion scripts for Bash and Zsh.\n\n"
+            "Quick setup:\n"
+            "  cave completion --install    Automatically add to ~/.bashrc or ~/.zshrc\n\n"
+            "Or load in current session:\n"
+            '  eval "$(cave completion)"'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    add_global_args(p_completion)
+    p_completion.add_argument(
+        "-i",
+        "--install",
+        action="store_true",
+        default=False,
+        help="Automatically append completion hook to ~/.bashrc or ~/.zshrc",
+    )
+    p_completion.add_argument(
+        "shell",
+        nargs="?",
+        default="bash",
+        choices=["bash", "zsh"],
+        help="Target shell (default: bash)",
+    )
+
+    # ------------------------------------------------------------------ #
+    # _complete (internal completion hook)                                 #
+    # ------------------------------------------------------------------ #
+    p_complete = subparsers.add_parser(
+        "_complete",
+        help=argparse.SUPPRESS,
+    )
+    p_complete.add_argument(
+        "--cword",
+        type=int,
+        default=1,
+        help=argparse.SUPPRESS,
+    )
+    p_complete.add_argument(
+        "words",
+        nargs="*",
+        help=argparse.SUPPRESS,
+    )
+
+    # ------------------------------------------------------------------ #
     # Dispatch                                                             #
     # ------------------------------------------------------------------ #
     args = parser.parse_args()
@@ -474,10 +526,10 @@ def main():
 
     if getattr(args, "quiet", False):
         logger.set_level("SILENT")
-    elif args.verbose:
+    elif getattr(args, "verbose", False):
         logger.set_level("DEBUG")
     else:
-        logger.set_level(args.loglevel)
+        logger.set_level(getattr(args, "loglevel", "INFO"))
 
     # ------------------------------------------------------------------ #
     # Command dispatch                                                     #
@@ -598,6 +650,20 @@ def main():
         from cave_cli.commands.version import version as version_cmd
 
         version_cmd(args)
+
+    elif args.command == "completion":
+        from cave_cli.commands.completion import completion_cmd
+
+        completion_cmd(args)
+
+    elif args.command == "_complete":
+        from cave_cli.utils.complete import get_completions
+
+        words = getattr(args, "words", []) or ["cave"]
+        cword = getattr(args, "cword", 1)
+        candidates = get_completions(words, cword)
+        if candidates:
+            print(" ".join(candidates))
 
     else:
         parser.print_help()

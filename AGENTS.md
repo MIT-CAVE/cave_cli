@@ -123,6 +123,7 @@ After installation, the `cave` command is available globally. In editable mode, 
 | `cave version` | | Print CLI and app version information |
 | `cave doctor` | | Check the health of the CAVE environment |
 | `cave theme <name>` | | Set the CLI color theme |
+| `cave completion` | | Generate or install shell completion script for bash/zsh |
 
 ### Global Flags
 

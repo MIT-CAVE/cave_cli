@@ -212,6 +212,31 @@ def get_last_test_activity(app_dir: str, app_name: str) -> float:
         return 0.0
 
 
+def is_container_running(name: str) -> bool:
+    """
+    Usage:
+
+    - Checks if a specific Docker container is currently running
+
+    Requires:
+
+    - ``name``:
+        - Type: str
+        - What: Container name to inspect
+
+    Returns:
+
+    - ``running``:
+        - Type: bool
+        - What: True if container exists and is running, False otherwise
+    """
+    res = run(
+        ["docker", "inspect", "-f", "{{.State.Running}}", name],
+        capture=True,
+    )
+    return res.returncode == 0 and res.stdout.strip() == "true"
+
+
 def is_test_server_running(app_name: str) -> bool:
     """
     Usage:
@@ -230,16 +255,12 @@ def is_test_server_running(app_name: str) -> bool:
         - Type: bool
         - What: True if test db, redis, and django containers are running
     """
-    res = run(["docker", "ps", "--format", "{{.Names}}"], capture=True)
-    if res.returncode != 0 or not res.stdout:
-        return False
-    running_names = set(res.stdout.strip().splitlines())
-    expected = {
+    expected = [
         get_test_django_name(app_name),
         get_test_db_name(app_name),
         get_test_redis_name(app_name),
-    }
-    return expected.issubset(running_names)
+    ]
+    return all(is_container_running(name) for name in expected)
 
 
 def start_test_server(
@@ -298,33 +319,37 @@ def start_test_server(
     run_and_log(["docker", "network", "create", test_network])
 
     # Start test database (no host port binding)
-    step_start("Starting test database")
-    run_detached(
-        name=db_container,
-        image=db_image,
-        network=test_network,
-        volumes=[f"{pg_volume}:/var/lib/postgresql/data"],
-        env_vars={
-            "POSTGRES_PASSWORD": db_password,
-            "POSTGRES_USER": f"{app_name}_user",
-            "POSTGRES_DB": f"{app_name}_name",
-        },
-        extra_args=extra_docker_args or None,
-        command=db_command_str.split(),
-    )
-    step_done("Starting test database")
+    if not is_container_running(db_container):
+        step_start("Starting test database")
+        run(["docker", "rm", "-f", db_container])
+        run_detached(
+            name=db_container,
+            image=db_image,
+            network=test_network,
+            volumes=[f"{pg_volume}:/var/lib/postgresql/data"],
+            env_vars={
+                "POSTGRES_PASSWORD": db_password,
+                "POSTGRES_USER": f"{app_name}_user",
+                "POSTGRES_DB": f"{app_name}_name",
+            },
+            extra_args=extra_docker_args or None,
+            command=db_command_str.split(),
+        )
+        step_done("Starting test database")
 
     # Start test cache (no host port binding)
-    step_start("Starting test cache")
-    run_detached(
-        name=redis_container,
-        image=cache_image,
-        network=test_network,
-        volumes=[f"{redis_volume}:/data"],
-        extra_args=extra_docker_args or None,
-        command=["--save", "7200", "1"],
-    )
-    step_done("Starting test cache")
+    if not is_container_running(redis_container):
+        step_start("Starting test cache")
+        run(["docker", "rm", "-f", redis_container])
+        run_detached(
+            name=redis_container,
+            image=cache_image,
+            network=test_network,
+            volumes=[f"{redis_volume}:/data"],
+            extra_args=extra_docker_args or None,
+            command=["--save", "7200", "1"],
+        )
+        step_done("Starting test cache")
 
     # Wait for test database readiness
     db_user = f"{app_name}_user"
@@ -381,17 +406,26 @@ def start_test_server(
         step_done("Checking test database")
 
     # Start idle Django container
-    step_start("Starting test Django container")
-    run_detached(
-        name=django_container,
-        image=test_image,
-        network=test_network,
-        volumes=django_volumes,
-        env_vars=django_env,
-        extra_args=extra_docker_args or None,
-        command=["tail", "-f", "/dev/null"],
-    )
-    step_done("Starting test Django container")
+    if not is_container_running(django_container):
+        step_start("Starting test Django container")
+        run(["docker", "rm", "-f", django_container])
+        run_detached(
+            name=django_container,
+            image=test_image,
+            network=test_network,
+            volumes=django_volumes,
+            env_vars=django_env,
+            extra_args=extra_docker_args or None,
+            command=["tail", "-f", "/dev/null"],
+        )
+        if not is_container_running(django_container):
+            step_fail(
+                "Starting test Django container",
+                "Failed to start test container.",
+            )
+            stop_test_server(app_name)
+            sys.exit(1)
+        step_done("Starting test Django container")
 
 
 def stop_test_server(app_name: str) -> None:

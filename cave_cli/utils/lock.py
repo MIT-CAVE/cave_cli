@@ -129,8 +129,8 @@ def cancel_test_queue(
     except Exception as exc:
         logger.debug(f"Failed to write cancellation marker: {exc}")
 
-    # Stop active test running inside test django container
-    run(["docker", "stop", "-t", "1", f"{app_name}_test_django"])
+    # Remove active test django container to terminate execution cleanly
+    run(["docker", "rm", "-f", f"{app_name}_test_django"])
 
     if kill_server:
         from cave_cli.utils.test_server import stop_test_server

@@ -60,30 +60,39 @@ class TestActivityTracking:
 
 
 class TestServerStatusCheck:
-    @patch("cave_cli.utils.test_server.run")
-    def test_is_test_server_running_true(self, mock_run):
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="my_app_test_django\nmy_app_test_db_host\nmy_app_test_redis_host\n",
-        )
+    @patch("cave_cli.utils.test_server.is_container_running")
+    def test_is_test_server_running_true(self, mock_is_running):
+        mock_is_running.return_value = True
         assert is_test_server_running("my_app") is True
 
-    @patch("cave_cli.utils.test_server.run")
-    def test_is_test_server_running_partial(self, mock_run):
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="my_app_test_django\nmy_app_test_db_host\n",
-        )
+    @patch("cave_cli.utils.test_server.is_container_running")
+    def test_is_test_server_running_partial(self, mock_is_running):
+        mock_is_running.side_effect = lambda name: "django" not in name
+        assert is_test_server_running("my_app") is False
+
+    @patch("cave_cli.utils.test_server.is_container_running")
+    def test_is_test_server_running_empty(self, mock_is_running):
+        mock_is_running.return_value = False
         assert is_test_server_running("my_app") is False
 
     @patch("cave_cli.utils.test_server.run")
-    def test_is_test_server_running_empty(self, mock_run):
+    def test_is_container_running_inspect(self, mock_run):
+        from cave_cli.utils.test_server import is_container_running
+
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=""
+            args=[], returncode=0, stdout="true\n"
         )
-        assert is_test_server_running("my_app") is False
+        assert is_container_running("any_name") is True
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="false\n"
+        )
+        assert is_container_running("any_name") is False
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout=""
+        )
+        assert is_container_running("any_name") is False
 
 
 class TestProcessCheck:

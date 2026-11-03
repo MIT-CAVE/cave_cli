@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import sys
 import time
@@ -15,6 +16,17 @@ from cave_cli.utils.cache import get_cache_dir
 from cave_cli.utils.display import step_done, step_fail, step_start
 from cave_cli.utils.git import get_git_common_dir, get_project_name
 from cave_cli.utils.logger import logger
+from cave_cli.utils.subprocess import run
+
+
+class TestQueueCancelledError(Exception):
+    """
+    Usage:
+
+    - Raised when a queued test is canceled prior to execution
+    """
+
+    __test__ = False
 
 
 def get_test_lock_path(app_dir: str) -> str:
@@ -59,6 +71,73 @@ def get_test_lock_path(app_dir: str) -> str:
     return os.path.join(get_cache_dir(), f"test_queue_{project_hash}.lock")
 
 
+def get_test_cancel_path(app_dir: str) -> str:
+    """
+    Usage:
+
+    - Resolves the cancellation file path used to signal test queue cancellation
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``cancel_path``:
+        - Type: str
+        - What: The absolute path to the cancellation marker file
+    """
+    lock_path = get_test_lock_path(app_dir)
+    if lock_path.endswith("cave_test.lock"):
+        return os.path.join(os.path.dirname(lock_path), "cave_test_cancel.json")
+    return lock_path.replace(".lock", "_cancel.json")
+
+
+def cancel_test_queue(
+    app_dir: str, app_name: str, kill_server: bool = False
+) -> None:
+    """
+    Usage:
+
+    - Cancels running and queued tests, and optionally kills the test server
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    - ``app_name``:
+        - Type: str
+        - What: The name of the CAVE application
+
+    Optional:
+
+    - ``kill_server``:
+        - Type: bool
+        - What: Whether to also stop the persistent test server containers
+        - Default: False
+    """
+    cancel_path = get_test_cancel_path(app_dir)
+    os.makedirs(os.path.dirname(cancel_path), exist_ok=True)
+    payload = {"cancelled_at": time.time(), "kill_server": kill_server}
+    try:
+        with open(cancel_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+    except Exception as exc:
+        logger.debug(f"Failed to write cancellation marker: {exc}")
+
+    # Stop active test running inside test django container
+    run(["docker", "stop", "-t", "1", f"{app_name}_test_django"])
+
+    if kill_server:
+        from cave_cli.utils.test_server import stop_test_server
+
+        stop_test_server(app_name)
+
+
 class TestQueueLock:
     """
     Usage:
@@ -88,6 +167,7 @@ class TestQueueLock:
     - Locks are automatically released by the operating system if the process terminates or is killed.
     - If another test is currently running for the project, displays a step progress indicator
       while waiting in the queue.
+    - Checks for test queue cancellation events and aborts cleanly.
     - For git repositories, locks against the shared common git directory so all worktrees
       queue behind each other.
     """
@@ -101,9 +181,33 @@ class TestQueueLock:
         self.app_name = app_name
         self.timeout = timeout
         self.lock_path = get_test_lock_path(app_dir)
+        self.cancel_path = get_test_cancel_path(app_dir)
+        self.enqueue_time = time.time()
         self.file_obj: IO[str] | None = None
         self._acquired: bool = False
         self._was_queued: bool = False
+
+    def _is_cancelled(self) -> bool:
+        """
+        Usage:
+
+        - Checks if a cancellation event occurred after this test was enqueued
+
+        Returns:
+
+        - ``cancelled``:
+            - Type: bool
+            - What: True if cancelled, False otherwise
+        """
+        if not os.path.exists(self.cancel_path):
+            return False
+        try:
+            with open(self.cancel_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                cancelled_at = data.get("cancelled_at", 0)
+                return cancelled_at >= self.enqueue_time
+        except Exception:
+            return False
 
     def _try_acquire_nonblocking(self) -> bool:
         """
@@ -146,10 +250,16 @@ class TestQueueLock:
 
         - Acquires the exclusive test queue lock, waiting if necessary
         """
+        if self._is_cancelled():
+            raise TestQueueCancelledError("Test was canceled before starting")
+
         os.makedirs(os.path.dirname(self.lock_path), exist_ok=True)
         self.file_obj = open(self.lock_path, "a+", encoding="utf-8")
 
         if self._try_acquire_nonblocking():
+            if self._is_cancelled():
+                self.release()
+                raise TestQueueCancelledError("Test was canceled")
             self._acquired = True
             return
 
@@ -163,28 +273,31 @@ class TestQueueLock:
 
         start_time = time.time()
         try:
-            if self.timeout is not None:
-                while not self._acquired:
-                    if self._try_acquire_nonblocking():
-                        self._acquired = True
-                        break
-                    if time.time() - start_time >= self.timeout:
-                        step_fail(label, "Timed out waiting for test slot")
+            while not self._acquired:
+                if self._try_acquire_nonblocking():
+                    if self._is_cancelled():
+                        step_fail(label, "Canceled by user")
                         self.release()
-                        raise TimeoutError(
-                            f"Timed out waiting for test lock on {self.lock_path}"
-                        )
-                    time.sleep(0.1)
-            else:
-                if sys.platform == "win32":
-                    while not self._acquired:
-                        if self._try_acquire_nonblocking():
-                            self._acquired = True
-                            break
-                        time.sleep(0.5)
-                else:
-                    fcntl.flock(self.file_obj.fileno(), fcntl.LOCK_EX)
+                        raise TestQueueCancelledError("Test was canceled")
                     self._acquired = True
+                    break
+
+                if self._is_cancelled():
+                    step_fail(label, "Canceled by user")
+                    self.release()
+                    raise TestQueueCancelledError("Test was canceled")
+
+                if (
+                    self.timeout is not None
+                    and (time.time() - start_time) >= self.timeout
+                ):
+                    step_fail(label, "Timed out waiting for test slot")
+                    self.release()
+                    raise TimeoutError(
+                        f"Timed out waiting for test lock on {self.lock_path}"
+                    )
+
+                time.sleep(0.2)
         except KeyboardInterrupt:
             step_fail(label, "Canceled by user")
             self.release()

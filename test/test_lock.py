@@ -11,7 +11,13 @@ from cave_cli.utils.git import (
     get_project_name,
     get_project_root,
 )
-from cave_cli.utils.lock import TestQueueLock, get_test_lock_path
+from cave_cli.utils.lock import (
+    TestQueueCancelledError,
+    TestQueueLock,
+    cancel_test_queue,
+    get_test_cancel_path,
+    get_test_lock_path,
+)
 
 
 @pytest.fixture
@@ -168,3 +174,42 @@ class TestLockLogic:
             with lock2:
                 assert lock1._acquired is True
                 assert lock2._acquired is True
+
+    def test_cancel_before_acquire(self, tmp_path: Path):
+        app_dir = tmp_path / "app_cancel"
+        app_dir.mkdir()
+        cancel_test_queue(str(app_dir), "app_cancel")
+
+        lock = TestQueueLock(str(app_dir), "app_cancel")
+        # Enqueue time must be before cancelled_at to simulate being in queue
+        lock.enqueue_time = time.time() - 10
+        with pytest.raises(TestQueueCancelledError):
+            lock.acquire()
+
+    def test_cancel_while_queued(self, tmp_path: Path):
+        app_dir = tmp_path / "app_queued"
+        app_dir.mkdir()
+
+        lock1 = TestQueueLock(str(app_dir), "app_queued")
+        lock2 = TestQueueLock(str(app_dir), "app_queued", timeout=2.0)
+
+        lock1.acquire()
+        caught = []
+
+        def waiter():
+            try:
+                with lock2:
+                    pass
+            except TestQueueCancelledError:
+                caught.append(True)
+
+        t = threading.Thread(target=waiter)
+        t.start()
+        time.sleep(0.3)
+
+        # Trigger cancel
+        cancel_test_queue(str(app_dir), "app_queued")
+        t.join(timeout=2.0)
+        lock1.release()
+
+        assert caught == [True]

@@ -103,6 +103,9 @@ def run_cave(
     if not skip_header:
         print_section(f"Starting {app_name}")
 
+    if is_server_run or interactive:
+        remove_containers(app_name, skip_header=True)
+
     if not skip_build:
         build_image(app_name, app_dir)
     create_network(app_name)

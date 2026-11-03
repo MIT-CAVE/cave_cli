@@ -11,7 +11,7 @@ from cave_cli.utils.logger import logger
 from cave_cli.utils.subprocess import run, run_and_log, version_tuple
 
 
-def build_image(app_name: str, path: str) -> None:
+def build_image(app_name: str, path: str, tag: str | None = None) -> None:
     """
     Usage:
 
@@ -21,23 +21,30 @@ def build_image(app_name: str, path: str) -> None:
 
     - ``app_name``:
         - Type: str
-        - What: The app name used for tagging the image
+        - What: The app name
 
     - ``path``:
         - Type: str
         - What: The build context directory
+
+    Optional:
+
+    - ``tag``:
+        - Type: str | None
+        - What: Custom Docker image tag
+        - Default: None (defaults to f"cave-app:{app_name}")
 
     Notes:
 
     - Streams build output and checks for ERROR lines
     - Exits with code 1 if an error is detected during the build
     """
-    remove_containers(app_name, skip_header=True)
+    image_tag = tag or f"cave-app:{app_name}"
     step_start("Building Docker image")
     has_error = False
     error_lines: list[str] = []
     process = subprocess.Popen(
-        ["docker", "build", ".", "--tag", f"cave-app:{app_name}"],
+        ["docker", "build", ".", "--tag", image_tag],
         cwd=path,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -566,8 +573,30 @@ def get_running_apps() -> list[str]:
     if result.returncode != 0 or not result.stdout:
         return apps
     for line in result.stdout.strip().splitlines():
-        if line.endswith("_django"):
+        if line.endswith("_django") and not line.endswith("_test_django"):
             apps.append(line.replace("_django", ""))
+    return apps
+
+
+def get_running_test_servers() -> list[str]:
+    """
+    Usage:
+
+    - Lists all CAVE apps with running test servers
+
+    Returns:
+
+    - ``apps``:
+        - Type: list[str]
+        - What: App names that have an active test server
+    """
+    result = run(["docker", "ps", "--format", "{{.Names}}"])
+    apps: list[str] = []
+    if result.returncode != 0 or not result.stdout:
+        return apps
+    for line in result.stdout.strip().splitlines():
+        if line.endswith("_test_django"):
+            apps.append(line.replace("_test_django", ""))
     return apps
 
 

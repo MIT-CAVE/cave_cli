@@ -13,7 +13,32 @@ def kill(args: argparse.Namespace) -> None:
     - Stops Docker containers for CAVE apps
     """
     kill_all = getattr(args, "all", False)
+    kill_test = getattr(args, "test", False)
     app_name = getattr(args, "name", None)
+
+    if kill_test:
+        from cave_cli.utils.docker import get_running_test_servers
+        from cave_cli.utils.test_server import stop_test_server
+
+        running_test_servers = get_running_test_servers()
+        if kill_all:
+            if not running_test_servers:
+                logger.info("No CAVE test servers are currently running.")
+                return
+            for name in running_test_servers:
+                stop_test_server(name)
+        elif app_name:
+            if app_name not in running_test_servers:
+                logger.error(f"Test server for '{app_name}' is not running.")
+                return
+            stop_test_server(app_name)
+        else:
+            _, app_name = get_app()
+            if app_name not in running_test_servers:
+                logger.info(f"Test server for '{app_name}' is already stopped.")
+                return
+            stop_test_server(app_name)
+        return
 
     running_apps = get_running_apps()
 

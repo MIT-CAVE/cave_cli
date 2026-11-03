@@ -254,9 +254,36 @@ def main():
         help="Additional arguments to pass to docker run",
     )
     p_test.add_argument(
+        "--keep-alive",
+        type=int,
+        default=10,
+        metavar="MINUTES",
+        help="Minutes to keep test server alive after last test finishes (default: 10, 0 = stop immediately)",
+    )
+    p_test.add_argument(
+        "--reset",
+        action="store_true",
+        default=False,
+        help="Rebuild image and reinitialize database when this test runs",
+    )
+    p_test.add_argument(
+        "-c",
+        "--cancel",
+        action="store_true",
+        default=False,
+        help="Cancel running test and clear test queue",
+    )
+    p_test.add_argument(
+        "-k",
+        "--kill-server",
+        action="store_true",
+        default=False,
+        help="Cancel running test, clear test queue, and stop test server",
+    )
+    p_test.add_argument(
         "remaining",
         nargs="*",
-        help="Additional arguments passed to the test runner",
+        help="Additional arguments passed to the test runner (or 'cancel' / 'kill-server')",
     )
 
     # ------------------------------------------------------------------ #
@@ -311,6 +338,13 @@ def main():
         action="store_true",
         default=False,
         help="Kill all running CAVE apps",
+    )
+    p_kill.add_argument(
+        "-t",
+        "--test",
+        action="store_true",
+        default=False,
+        help="Stop test server containers instead of live app",
     )
 
     # ------------------------------------------------------------------ #
@@ -408,6 +442,17 @@ def main():
     )
 
     # ------------------------------------------------------------------ #
+    # _test-watcher (internal idle daemon)                                 #
+    # ------------------------------------------------------------------ #
+    p_watcher = subparsers.add_parser(
+        "_test-watcher",
+        help=argparse.SUPPRESS,
+    )
+    p_watcher.add_argument("app_dir")
+    p_watcher.add_argument("app_name")
+    p_watcher.add_argument("keep_alive", type=int)
+
+    # ------------------------------------------------------------------ #
     # Dispatch                                                             #
     # ------------------------------------------------------------------ #
     args = parser.parse_args()
@@ -476,8 +521,21 @@ def main():
         from cave_cli.commands.doctor import check_all
         from cave_cli.commands.test import test
 
+        remaining = getattr(args, "remaining", []) or []
+        if remaining and remaining[0] == "cancel":
+            args.cancel = True
+            args.remaining = remaining[1:]
+        elif remaining and remaining[0] == "kill-server":
+            args.kill_server = True
+            args.remaining = remaining[1:]
+
         check_all()
         test(args)
+
+    elif args.command == "_test-watcher":
+        from cave_cli.utils.test_server import run_idle_watcher
+
+        run_idle_watcher(args.app_dir, args.app_name, args.keep_alive)
 
     elif args.command == "prettify":
         from cave_cli.commands.doctor import check_all

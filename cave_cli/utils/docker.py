@@ -573,31 +573,40 @@ def get_running_apps() -> list[str]:
     if result.returncode != 0 or not result.stdout:
         return apps
     for line in result.stdout.strip().splitlines():
-        if line.endswith("_django") and not line.endswith("_test_django"):
+        if (
+            line.endswith("_django")
+            and not line.endswith("_test_django")
+            and not line.endswith("_task_django")
+        ):
             apps.append(line.replace("_django", ""))
     return apps
 
 
-def get_running_test_servers() -> list[str]:
+def get_running_task_servers() -> list[str]:
     """
     Usage:
 
-    - Lists all CAVE apps with running test servers
+    - Lists all CAVE apps with running task servers
 
     Returns:
 
     - ``apps``:
         - Type: list[str]
-        - What: App names that have an active test server
+        - What: App names that have an active task server
     """
     result = run(["docker", "ps", "--format", "{{.Names}}"])
     apps: list[str] = []
     if result.returncode != 0 or not result.stdout:
         return apps
     for line in result.stdout.strip().splitlines():
-        if line.endswith("_test_django"):
+        if line.endswith("_task_django"):
+            apps.append(line.replace("_task_django", ""))
+        elif line.endswith("_test_django"):
             apps.append(line.replace("_test_django", ""))
     return apps
+
+
+get_running_test_servers = get_running_task_servers
 
 
 def get_container_env(container: str, var: str) -> str:

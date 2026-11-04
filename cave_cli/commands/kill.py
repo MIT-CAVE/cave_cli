@@ -13,31 +13,31 @@ def kill(args: argparse.Namespace) -> None:
     - Stops Docker containers for CAVE apps
     """
     kill_all = getattr(args, "all", False)
-    kill_test = getattr(args, "test", False)
+    kill_task = getattr(args, "task", False) or getattr(args, "test", False)
     app_name = getattr(args, "name", None)
 
-    if kill_test:
-        from cave_cli.utils.docker import get_running_test_servers
-        from cave_cli.utils.test_server import stop_test_server
+    if kill_task:
+        from cave_cli.utils.docker import get_running_task_servers
+        from cave_cli.utils.task_server import stop_task_server
 
-        running_test_servers = get_running_test_servers()
+        running_task_servers = get_running_task_servers()
         if kill_all:
-            if not running_test_servers:
-                logger.info("No CAVE test servers are currently running.")
+            if not running_task_servers:
+                logger.info("No CAVE task servers are currently running.")
                 return
-            for name in running_test_servers:
-                stop_test_server(name)
+            for name in running_task_servers:
+                stop_task_server(name)
         elif app_name:
-            if app_name not in running_test_servers:
-                logger.error(f"Test server for '{app_name}' is not running.")
+            if app_name not in running_task_servers:
+                logger.error(f"Task server for '{app_name}' is not running.")
                 return
-            stop_test_server(app_name)
+            stop_task_server(app_name)
         else:
             _, app_name = get_app()
-            if app_name not in running_test_servers:
-                logger.info(f"Test server for '{app_name}' is already stopped.")
+            if app_name not in running_task_servers:
+                logger.info(f"Task server for '{app_name}' is already stopped.")
                 return
-            stop_test_server(app_name)
+            stop_task_server(app_name)
         return
 
     running_apps = get_running_apps()

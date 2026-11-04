@@ -6,7 +6,7 @@ from cave_cli.utils.docker import (
     get_container_host_port,
     get_all_containers,
     get_running_apps,
-    get_running_test_servers,
+    get_running_task_servers,
 )
 from cave_cli.utils.logger import logger
 
@@ -28,6 +28,9 @@ def list_cmd(args: argparse.Namespace) -> None:
             "_db_host",
             "_redis_host",
             "_nginx_host",
+            "_task_django",
+            "_task_db_host",
+            "_task_redis_host",
             "_test_django",
             "_test_db_host",
             "_test_redis_host",
@@ -37,8 +40,8 @@ def list_cmd(args: argparse.Namespace) -> None:
                     print(f"  ● {name}")
     else:
         apps = get_running_apps()
-        test_servers = get_running_test_servers()
-        if not apps and not test_servers:
+        task_servers = get_running_task_servers()
+        if not apps and not task_servers:
             logger.info("No CAVE apps are currently running.")
             return
 
@@ -55,10 +58,10 @@ def list_cmd(args: argparse.Namespace) -> None:
                     port = get_container_host_port(f"{app_name}_django")
                     print_key_value(app_name, f"http://localhost:{port}")
 
-        if test_servers:
-            print_section("CAVE Test Servers (Warm)")
-            for app_name in test_servers:
-                print_key_value(app_name, "Running (idle / testing)")
+        if task_servers:
+            print_section("CAVE Task Servers (Warm)")
+            for app_name in task_servers:
+                print_key_value(app_name, "Running (idle / active)")
 
     from cave_cli.utils.display import _QUIET
 

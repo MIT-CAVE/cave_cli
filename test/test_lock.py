@@ -92,14 +92,14 @@ class TestLockPath:
         assert main_lock == worktree_lock
         assert (
             Path(main_lock).resolve()
-            == (main_repo / ".git" / "cave_test.lock").resolve()
+            == (main_repo / ".git" / "cave_task.lock").resolve()
         )
 
     def test_lock_path_non_git(self, tmp_path: Path):
         non_git = tmp_path / "standalone_app"
         non_git.mkdir()
         lock_path = get_test_lock_path(str(non_git))
-        assert "test_queue_" in lock_path
+        assert "task_queue_" in lock_path
         assert lock_path.endswith(".lock")
 
 

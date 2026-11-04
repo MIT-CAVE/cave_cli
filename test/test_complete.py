@@ -58,10 +58,57 @@ class TestCompleteUtils:
         ):
             candidates = get_completions(["cave", "test", ""], 2)
             assert "test_custom.py" in candidates
-            assert "cancel" in candidates
-            assert "kill-server" in candidates
-            assert "--keep-alive" in candidates
-            assert "--reset" in candidates
+            assert "--docker-args" in candidates
+            assert "--detached" in candidates
+            assert "cancel" not in candidates
+            assert "kill-server" not in candidates
+            assert "--keep-alive" not in candidates
+            assert "--reset" not in candidates
+
+    def test_get_completions_prettify(self):
+        candidates = get_completions(["cave", "prettify", ""], 2)
+        assert "--docker-args" in candidates
+        assert "--detached" in candidates
+        assert "cancel" not in candidates
+        assert "kill-server" not in candidates
+        assert "--keep-alive" not in candidates
+        assert "--reset" not in candidates
+
+    def test_get_completions_task(self):
+        candidates = get_completions(["cave", "task", ""], 2)
+        assert "list" in candidates
+        assert "list-all" in candidates
+        assert "attach" in candidates
+        assert "kill" in candidates
+        assert "kill-all" in candidates
+        assert "reset" in candidates
+        assert "stop" in candidates
+        assert "start" in candidates
+        assert "run" in candidates
+        assert "--list" in candidates
+        assert "--list-all" in candidates
+        assert "--attach" in candidates
+        assert "--detached" in candidates
+        assert "--kill" in candidates
+        assert "--kill-all" in candidates
+        assert "--reset" in candidates
+        assert "--stop" in candidates
+
+    def test_get_completions_task_kill_ids(self):
+        with patch(
+            "cave_cli.utils.complete.find_app_dir_safe",
+            return_value="/some/app",
+        ):
+            with patch(
+                "cave_cli.utils.task_queue.list_tasks",
+                return_value=[
+                    {"id": 1, "status": "running"},
+                    {"id": 2, "status": "queued"},
+                    {"id": 3, "status": "completed"},
+                ],
+            ):
+                candidates = get_completions(["cave", "task", "kill", ""], 3)
+                assert candidates == ["1", "2"]
 
     def test_get_completions_theme(self):
         candidates = get_completions(["cave", "theme", ""], 2)
@@ -75,12 +122,13 @@ class TestCompleteUtils:
             "cave_cli.utils.docker.get_running_apps", return_value=["app_one"]
         ):
             with patch(
-                "cave_cli.utils.docker.get_running_test_servers",
+                "cave_cli.utils.docker.get_running_task_servers",
                 return_value=["test_two"],
             ):
                 candidates = get_completions(["cave", "kill", ""], 2)
                 assert "app_one" in candidates
                 assert "test_two" in candidates
+                assert "--task" in candidates
                 assert "--test" in candidates
 
     def test_get_completion_script(self):

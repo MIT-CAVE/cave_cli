@@ -11,6 +11,7 @@ from cave_cli.utils.docker import (
 )
 from cave_cli.utils.logger import logger
 from cave_cli.utils.subprocess import run_and_log
+from cave_cli.utils.task_server import stop_task_server
 from cave_cli.utils.validate import confirm_action, validate_app_dir
 
 
@@ -44,6 +45,10 @@ def purge(args: argparse.Namespace) -> None:
 
     remove_containers(app_name, skip_header=True)
 
+    step_start("Stopping task server")
+    stop_task_server(app_name)
+    step_done("Stopping task server")
+
     step_start("Removing database volume")
     remove_volume(app_name)
     step_done("Removing database volume")
@@ -52,8 +57,17 @@ def purge(args: argparse.Namespace) -> None:
     remove_volume(app_name, "redis_volume")
     step_done("Removing Redis volume")
 
+    step_start("Removing task volumes")
+    remove_volume(app_name, "task_pg_volume")
+    remove_volume(app_name, "task_redis_volume")
+    remove_volume(app_name, "test_pg_volume")
+    remove_volume(app_name, "test_redis_volume")
+    step_done("Removing task volumes")
+
     step_start("Removing image")
     remove_image(app_name)
+    run_and_log(["docker", "image", "rm", "-f", f"cave-app-task:{app_name}"])
+    run_and_log(["docker", "image", "rm", "-f", f"cave-app-test:{app_name}"])
     step_done("Removing image")
 
     step_start("Removing files")

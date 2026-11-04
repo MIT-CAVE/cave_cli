@@ -1,0 +1,869 @@
+import hashlib
+import json
+import os
+import sys
+import time
+from pathlib import Path
+from types import TracebackType
+from typing import IO, Any
+
+if sys.platform != "win32":
+    import fcntl
+else:
+    import msvcrt
+
+from cave_cli.utils.cache import get_cache_dir
+from cave_cli.utils.display import step_done, step_fail, step_start
+from cave_cli.utils.git import get_git_common_dir, get_project_name
+from cave_cli.utils.logger import logger
+from cave_cli.utils.subprocess import run
+
+
+class TaskQueueCancelledError(Exception):
+    """
+    Usage:
+
+    - Raised when a queued task is canceled prior to or during execution
+    """
+
+    __test__ = False
+
+
+def is_process_alive(pid: int) -> bool:
+    """
+    Usage:
+
+    - Checks if a process with the given PID is currently alive
+
+    Requires:
+
+    - ``pid``:
+        - Type: int
+        - What: Process ID to check
+
+    Returns:
+
+    - ``alive``:
+        - Type: bool
+        - What: True if process is running, False otherwise
+    """
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def get_task_lock_path(app_dir: str) -> str:
+    """
+    Usage:
+
+    - Resolves the lock file path used to serialize tasks for a CAVE project
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``lock_path``:
+        - Type: str
+        - What: The absolute path to the lock file
+    """
+    common_dir = get_git_common_dir(app_dir)
+    if (
+        common_dir
+        and os.path.isdir(common_dir)
+        and os.access(common_dir, os.W_OK)
+    ):
+        return os.path.join(common_dir, "cave_task.lock")
+
+    if common_dir:
+        project_root = str(Path(common_dir).parent.resolve())
+    else:
+        project_root = str(Path(app_dir).resolve())
+
+    project_hash = hashlib.sha256(project_root.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(get_cache_dir(), f"task_queue_{project_hash}.lock")
+
+
+def get_task_cancel_path(app_dir: str) -> str:
+    """
+    Usage:
+
+    - Resolves the cancellation file path used to signal task queue cancellation
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``cancel_path``:
+        - Type: str
+        - What: The absolute path to the cancellation marker file
+    """
+    lock_path = get_task_lock_path(app_dir)
+    if lock_path.endswith("cave_task.lock"):
+        return os.path.join(os.path.dirname(lock_path), "cave_task_cancel.json")
+    return lock_path.replace(".lock", "_cancel.json")
+
+
+def get_task_registry_path(app_dir: str) -> str:
+    """
+    Usage:
+
+    - Resolves the JSON registry path used to track tasks for a CAVE project
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``path``:
+        - Type: str
+        - What: The absolute path to the task registry JSON file
+    """
+    lock_path = get_task_lock_path(app_dir)
+    if lock_path.endswith("cave_task.lock"):
+        return os.path.join(os.path.dirname(lock_path), "cave_tasks.json")
+    return lock_path.replace(".lock", "_tasks.json")
+
+
+def _read_registry_unlocked(path: str) -> dict[str, Any]:
+    if not os.path.exists(path):
+        return {"next_id": 1, "tasks": []}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                return {"next_id": 1, "tasks": []}
+            data.setdefault("next_id", 1)
+            data.setdefault("tasks", [])
+            return data
+    except Exception:
+        return {"next_id": 1, "tasks": []}
+
+
+def _write_registry_unlocked(path: str, data: dict[str, Any]) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temp_path = f"{path}.tmp.{os.getpid()}"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(temp_path, path)
+    except Exception as exc:
+        logger.debug(f"Failed to write task registry: {exc}")
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+
+def prune_stale_tasks(app_dir: str) -> None:
+    """
+    Usage:
+
+    - Scans active tasks and marks dead processes as failed
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+    """
+    registry_path = get_task_registry_path(app_dir)
+    data = _read_registry_unlocked(registry_path)
+    modified = False
+    for task in data.get("tasks", []):
+        if task.get("status") in ("queued", "running"):
+            pid = task.get("pid", 0)
+            if pid > 0 and not is_process_alive(pid):
+                task["status"] = "failed"
+                task["ended_at"] = time.time()
+                modified = True
+    if modified:
+        _write_registry_unlocked(registry_path, data)
+
+
+def register_task(
+    app_dir: str,
+    app_name: str,
+    command: str,
+    args: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
+    exec_command: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Usage:
+
+    - Registers a new task in the project registry with an incremental ID
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    - ``app_name``:
+        - Type: str
+        - What: The name of the CAVE application
+
+    - ``command``:
+        - Type: str
+        - What: Task command name (e.g. "test", "prettify")
+
+    Optional:
+
+    - ``args``:
+        - Type: list[str] | None
+        - What: Arguments passed to the command
+        - Default: None
+
+    - ``extra_env``:
+        - Type: dict[str, str] | None
+        - What: Extra environment variables for the process
+        - Default: None
+
+    - ``exec_command``:
+        - Type: list[str] | None
+        - What: Raw command to execute if different from command + args
+        - Default: None
+
+    Returns:
+
+    - ``task``:
+        - Type: dict[str, Any]
+        - What: The registered task dictionary
+    """
+    registry_path = get_task_registry_path(app_dir)
+    prune_stale_tasks(app_dir)
+    data = _read_registry_unlocked(registry_path)
+
+    task_id = data.get("next_id", 1)
+    data["next_id"] = task_id + 1
+
+    task = {
+        "id": task_id,
+        "app_name": app_name,
+        "command": command,
+        "args": args or [],
+        "extra_env": extra_env or {},
+        "exec_command": exec_command or ([command] + (args or [])),
+        "pid": os.getpid(),
+        "status": "queued",
+        "created_at": time.time(),
+        "started_at": None,
+        "ended_at": None,
+        "exit_code": None,
+    }
+
+    tasks = data.get("tasks", [])
+    tasks.append(task)
+    # Retain at most the last 50 tasks
+    if len(tasks) > 50:
+        tasks = tasks[-50:]
+    data["tasks"] = tasks
+
+    _write_registry_unlocked(registry_path, data)
+    return task
+
+
+def update_task_pid(app_dir: str, task_id: int, pid: int) -> None:
+    """
+    Usage:
+
+    - Updates the process ID for a task record
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    - ``task_id``:
+        - Type: int
+        - What: Incremental ID of the task
+
+    - ``pid``:
+        - Type: int
+        - What: OS process ID of the task runner
+    """
+    registry_path = get_task_registry_path(app_dir)
+    data = _read_registry_unlocked(registry_path)
+    for task in data.get("tasks", []):
+        if task.get("id") == task_id:
+            task["pid"] = pid
+            break
+    _write_registry_unlocked(registry_path, data)
+
+
+def get_task_log_path(app_dir: str, task_id: int) -> str:
+    """
+    Usage:
+
+    - Resolves the log file path for a specific task
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    - ``task_id``:
+        - Type: int
+        - What: Incremental ID of the task
+
+    Returns:
+
+    - ``path``:
+        - Type: str
+        - What: Absolute path to the task log file
+    """
+    common_dir = get_git_common_dir(app_dir)
+    if (
+        common_dir
+        and os.path.isdir(common_dir)
+        and os.access(common_dir, os.W_OK)
+    ):
+        log_dir = os.path.join(common_dir, "cave_tasks")
+    elif common_dir:
+        project_root = str(Path(common_dir).parent.resolve())
+        project_hash = hashlib.sha256(project_root.encode("utf-8")).hexdigest()[
+            :16
+        ]
+        log_dir = os.path.join(get_cache_dir(), "tasks", project_hash)
+    else:
+        project_root = str(Path(app_dir).resolve())
+        project_hash = hashlib.sha256(project_root.encode("utf-8")).hexdigest()[
+            :16
+        ]
+        log_dir = os.path.join(get_cache_dir(), "tasks", project_hash)
+    os.makedirs(log_dir, exist_ok=True)
+    return os.path.join(log_dir, f"task_{task_id}.log")
+
+
+def clean_completed_tasks(app_dir: str) -> int:
+    """
+    Usage:
+
+    - Removes finished tasks and their log files when task server is stopped
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``removed_count``:
+        - Type: int
+        - What: Number of cleaned tasks
+    """
+    registry_path = get_task_registry_path(app_dir)
+    data = _read_registry_unlocked(registry_path)
+    retained = []
+    removed_count = 0
+    for t in data.get("tasks", []):
+        if t.get("status") in ("queued", "running"):
+            retained.append(t)
+        else:
+            removed_count += 1
+            log_path = get_task_log_path(app_dir, t.get("id", 0))
+            try:
+                if os.path.exists(log_path):
+                    os.remove(log_path)
+            except Exception:
+                pass
+    if removed_count > 0:
+        data["tasks"] = retained
+        _write_registry_unlocked(registry_path, data)
+    return removed_count
+
+
+def update_task_status(
+    app_dir: str,
+    task_id: int,
+    status: str,
+    exit_code: int | None = None,
+) -> None:
+    """
+    Usage:
+
+    - Updates the status and timestamps of a task in the registry
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    - ``task_id``:
+        - Type: int
+        - What: Incremental ID of the task
+
+    - ``status``:
+        - Type: str
+        - What: New status ("queued", "running", "completed", "cancelled", "failed")
+
+    Optional:
+
+    - ``exit_code``:
+        - Type: int | None
+        - What: Process exit code if completed or failed
+        - Default: None
+    """
+    registry_path = get_task_registry_path(app_dir)
+    data = _read_registry_unlocked(registry_path)
+    for task in data.get("tasks", []):
+        if task.get("id") == task_id:
+            task["status"] = status
+            if status == "running" and not task.get("started_at"):
+                task["started_at"] = time.time()
+            elif status in ("completed", "cancelled", "failed"):
+                task["ended_at"] = time.time()
+                if exit_code is not None:
+                    task["exit_code"] = exit_code
+            break
+    _write_registry_unlocked(registry_path, data)
+
+
+def get_task(app_dir: str, task_id: int) -> dict[str, Any] | None:
+    """
+    Usage:
+
+    - Retrieves a task record by its incremental ID
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    - ``task_id``:
+        - Type: int
+        - What: Incremental ID of the task
+
+    Returns:
+
+    - ``task``:
+        - Type: dict[str, Any] | None
+        - What: The task dictionary or None if not found
+    """
+    registry_path = get_task_registry_path(app_dir)
+    data = _read_registry_unlocked(registry_path)
+    for task in data.get("tasks", []):
+        if task.get("id") == task_id:
+            return task
+    return None
+
+
+def list_tasks(app_dir: str) -> list[dict[str, Any]]:
+    """
+    Usage:
+
+    - Lists all recorded tasks for a CAVE project
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``tasks``:
+        - Type: list[dict[str, Any]]
+        - What: List of task records
+    """
+    prune_stale_tasks(app_dir)
+    registry_path = get_task_registry_path(app_dir)
+    data = _read_registry_unlocked(registry_path)
+    return data.get("tasks", [])
+
+
+def cancel_task(app_dir: str, app_name: str, task_id: int) -> bool:
+    """
+    Usage:
+
+    - Cancels a specific task by its incremental ID
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    - ``app_name``:
+        - Type: str
+        - What: The name of the CAVE application
+
+    - ``task_id``:
+        - Type: int
+        - What: Incremental ID of the task to cancel
+
+    Returns:
+
+    - ``cancelled``:
+        - Type: bool
+        - What: True if task was found and marked cancelled, False otherwise
+    """
+    task = get_task(app_dir, task_id)
+    if not task:
+        return False
+
+    status = task.get("status")
+    if status in ("completed", "cancelled", "failed"):
+        return False
+
+    update_task_status(app_dir, task_id, "cancelled", exit_code=130)
+
+    # Terminate background runner process if alive
+    pid = task.get("pid", 0)
+    if pid > 0 and pid != os.getpid() and is_process_alive(pid):
+        try:
+            os.kill(pid, 15)
+        except OSError:
+            pass
+
+    # If the task was actively running, terminate container execution cleanly
+    if status == "running":
+        run(["docker", "rm", "-f", f"{app_name}_task_django"])
+        run(["docker", "rm", "-f", f"{app_name}_test_django"])
+
+    return True
+
+
+def cancel_all_tasks(app_dir: str, app_name: str) -> int:
+    """
+    Usage:
+
+    - Cancels all running and queued tasks for a CAVE application
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    - ``app_name``:
+        - Type: str
+        - What: The name of the CAVE application
+
+    Returns:
+
+    - ``count``:
+        - Type: int
+        - What: Number of tasks that were cancelled
+    """
+    tasks = list_tasks(app_dir)
+    cancelled_count = 0
+    had_running = False
+
+    for task in tasks:
+        if task.get("status") in ("queued", "running"):
+            if task.get("status") == "running":
+                had_running = True
+            update_task_status(
+                app_dir, task.get("id"), "cancelled", exit_code=130
+            )
+            cancelled_count += 1
+
+    cancel_path = get_task_cancel_path(app_dir)
+    os.makedirs(os.path.dirname(cancel_path), exist_ok=True)
+    try:
+        with open(cancel_path, "w", encoding="utf-8") as f:
+            json.dump({"cancelled_at": time.time()}, f)
+    except Exception:
+        pass
+
+    if had_running or cancelled_count > 0:
+        run(["docker", "rm", "-f", f"{app_name}_task_django"])
+        run(["docker", "rm", "-f", f"{app_name}_test_django"])
+
+    return cancelled_count
+
+
+def reset_task_registry(app_dir: str) -> None:
+    """
+    Usage:
+
+    - Resets the task registry and ID counter back to 1
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+    """
+    registry_path = get_task_registry_path(app_dir)
+    _write_registry_unlocked(registry_path, {"next_id": 1, "tasks": []})
+
+
+class TaskQueueLock:
+    """
+    Usage:
+
+    - Context manager to serialize and track tasks across processes and worktrees
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    - ``app_name``:
+        - Type: str
+        - What: The name of the CAVE application
+
+    Optional:
+
+    - ``command``:
+        - Type: str
+        - What: Name of task command (e.g. "test", "prettify")
+        - Default: "task"
+
+    - ``command_args``:
+        - Type: list[str] | None
+        - What: Arguments passed to the command
+        - Default: None
+
+    - ``timeout``:
+        - Type: float | None
+        - What: Maximum seconds to wait for lock acquisition before raising TimeoutError
+        - Default: None (waits indefinitely)
+    """
+
+    __test__ = False
+
+    def __init__(
+        self,
+        app_dir: str,
+        app_name: str,
+        command: str = "task",
+        command_args: list[str] | None = None,
+        timeout: float | None = None,
+        task_id: int | None = None,
+    ) -> None:
+        self.app_dir = app_dir
+        self.app_name = app_name
+        self.command = command
+        self.command_args = command_args or []
+        self.timeout = timeout
+        self.lock_path = get_task_lock_path(app_dir)
+        self.cancel_path = get_task_cancel_path(app_dir)
+        self.enqueue_time = time.time()
+        self.file_obj: IO[str] | None = None
+        self._acquired: bool = False
+        self._was_queued: bool = False
+        if task_id is not None:
+            self.task_id = task_id
+            self.task = get_task(app_dir, task_id) or {}
+        else:
+            self.task = register_task(
+                app_dir, app_name, command, self.command_args
+            )
+            self.task_id = self.task["id"]
+
+    def _is_cancelled(self) -> bool:
+        task = get_task(self.app_dir, self.task_id)
+        if task and task.get("status") == "cancelled":
+            return True
+        if os.path.exists(self.cancel_path):
+            try:
+                with open(self.cancel_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    cancelled_at = data.get("cancelled_at", 0)
+                    return cancelled_at >= self.enqueue_time
+            except Exception:
+                pass
+        return False
+
+    def _try_acquire_nonblocking(self) -> bool:
+        if not self.file_obj:
+            return False
+
+        if sys.platform == "win32":
+            self.file_obj.seek(0)
+            if os.fstat(self.file_obj.fileno()).st_size == 0:
+                self.file_obj.write(" ")
+                self.file_obj.flush()
+            self.file_obj.seek(0)
+            try:
+                msvcrt.locking(self.file_obj.fileno(), msvcrt.LK_NBLCK, 1)
+                return True
+            except OSError:
+                return False
+        else:
+            try:
+                fcntl.flock(
+                    self.file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB
+                )
+                return True
+            except (BlockingIOError, OSError):
+                return False
+
+    def acquire(self) -> None:
+        """
+        Usage:
+
+        - Acquires the exclusive task lock, waiting in the queue if necessary
+        """
+        if self._is_cancelled():
+            raise TaskQueueCancelledError(
+                f"Task #{self.task_id} was canceled before starting"
+            )
+
+        os.makedirs(os.path.dirname(self.lock_path), exist_ok=True)
+        self.file_obj = open(self.lock_path, "a+", encoding="utf-8")
+
+        if self._try_acquire_nonblocking():
+            if self._is_cancelled():
+                self.release()
+                raise TaskQueueCancelledError(
+                    f"Task #{self.task_id} was canceled"
+                )
+            self._acquired = True
+            update_task_status(self.app_dir, self.task_id, "running")
+            return
+
+        self._was_queued = True
+        project_name = get_project_name(self.app_dir) or self.app_name
+        label = (
+            f"Waiting for running task to finish [Task #{self.task_id}] "
+            f"({project_name})"
+        )
+        step_start(label)
+        logger.debug(
+            f"Task #{self.task_id} for '{self.app_name}' queued on lock {self.lock_path}"
+        )
+
+        start_time = time.time()
+        try:
+            while not self._acquired:
+                if self._try_acquire_nonblocking():
+                    if self._is_cancelled():
+                        step_fail(label, "Canceled by user")
+                        self.release()
+                        raise TaskQueueCancelledError(
+                            f"Task #{self.task_id} was canceled"
+                        )
+                    self._acquired = True
+                    update_task_status(self.app_dir, self.task_id, "running")
+                    break
+
+                if self._is_cancelled():
+                    step_fail(label, "Canceled by user")
+                    self.release()
+                    raise TaskQueueCancelledError(
+                        f"Task #{self.task_id} was canceled"
+                    )
+
+                if (
+                    self.timeout is not None
+                    and (time.time() - start_time) >= self.timeout
+                ):
+                    step_fail(label, "Timed out waiting for task slot")
+                    self.release()
+                    raise TimeoutError(
+                        f"Timed out waiting for task lock on {self.lock_path}"
+                    )
+
+                time.sleep(0.2)
+        except KeyboardInterrupt:
+            step_fail(label, "Canceled by user")
+            update_task_status(
+                self.app_dir, self.task_id, "cancelled", exit_code=130
+            )
+            self.release()
+            sys.exit(130)
+
+        step_done(label)
+
+    def release(self) -> None:
+        """
+        Usage:
+
+        - Releases the task lock and closes the lock file
+        """
+        if self._acquired and self.file_obj:
+            try:
+                if sys.platform == "win32":
+                    self.file_obj.seek(0)
+                    msvcrt.locking(self.file_obj.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(self.file_obj.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            self._acquired = False
+
+        if self.file_obj:
+            try:
+                self.file_obj.close()
+            except Exception:
+                pass
+            self.file_obj = None
+
+    def __enter__(self) -> "TaskQueueLock":
+        self.acquire()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        try:
+            if exc_type is not None:
+                if issubclass(exc_type, TaskQueueCancelledError):
+                    update_task_status(
+                        self.app_dir, self.task_id, "cancelled", exit_code=130
+                    )
+                elif issubclass(exc_type, SystemExit):
+                    code = getattr(exc_val, "code", 1)
+                    if code == 0:
+                        update_task_status(
+                            self.app_dir, self.task_id, "completed", exit_code=0
+                        )
+                    elif code == 130:
+                        update_task_status(
+                            self.app_dir,
+                            self.task_id,
+                            "cancelled",
+                            exit_code=130,
+                        )
+                    else:
+                        update_task_status(
+                            self.app_dir,
+                            self.task_id,
+                            "failed",
+                            exit_code=int(code) if isinstance(code, int) else 1,
+                        )
+                else:
+                    update_task_status(
+                        self.app_dir, self.task_id, "failed", exit_code=1
+                    )
+            else:
+                task = get_task(self.app_dir, self.task_id)
+                if not task or task.get("status") not in (
+                    "completed",
+                    "failed",
+                    "cancelled",
+                ):
+                    update_task_status(
+                        self.app_dir, self.task_id, "completed", exit_code=0
+                    )
+        finally:
+            self.release()

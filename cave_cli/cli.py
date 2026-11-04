@@ -66,6 +66,88 @@ def add_global_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def normalize_task_args(args: list[str]) -> list[str]:
+    """
+    Usage:
+
+    - Normalizes command line arguments for 'cave task' to route arbitrary commands to 'start'
+
+    Requires:
+
+    - ``args``:
+        - Type: list[str]
+        - What: Raw command line argument list
+
+    Returns:
+
+    - ``normalized``:
+        - Type: list[str]
+        - What: Argument list with 'start' injected when arbitrary commands are run directly
+    """
+    try:
+        idx = args.index("task")
+    except ValueError:
+        return args
+
+    known_actions = {
+        # Subcommands
+        "start",
+        "run",
+        "list",
+        "ls",
+        "list-all",
+        "la",
+        "attach",
+        "join",
+        "log",
+        "logs",
+        "kill",
+        "cancel",
+        "kill-all",
+        "cancel-all",
+        "reset",
+        "stop",
+        "kill-server",
+        # Action flags
+        "-l",
+        "--list",
+        "-la",
+        "--list-all",
+        "-a",
+        "--attach",
+        "-k",
+        "--kill",
+        "--kill-all",
+        "--reset",
+        "--stop",
+        "-h",
+        "--help",
+    }
+
+    after_task = args[idx + 1 :]
+    # If any known subcommand or action flag is present, or if no args after task, don't inject 'start'
+    if any(a in known_actions for a in after_task) or not after_task:
+        return args
+
+    # Find the position of the first non-option argument (skipping options and their arguments)
+    skip_next = False
+    options_with_value = {"--loglevel", "--ll", "--docker-args"}
+    for i, a in enumerate(after_task):
+        if skip_next:
+            skip_next = False
+            continue
+        if a in options_with_value:
+            skip_next = True
+            continue
+        if any(a.startswith(f"{opt}=") for opt in options_with_value):
+            continue
+        if not a.startswith("-"):
+            insert_pos = idx + 1 + i
+            return args[:insert_pos] + ["start"] + args[insert_pos:]
+
+    return args
+
+
 def main():
     __version__ = version("cave_cli")
     parser = argparse.ArgumentParser(
@@ -250,42 +332,22 @@ def main():
     )
     add_global_args(p_test)
     p_test.add_argument(
+        "-d",
+        "--detached",
+        action="store_true",
+        default=False,
+        help="Run test task in detached background mode",
+    )
+    p_test.add_argument(
         "--docker-args",
         default="",
         metavar="ARGS",
         help="Additional arguments to pass to docker run",
     )
     p_test.add_argument(
-        "--keep-alive",
-        type=int,
-        default=10,
-        metavar="MINUTES",
-        help="Minutes to keep test server alive after last test finishes (default: 10, 0 = stop immediately)",
-    )
-    p_test.add_argument(
-        "--reset",
-        action="store_true",
-        default=False,
-        help="Rebuild image and reinitialize database when this test runs",
-    )
-    p_test.add_argument(
-        "-c",
-        "--cancel",
-        action="store_true",
-        default=False,
-        help="Cancel running test and clear test queue",
-    )
-    p_test.add_argument(
-        "-k",
-        "--kill-server",
-        action="store_true",
-        default=False,
-        help="Cancel running test, clear test queue, and stop test server",
-    )
-    p_test.add_argument(
         "remaining",
         nargs="*",
-        help="Additional arguments passed to the test runner (or 'cancel' / 'kill-server')",
+        help="Test files or pytest arguments",
     )
 
     # ------------------------------------------------------------------ #
@@ -297,8 +359,223 @@ def main():
     )
     add_global_args(p_prettify)
     p_prettify.add_argument(
+        "-d",
+        "--detached",
+        action="store_true",
+        default=False,
+        help="Run prettify task in detached background mode",
+    )
+    p_prettify.add_argument(
         "--docker-args",
         default="",
+        metavar="ARGS",
+        help="Additional arguments to pass to docker run",
+    )
+    p_prettify.add_argument(
+        "remaining",
+        nargs="*",
+        help="Additional arguments passed to the prettify task",
+    )
+
+    # ------------------------------------------------------------------ #
+    # task                                                                 #
+    # ------------------------------------------------------------------ #
+    p_task = subparsers.add_parser(
+        "task",
+        help="Inspect, kill, and manage running tasks and task runner",
+    )
+    add_global_args(p_task)
+    p_task.add_argument(
+        "-l",
+        "--list",
+        action="store_true",
+        default=False,
+        help="List current active tasks (queued and running)",
+    )
+    p_task.add_argument(
+        "-la",
+        "--list-all",
+        action="store_true",
+        default=False,
+        help="List all tasks including completed, failed, and cancelled",
+    )
+    p_task.add_argument(
+        "-a",
+        "--attach",
+        nargs="?",
+        const=-1,
+        type=int,
+        dest="attach_id",
+        default=None,
+        metavar="ID",
+        help="Attach to a task to follow progress and output",
+    )
+    p_task.add_argument(
+        "-d",
+        "--detached",
+        action="store_true",
+        default=False,
+        help="Run task in detached background mode",
+    )
+    p_task.add_argument(
+        "-k",
+        "--kill",
+        type=int,
+        dest="kill_id",
+        default=None,
+        metavar="ID",
+        help="Kill a specific task by its incremental ID",
+    )
+    p_task.add_argument(
+        "--kill-all",
+        action="store_true",
+        default=False,
+        help="Cancel all queued and running tasks",
+    )
+    p_task.add_argument(
+        "--reset",
+        action="store_true",
+        default=False,
+        help="Reset task runner database and rebuild container image",
+    )
+    p_task.add_argument(
+        "--stop",
+        action="store_true",
+        default=False,
+        help="Stop task server containers",
+    )
+    p_task.add_argument(
+        "--docker-args",
+        default="",
+        metavar="ARGS",
+        help="Additional arguments to pass to docker run",
+    )
+
+    task_subparsers = p_task.add_subparsers(
+        dest="task_action",
+        metavar="subcommand",
+    )
+
+    # task start
+    p_task_start = task_subparsers.add_parser(
+        "start",
+        aliases=["run"],
+        help="Schedule and run a task or script sequentially in the task container",
+        description="Schedule and run arbitrary files or container commands in the task queue.",
+    )
+    add_global_args(p_task_start)
+    p_task_start.add_argument(
+        "-d",
+        "--detached",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Run task in detached background mode",
+    )
+    p_task_start.add_argument(
+        "--docker-args",
+        default=argparse.SUPPRESS,
+        metavar="ARGS",
+        help="Additional arguments to pass to docker run",
+    )
+    p_task_start.add_argument(
+        "task_cmd",
+        nargs="+",
+        metavar="command",
+        help="Command or script to execute in task container (e.g. utils/prettify.py, python manage.py migrate)",
+    )
+
+    # task stop
+    p_task_stop = task_subparsers.add_parser(
+        "stop",
+        aliases=["kill-server"],
+        help="Stop task server containers and clean up completed tasks",
+        description="Stop and remove background task runner containers and delete completed task logs.",
+    )
+    add_global_args(p_task_stop)
+
+    # task list
+    p_task_list = task_subparsers.add_parser(
+        "list",
+        aliases=["ls"],
+        help="List current active tasks (queued and running)",
+        description="Display active tasks in the queue with incremental IDs, status, and duration.",
+    )
+    add_global_args(p_task_list)
+    p_task_list.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        dest="list_all",
+        default=argparse.SUPPRESS,
+        help="List all tasks including completed, failed, and cancelled",
+    )
+
+    # task list-all
+    p_task_list_all = task_subparsers.add_parser(
+        "list-all",
+        aliases=["la"],
+        help="List all tasks including completed, failed, and cancelled",
+        description="Display all recorded tasks in the project registry.",
+    )
+    add_global_args(p_task_list_all)
+
+    # task attach
+    p_task_attach = task_subparsers.add_parser(
+        "attach",
+        aliases=["join", "log", "logs"],
+        help="Attach to a task to follow live progress and output",
+        description=(
+            "Reattach to a queued or running task to view live streaming logs.\n\n"
+            "Controls while attached:\n"
+            "  Esc      Detach from task and return to terminal (task continues running)\n"
+            "  Ctrl+C   Cancel and terminate the task"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    add_global_args(p_task_attach)
+    p_task_attach.add_argument(
+        "task_id",
+        nargs="?",
+        type=int,
+        default=None,
+        metavar="ID",
+        help="Incremental ID of task to attach to (default: current active task)",
+    )
+
+    # task kill
+    p_task_kill = task_subparsers.add_parser(
+        "kill",
+        aliases=["cancel"],
+        help="Cancel or terminate a specific task by its incremental ID",
+        description="Cancel a queued task or terminate a running task's container execution.",
+    )
+    add_global_args(p_task_kill)
+    p_task_kill.add_argument(
+        "task_id",
+        type=int,
+        metavar="ID",
+        help="Incremental ID of the task to kill",
+    )
+
+    # task kill-all
+    p_task_kill_all = task_subparsers.add_parser(
+        "kill-all",
+        aliases=["cancel-all"],
+        help="Cancel all queued and running tasks",
+        description="Cancel all queued tasks and terminate any currently running task container.",
+    )
+    add_global_args(p_task_kill_all)
+
+    # task reset
+    p_task_reset = task_subparsers.add_parser(
+        "reset",
+        help="Reset task runner database and rebuild container image",
+        description="Tear down the task server, remove database/redis volumes, rebuild image, and reset task registry.",
+    )
+    add_global_args(p_task_reset)
+    p_task_reset.add_argument(
+        "--docker-args",
+        default=argparse.SUPPRESS,
         metavar="ARGS",
         help="Additional arguments to pass to docker run",
     )
@@ -343,10 +620,11 @@ def main():
     )
     p_kill.add_argument(
         "-t",
+        "--task",
         "--test",
         action="store_true",
         default=False,
-        help="Stop test server containers instead of live app",
+        help="Stop task server containers instead of live app",
     )
 
     # ------------------------------------------------------------------ #
@@ -444,15 +722,28 @@ def main():
     )
 
     # ------------------------------------------------------------------ #
-    # _test-watcher (internal idle daemon)                                 #
+    # _task-watcher / _test-watcher (internal idle daemon)                #
     # ------------------------------------------------------------------ #
     p_watcher = subparsers.add_parser(
-        "_test-watcher",
+        "_task-watcher",
+        aliases=["_test-watcher"],
         help=argparse.SUPPRESS,
     )
     p_watcher.add_argument("app_dir")
     p_watcher.add_argument("app_name")
     p_watcher.add_argument("keep_alive", type=int)
+
+    # ------------------------------------------------------------------ #
+    # _task-runner (internal task execution worker)                       #
+    # ------------------------------------------------------------------ #
+    p_task_runner = subparsers.add_parser(
+        "_task-runner",
+        help=argparse.SUPPRESS,
+    )
+    p_task_runner.add_argument("app_dir")
+    p_task_runner.add_argument("app_name")
+    p_task_runner.add_argument("task_id", type=int)
+    p_task_runner.add_argument("--docker-args", default="")
 
     # ------------------------------------------------------------------ #
     # completion                                                           #
@@ -507,7 +798,7 @@ def main():
     # ------------------------------------------------------------------ #
     # Dispatch                                                             #
     # ------------------------------------------------------------------ #
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_task_args(sys.argv[1:]))
 
     if args.command is None:
         parser.print_help()
@@ -573,21 +864,30 @@ def main():
         from cave_cli.commands.doctor import check_all
         from cave_cli.commands.test import test
 
-        remaining = getattr(args, "remaining", []) or []
-        if remaining and remaining[0] == "cancel":
-            args.cancel = True
-            args.remaining = remaining[1:]
-        elif remaining and remaining[0] == "kill-server":
-            args.kill_server = True
-            args.remaining = remaining[1:]
-
         check_all()
         test(args)
 
-    elif args.command == "_test-watcher":
-        from cave_cli.utils.test_server import run_idle_watcher
+    elif args.command in ("_task-watcher", "_test-watcher"):
+        from cave_cli.utils.task_server import run_task_idle_watcher
 
-        run_idle_watcher(args.app_dir, args.app_name, args.keep_alive)
+        run_task_idle_watcher(args.app_dir, args.app_name, args.keep_alive)
+
+    elif args.command == "_task-runner":
+        from cave_cli.commands.task import run_task_worker
+
+        run_task_worker(
+            args.app_dir,
+            args.app_name,
+            args.task_id,
+            docker_args_str=args.docker_args,
+        )
+
+    elif args.command == "task":
+        from cave_cli.commands.doctor import check_all
+        from cave_cli.commands.task import task
+
+        check_all()
+        task(args)
 
     elif args.command == "prettify":
         from cave_cli.commands.doctor import check_all

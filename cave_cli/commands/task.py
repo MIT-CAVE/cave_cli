@@ -4,7 +4,7 @@ import shlex
 import subprocess
 import sys
 import time
-from typing import IO
+from typing import IO, Any
 
 from cave_cli.utils.display import print_section
 from cave_cli.utils.logger import logger
@@ -300,6 +300,184 @@ def _read_nonblocking_key(fd: int | None = None) -> str | None:
     return None
 
 
+def _get_next_active_task(
+    app_dir: str, after_id: int | None = None
+) -> dict[str, Any] | None:
+    """
+    Usage:
+
+    - Resolves the next running or queued task in the queue
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: Root directory of CAVE app
+
+    Optional:
+
+    - ``after_id``:
+        - Type: int | None
+        - What: Optional task ID threshold; only considers tasks with ID strictly greater than after_id
+        - Default: None
+
+    Returns:
+
+    - ``task``:
+        - Type: dict[str, Any] | None
+        - What: Next active task dictionary or None if no active tasks remain
+    """
+    tasks = list_tasks(app_dir)
+    if after_id is not None:
+        tasks = [t for t in tasks if t.get("id", 0) > after_id]
+
+    running = [t for t in tasks if t.get("status") == "running"]
+    if running:
+        return min(running, key=lambda t: t.get("id", 0))
+
+    queued = [t for t in tasks if t.get("status") == "queued"]
+    if queued:
+        return min(queued, key=lambda t: t.get("id", 0))
+
+    return None
+
+
+def _stream_task(
+    app_dir: str,
+    app_name: str,
+    task_id: int,
+    fd: int | None,
+    follow_all: bool = False,
+) -> tuple[int, bool]:
+    """
+    Usage:
+
+    - Streams logs and progress for a single task until completion or detachment
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: Root directory of CAVE app
+
+    - ``app_name``:
+        - Type: str
+        - What: Name of CAVE app
+
+    - ``task_id``:
+        - Type: int
+        - What: Incremental ID of task to stream
+
+    - ``fd``:
+        - Type: int | None
+        - What: File descriptor for nonblocking key reads or None
+
+    Optional:
+
+    - ``follow_all``:
+        - Type: bool
+        - What: Whether attachment is in multi-task follow mode
+        - Default: False
+
+    Returns:
+
+    - ``result``:
+        - Type: tuple[int, bool]
+        - What: Tuple containing (exit_code, detached)
+    """
+    task_info = get_task(app_dir, task_id)
+    if not task_info:
+        logger.error(f"Task #{task_id} not found.")
+        return 1, False
+
+    shown_queued_msg = False
+    while True:
+        task_info = get_task(app_dir, task_id) or task_info
+        status = task_info.get("status")
+        if status != "queued":
+            break
+
+        if not shown_queued_msg:
+            print_section(f"Task #{task_id} Queued")
+            print(
+                "Waiting for previous tasks to finish... (Press Esc to detach, Ctrl+C to cancel)\n"
+            )
+            shown_queued_msg = True
+
+        key = _read_nonblocking_key(fd)
+        if key == "ESC":
+            rejoin_cmd = (
+                "cave task attach"
+                if follow_all
+                else f"cave task attach {task_id}"
+            )
+            print(f"\nDetached from task #{task_id}. Rejoin with: {rejoin_cmd}")
+            return 0, True
+
+        time.sleep(0.1)
+
+    print_section(f"Task #{task_id} [{task_info.get('status', '').upper()}]")
+    if task_info.get("status") == "running":
+        print(
+            f"Running: {task_info.get('command')} {' '.join(task_info.get('args', []))}"
+        )
+        print("Streaming output... (Press Esc to detach, Ctrl+C to cancel)\n")
+
+    log_path = get_task_log_path(app_dir, task_id)
+    log_file: IO[str] | None = None
+    wait_start = time.time()
+    while not os.path.exists(log_path) and (time.time() - wait_start) < 5:
+        time.sleep(0.05)
+
+    if os.path.exists(log_path):
+        log_file = open(log_path, "r", encoding="utf-8", errors="replace")
+
+    try:
+        while True:
+            if log_file:
+                chunk = log_file.read(4096)
+                if chunk:
+                    sys.stdout.write(chunk)
+                    sys.stdout.flush()
+
+            key = _read_nonblocking_key(fd)
+            if key == "ESC":
+                rejoin_cmd = (
+                    "cave task attach"
+                    if follow_all
+                    else f"cave task attach {task_id}"
+                )
+                print(
+                    f"\nDetached from task #{task_id}. Rejoin with: {rejoin_cmd}"
+                )
+                return 0, True
+
+            task_info = get_task(app_dir, task_id) or task_info
+            status = task_info.get("status")
+            if status in ("completed", "failed", "cancelled"):
+                if log_file:
+                    remaining = log_file.read()
+                    if remaining:
+                        sys.stdout.write(remaining)
+                        sys.stdout.flush()
+                exit_code = task_info.get("exit_code", 0)
+                if status == "completed":
+                    logger.success(f"Task #{task_id} finished successfully.")
+                elif status == "cancelled":
+                    logger.warn(f"Task #{task_id} was cancelled.")
+                else:
+                    logger.error(
+                        f"Task #{task_id} failed with exit code {exit_code}."
+                    )
+                final_code = exit_code or (0 if status == "completed" else 1)
+                return final_code, False
+
+            time.sleep(0.05)
+    finally:
+        if log_file:
+            log_file.close()
+
+
 def attach_to_task(
     app_dir: str,
     app_name: str,
@@ -308,7 +486,9 @@ def attach_to_task(
     """
     Usage:
 
-    - Attaches to a queued or running task, streaming output with Esc to detach and Ctrl+C to cancel
+    - Attaches to a queued or running task, streaming output with Esc to detach and Ctrl+C to cancel.
+    - If task_id is specified, streams that task until it completes and exits.
+    - If task_id is None, joins the current active task and follows subsequent tasks until all are finished.
 
     Requires:
 
@@ -324,36 +504,34 @@ def attach_to_task(
 
     - ``task_id``:
         - Type: int | None
-        - What: Specific task ID to attach to, or None to auto-detect active task
+        - What: Specific task ID to attach to, or None to follow all active tasks sequentially
         - Default: None
 
     Returns:
 
     - ``exit_code``:
         - Type: int
-        - What: Exit code of the task, or 0 if detached
+        - What: Exit code of the task(s), or 0 if detached
     """
-    if task_id is None or task_id <= 0:
-        tasks = list_tasks(app_dir)
-        active = [t for t in tasks if t.get("status") == "running"]
-        if not active:
-            active = [t for t in tasks if t.get("status") == "queued"]
-        if active:
-            task_info = active[-1]
-            task_id = task_info["id"]
-        elif tasks:
-            task_info = tasks[-1]
-            task_id = task_info["id"]
-        else:
-            logger.info(f"No tasks recorded for '{app_name}'.")
+    follow_all = task_id is None or task_id <= 0
+    current_id: int | None = None
+
+    if follow_all:
+        first_task = _get_next_active_task(app_dir)
+        if not first_task:
+            tasks = list_tasks(app_dir)
+            if not tasks:
+                logger.info(f"No tasks recorded for '{app_name}'.")
+            else:
+                logger.info(f"No active tasks for '{app_name}'.")
             return 0
+        current_id = first_task["id"]
     else:
         task_info = get_task(app_dir, task_id)
         if not task_info:
             logger.error(f"Task #{task_id} not found.")
             return 1
-
-    log_path = get_task_log_path(app_dir, task_id)
+        current_id = task_id
 
     fd: int | None = None
     old_settings = None
@@ -369,93 +547,37 @@ def attach_to_task(
         except Exception:
             fd = None
 
+    overall_exit_code = 0
     try:
-        shown_queued_msg = False
-        while True:
-            task_info = get_task(app_dir, task_id) or task_info
-            status = task_info.get("status")
-            if status != "queued":
+        while current_id is not None:
+            code, detached = _stream_task(
+                app_dir=app_dir,
+                app_name=app_name,
+                task_id=current_id,
+                fd=fd,
+                follow_all=follow_all,
+            )
+            if detached:
+                return 0
+            if overall_exit_code == 0 and code != 0:
+                overall_exit_code = code
+
+            if not follow_all:
                 break
 
-            if not shown_queued_msg:
-                print_section(f"Task #{task_id} Queued")
-                print(
-                    "Waiting for previous tasks to finish... (Press Esc to detach, Ctrl+C to cancel)\n"
-                )
-                shown_queued_msg = True
+            next_task = _get_next_active_task(app_dir, after_id=current_id)
+            if not next_task:
+                time.sleep(0.1)
+                next_task = _get_next_active_task(app_dir, after_id=current_id)
 
-            key = _read_nonblocking_key(fd)
-            if key == "ESC":
-                print(
-                    f"\nDetached from task #{task_id}. Rejoin with: cave task attach {task_id}"
-                )
-                return 0
+            current_id = next_task["id"] if next_task else None
 
-            time.sleep(0.1)
-
-        print_section(
-            f"Task #{task_id} [{task_info.get('status', '').upper()}]"
-        )
-        if task_info.get("status") == "running":
-            print(
-                f"Running: {task_info.get('command')} {' '.join(task_info.get('args', []))}"
-            )
-            print(
-                "Streaming output... (Press Esc to detach, Ctrl+C to cancel)\n"
-            )
-
-        log_file: IO[str] | None = None
-        wait_start = time.time()
-        while not os.path.exists(log_path) and (time.time() - wait_start) < 5:
-            time.sleep(0.05)
-
-        if os.path.exists(log_path):
-            log_file = open(log_path, "r", encoding="utf-8", errors="replace")
-
-        try:
-            while True:
-                if log_file:
-                    chunk = log_file.read(4096)
-                    if chunk:
-                        sys.stdout.write(chunk)
-                        sys.stdout.flush()
-
-                key = _read_nonblocking_key(fd)
-                if key == "ESC":
-                    print(
-                        f"\nDetached from task #{task_id}. Rejoin with: cave task attach {task_id}"
-                    )
-                    return 0
-
-                task_info = get_task(app_dir, task_id) or task_info
-                status = task_info.get("status")
-                if status in ("completed", "failed", "cancelled"):
-                    if log_file:
-                        remaining = log_file.read()
-                        if remaining:
-                            sys.stdout.write(remaining)
-                            sys.stdout.flush()
-                    exit_code = task_info.get("exit_code", 0)
-                    if status == "completed":
-                        logger.success(
-                            f"Task #{task_id} finished successfully."
-                        )
-                    elif status == "cancelled":
-                        logger.warn(f"Task #{task_id} was cancelled.")
-                    else:
-                        logger.error(
-                            f"Task #{task_id} failed with exit code {exit_code}."
-                        )
-                    return exit_code or (0 if status == "completed" else 1)
-
-                time.sleep(0.05)
-        finally:
-            if log_file:
-                log_file.close()
+        return overall_exit_code
 
     except KeyboardInterrupt:
-        cancel_task(app_dir, app_name, task_id)
-        print(f"\nTask #{task_id} canceled.")
+        if current_id is not None:
+            cancel_task(app_dir, app_name, current_id)
+            print(f"\nTask #{current_id} canceled.")
         return 130
     finally:
         if old_settings is not None and fd is not None:

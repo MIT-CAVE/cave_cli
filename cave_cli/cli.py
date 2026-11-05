@@ -408,7 +408,7 @@ def main():
         dest="attach_id",
         default=None,
         metavar="ID",
-        help="Attach to a task to follow progress and output",
+        help="Attach to a task (or follow all active tasks if ID omitted)",
     )
     p_task.add_argument(
         "-d",
@@ -526,6 +526,9 @@ def main():
         help="Attach to a task to follow live progress and output",
         description=(
             "Reattach to a queued or running task to view live streaming logs.\n\n"
+            "If no ID is specified, attaches to the current active task and\n"
+            "sequentially follows each subsequent task until all are done.\n"
+            "If an ID is specified, attaches only to that task and exits upon completion.\n\n"
             "Controls while attached:\n"
             "  Esc      Detach from task and return to terminal (task continues running)\n"
             "  Ctrl+C   Cancel and terminate the task"
@@ -539,7 +542,7 @@ def main():
         type=int,
         default=None,
         metavar="ID",
-        help="Incremental ID of task to attach to (default: current active task)",
+        help="Incremental ID of task to attach to (default: follow all active tasks)",
     )
 
     # task kill

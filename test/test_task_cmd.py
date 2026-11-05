@@ -4,7 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cave_cli.commands.task import task
+from cave_cli.commands.task import (
+    _get_next_active_task,
+    attach_to_task,
+    task,
+)
 
 
 @pytest.fixture
@@ -199,3 +203,182 @@ class TestTaskCommand:
         )
         task(args)
         mock_attach.assert_called_once_with(fake_app[0], fake_app[1], 3)
+
+    @patch("cave_cli.commands.task.get_app")
+    @patch("cave_cli.commands.task.attach_to_task", return_value=0)
+    def test_task_attach_no_id_subcommand(
+        self, mock_attach, mock_get_app, fake_app
+    ):
+        mock_get_app.return_value = fake_app
+        args = argparse.Namespace(
+            task_action="attach",
+            task_id=None,
+            attach_id=None,
+            kill_id=None,
+            kill_all=False,
+            remaining=[],
+        )
+        task(args)
+        mock_attach.assert_called_once_with(fake_app[0], fake_app[1], None)
+
+    @patch("cave_cli.commands.task.get_app")
+    @patch("cave_cli.commands.task.attach_to_task", return_value=0)
+    def test_task_attach_no_id_flag(self, mock_attach, mock_get_app, fake_app):
+        mock_get_app.return_value = fake_app
+        args = argparse.Namespace(
+            attach_id=-1,
+            kill_id=None,
+            kill_all=False,
+            remaining=[],
+        )
+        task(args)
+        mock_attach.assert_called_once_with(fake_app[0], fake_app[1], None)
+
+
+class TestTaskAttachLogic:
+    @patch("cave_cli.commands.task.list_tasks")
+    def test_get_next_active_task_prefers_running(
+        self, mock_list_tasks, fake_app
+    ):
+        mock_list_tasks.return_value = [
+            {"id": 1, "status": "completed"},
+            {"id": 2, "status": "queued"},
+            {"id": 3, "status": "running"},
+            {"id": 4, "status": "queued"},
+        ]
+        next_t = _get_next_active_task(fake_app[0])
+        assert next_t is not None
+        assert next_t["id"] == 3
+
+    @patch("cave_cli.commands.task.list_tasks")
+    def test_get_next_active_task_queued_order(self, mock_list_tasks, fake_app):
+        mock_list_tasks.return_value = [
+            {"id": 2, "status": "queued"},
+            {"id": 3, "status": "queued"},
+        ]
+        next_t = _get_next_active_task(fake_app[0])
+        assert next_t is not None
+        assert next_t["id"] == 2
+
+    @patch("cave_cli.commands.task.list_tasks")
+    def test_get_next_active_task_after_id(self, mock_list_tasks, fake_app):
+        mock_list_tasks.return_value = [
+            {"id": 1, "status": "completed"},
+            {"id": 2, "status": "queued"},
+            {"id": 3, "status": "queued"},
+        ]
+        next_t = _get_next_active_task(fake_app[0], after_id=2)
+        assert next_t is not None
+        assert next_t["id"] == 3
+
+    @patch("cave_cli.commands.task.list_tasks")
+    def test_get_next_active_task_none_when_empty_or_done(
+        self, mock_list_tasks, fake_app
+    ):
+        mock_list_tasks.return_value = [
+            {"id": 1, "status": "completed"},
+            {"id": 2, "status": "failed"},
+        ]
+        assert _get_next_active_task(fake_app[0]) is None
+
+    @patch("cave_cli.commands.task.get_task", return_value=None)
+    def test_attach_to_task_specified_id_not_found(
+        self, mock_get_task, fake_app
+    ):
+        code = attach_to_task(fake_app[0], fake_app[1], task_id=99)
+        assert code == 1
+
+    @patch("cave_cli.commands.task._stream_task", return_value=(0, False))
+    @patch("cave_cli.commands.task.get_task")
+    def test_attach_to_task_specified_id_exits_without_following(
+        self, mock_get_task, mock_stream_task, fake_app
+    ):
+        mock_get_task.return_value = {"id": 5, "status": "running"}
+        code = attach_to_task(fake_app[0], fake_app[1], task_id=5)
+        assert code == 0
+        mock_stream_task.assert_called_once_with(
+            app_dir=fake_app[0],
+            app_name=fake_app[1],
+            task_id=5,
+            fd=None,
+            follow_all=False,
+        )
+
+    @patch("cave_cli.commands.task.list_tasks", return_value=[])
+    def test_attach_to_task_no_id_no_tasks(self, mock_list_tasks, fake_app):
+        code = attach_to_task(fake_app[0], fake_app[1], task_id=None)
+        assert code == 0
+
+    @patch(
+        "cave_cli.commands.task.list_tasks",
+        return_value=[{"id": 1, "status": "completed"}],
+    )
+    def test_attach_to_task_no_id_no_active_tasks(
+        self, mock_list_tasks, fake_app
+    ):
+        code = attach_to_task(fake_app[0], fake_app[1], task_id=None)
+        assert code == 0
+
+    @patch("cave_cli.commands.task._stream_task")
+    @patch("cave_cli.commands.task.list_tasks")
+    def test_attach_to_task_no_id_jumps_until_all_done(
+        self, mock_list_tasks, mock_stream_task, fake_app
+    ):
+        # Initial: task 1 running, task 2 queued
+        # After task 1 done: task 2 running
+        # After task 2 done: no active tasks
+        def fake_list_tasks(app_dir):
+            if mock_stream_task.call_count == 0:
+                return [
+                    {"id": 1, "status": "running"},
+                    {"id": 2, "status": "queued"},
+                ]
+            elif mock_stream_task.call_count == 1:
+                return [
+                    {"id": 1, "status": "completed"},
+                    {"id": 2, "status": "running"},
+                ]
+            else:
+                return [
+                    {"id": 1, "status": "completed"},
+                    {"id": 2, "status": "completed"},
+                ]
+
+        mock_list_tasks.side_effect = fake_list_tasks
+        mock_stream_task.side_effect = [(0, False), (0, False)]
+
+        code = attach_to_task(fake_app[0], fake_app[1], task_id=None)
+        assert code == 0
+        assert mock_stream_task.call_count == 2
+        calls = mock_stream_task.call_args_list
+        assert calls[0].kwargs["task_id"] == 1
+        assert calls[0].kwargs["follow_all"] is True
+        assert calls[1].kwargs["task_id"] == 2
+        assert calls[1].kwargs["follow_all"] is True
+
+    @patch("cave_cli.commands.task._stream_task")
+    @patch("cave_cli.commands.task.list_tasks")
+    def test_attach_to_task_no_id_stops_on_detach(
+        self, mock_list_tasks, mock_stream_task, fake_app
+    ):
+        mock_list_tasks.return_value = [
+            {"id": 1, "status": "running"},
+            {"id": 2, "status": "queued"},
+        ]
+        # User presses ESC during task 1
+        mock_stream_task.return_value = (0, True)
+
+        code = attach_to_task(fake_app[0], fake_app[1], task_id=None)
+        assert code == 0
+        assert mock_stream_task.call_count == 1
+
+    @patch("cave_cli.commands.task.cancel_task")
+    @patch("cave_cli.commands.task._stream_task", side_effect=KeyboardInterrupt)
+    @patch("cave_cli.commands.task.list_tasks")
+    def test_attach_to_task_ctrl_c_cancels_current_task(
+        self, mock_list_tasks, mock_stream_task, mock_cancel_task, fake_app
+    ):
+        mock_list_tasks.return_value = [{"id": 4, "status": "running"}]
+        code = attach_to_task(fake_app[0], fake_app[1], task_id=None)
+        assert code == 130
+        mock_cancel_task.assert_called_once_with(fake_app[0], fake_app[1], 4)

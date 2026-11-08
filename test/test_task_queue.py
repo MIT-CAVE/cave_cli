@@ -128,6 +128,53 @@ class TestTaskQueueRegistry:
         new_task = register_task(fake_app_dir, "sample_app", "test", [])
         assert new_task["id"] == 1
 
+    def test_concurrent_task_registration(self, fake_app_dir):
+        from concurrent.futures import ThreadPoolExecutor
+
+        num_tasks = 20
+
+        def register_one(idx):
+            cmd = "prettify" if idx % 2 == 0 else "test"
+            return register_task(fake_app_dir, "sample_app", cmd, [str(idx)])
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(register_one, range(num_tasks)))
+
+        task_ids = [t["id"] for t in results]
+        assert len(set(task_ids)) == num_tasks
+        assert sorted(task_ids) == list(range(1, num_tasks + 1))
+
+        all_tasks = list_tasks(fake_app_dir)
+        assert len(all_tasks) == num_tasks
+
+    def test_register_task_removes_stale_log(self, fake_app_dir):
+        log_path = get_task_log_path(fake_app_dir, 1)
+        Path(log_path).write_text("old stale output", encoding="utf-8")
+        assert os.path.exists(log_path)
+
+        t = register_task(fake_app_dir, "sample_app", "prettify", [])
+        assert t["id"] == 1
+        # Stale log should have been cleaned upon registration
+        assert not os.path.exists(log_path)
+
+    def test_reset_task_registry_cleans_all_logs(self, fake_app_dir):
+        log1 = get_task_log_path(fake_app_dir, 1)
+        log2 = get_task_log_path(fake_app_dir, 2)
+        Path(log1).write_text("log 1", encoding="utf-8")
+        Path(log2).write_text("log 2", encoding="utf-8")
+
+        reset_task_registry(fake_app_dir)
+        assert not os.path.exists(log1)
+        assert not os.path.exists(log2)
+
+    def test_task_registry_lock_reentrancy(self, fake_app_dir):
+        from cave_cli.utils.task_queue import TaskRegistryLock
+
+        with TaskRegistryLock(fake_app_dir):
+            with TaskRegistryLock(fake_app_dir):
+                t = register_task(fake_app_dir, "sample_app", "test", [])
+                assert t["id"] == 1
+
 
 class TestTaskQueueLock:
     def test_task_lock_success(self, fake_app_dir):
@@ -138,6 +185,14 @@ class TestTaskQueueLock:
 
         retrieved = get_task(fake_app_dir, 1)
         assert retrieved["status"] == "completed"
+
+    def test_task_lock_no_register(self, fake_app_dir):
+        with TaskQueueLock(fake_app_dir, "sample_app", register=False) as lock:
+            assert lock.task_id is None
+            assert lock.task is None
+
+        tasks = list_tasks(fake_app_dir)
+        assert len(tasks) == 0
 
     def test_task_lock_cancelled_prior(self, fake_app_dir):
         lock = TaskQueueLock(fake_app_dir, "sample_app", command="test")

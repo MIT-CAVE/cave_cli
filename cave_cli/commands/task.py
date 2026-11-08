@@ -243,6 +243,10 @@ def run_task_worker(
             command_args=task_info.get("args", []),
             task_id=task_id,
         ):
+            # Ensure log file exists and is cleanly truncated for this run
+            with open(log_path, "w", encoding="utf-8") as f:
+                pass
+
             if not is_task_server_running(app_name):
                 start_task_server(app_dir, app_name, extra_docker_args)
             else:
@@ -258,12 +262,14 @@ def run_task_worker(
 
             touch_task_activity(app_dir, app_name)
             ensure_task_idle_watcher(app_dir, app_name, 10)
-            update_task_status(
-                app_dir,
-                task_id,
-                "completed" if exit_code == 0 else "failed",
-                exit_code=exit_code,
-            )
+            cur_task = get_task(app_dir, task_id)
+            if not cur_task or cur_task.get("status") != "cancelled":
+                update_task_status(
+                    app_dir,
+                    task_id,
+                    "completed" if exit_code == 0 else "failed",
+                    exit_code=exit_code,
+                )
     except TaskQueueCancelledError:
         with open(log_path, "a", encoding="utf-8") as log_f:
             log_f.write("\nTask was canceled before execution.\n")
@@ -425,15 +431,16 @@ def _stream_task(
 
     log_path = get_task_log_path(app_dir, task_id)
     log_file: IO[str] | None = None
-    wait_start = time.time()
-    while not os.path.exists(log_path) and (time.time() - wait_start) < 5:
-        time.sleep(0.05)
-
     if os.path.exists(log_path):
         log_file = open(log_path, "r", encoding="utf-8", errors="replace")
 
     try:
         while True:
+            if log_file is None and os.path.exists(log_path):
+                log_file = open(
+                    log_path, "r", encoding="utf-8", errors="replace"
+                )
+
             if log_file:
                 chunk = log_file.read(4096)
                 if chunk:
@@ -455,6 +462,10 @@ def _stream_task(
             task_info = get_task(app_dir, task_id) or task_info
             status = task_info.get("status")
             if status in ("completed", "failed", "cancelled"):
+                if log_file is None and os.path.exists(log_path):
+                    log_file = open(
+                        log_path, "r", encoding="utf-8", errors="replace"
+                    )
                 if log_file:
                     remaining = log_file.read()
                     if remaining:
@@ -662,7 +673,9 @@ def schedule_task(
     )
     task_id = task_record["id"]
 
-    spawn_task_runner(app_dir, app_name, task_id, docker_args)
+    runner_pid = spawn_task_runner(app_dir, app_name, task_id, docker_args)
+    if runner_pid > 0:
+        update_task_pid(app_dir, task_id, runner_pid)
 
     if detached:
         logger.success(

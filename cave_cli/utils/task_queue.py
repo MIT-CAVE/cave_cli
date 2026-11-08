@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from types import TracebackType
@@ -115,6 +116,150 @@ def get_task_cancel_path(app_dir: str) -> str:
     return lock_path.replace(".lock", "_cancel.json")
 
 
+def get_task_registry_lock_path(app_dir: str) -> str:
+    """
+    Usage:
+
+    - Resolves the lock file path used to serialize task registry access
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``lock_path``:
+        - Type: str
+        - What: The absolute path to the task registry lock file
+    """
+    lock_path = get_task_lock_path(app_dir)
+    if lock_path.endswith("cave_task.lock"):
+        return os.path.join(
+            os.path.dirname(lock_path), "cave_task_registry.lock"
+        )
+    return lock_path.replace(".lock", "_registry.lock")
+
+
+class TaskRegistryLock:
+    """
+    Usage:
+
+    - Re-entrant context manager providing synchronization for task registry operations
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Optional:
+
+    - ``timeout``:
+        - Type: float
+        - What: Maximum seconds to wait for registry lock acquisition before proceeding
+        - Default: 10.0
+    """
+
+    _thread_locks: dict[str, threading.RLock] = {}
+    _file_depths: dict[str, int] = {}
+    _file_objs: dict[str, IO[str]] = {}
+    _meta_lock = threading.Lock()
+
+    def __init__(self, app_dir: str, timeout: float = 10.0) -> None:
+        self.lock_path = get_task_registry_lock_path(app_dir)
+        self.timeout = timeout
+        with TaskRegistryLock._meta_lock:
+            if self.lock_path not in TaskRegistryLock._thread_locks:
+                TaskRegistryLock._thread_locks[self.lock_path] = (
+                    threading.RLock()
+                )
+            self._rlock = TaskRegistryLock._thread_locks[self.lock_path]
+
+    def acquire(self) -> None:
+        acquired = self._rlock.acquire(timeout=self.timeout)
+        if not acquired:
+            logger.debug(f"Thread lock timed out on {self.lock_path}")
+            return
+
+        with TaskRegistryLock._meta_lock:
+            depth = TaskRegistryLock._file_depths.get(self.lock_path, 0)
+            if depth > 0:
+                TaskRegistryLock._file_depths[self.lock_path] = depth + 1
+                return
+
+            os.makedirs(os.path.dirname(self.lock_path), exist_ok=True)
+            file_obj = open(self.lock_path, "a+", encoding="utf-8")
+            start = time.time()
+            while True:
+                try:
+                    if sys.platform == "win32":
+                        file_obj.seek(0)
+                        if os.fstat(file_obj.fileno()).st_size == 0:
+                            file_obj.write(" ")
+                            file_obj.flush()
+                        file_obj.seek(0)
+                        msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    else:
+                        fcntl.flock(
+                            file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB
+                        )
+                        break
+                except (BlockingIOError, OSError):
+                    if (time.time() - start) >= self.timeout:
+                        logger.debug(
+                            f"Registry lock timed out on {self.lock_path}, proceeding"
+                        )
+                        break
+                    time.sleep(0.01)
+
+            TaskRegistryLock._file_objs[self.lock_path] = file_obj
+            TaskRegistryLock._file_depths[self.lock_path] = 1
+
+    def release(self) -> None:
+        with TaskRegistryLock._meta_lock:
+            depth = TaskRegistryLock._file_depths.get(self.lock_path, 0)
+            if depth > 1:
+                TaskRegistryLock._file_depths[self.lock_path] = depth - 1
+            elif depth == 1:
+                file_obj = TaskRegistryLock._file_objs.pop(self.lock_path, None)
+                TaskRegistryLock._file_depths.pop(self.lock_path, None)
+                if file_obj:
+                    try:
+                        if sys.platform == "win32":
+                            file_obj.seek(0)
+                            msvcrt.locking(
+                                file_obj.fileno(), msvcrt.LK_UNLCK, 1
+                            )
+                        else:
+                            fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+                    try:
+                        file_obj.close()
+                    except Exception:
+                        pass
+
+        try:
+            self._rlock.release()
+        except RuntimeError:
+            pass
+
+    def __enter__(self) -> "TaskRegistryLock":
+        self.acquire()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.release()
+
+
 def get_task_registry_path(app_dir: str) -> str:
     """
     Usage:
@@ -170,7 +315,7 @@ def _write_registry_unlocked(path: str, data: dict[str, Any]) -> None:
                 pass
 
 
-def prune_stale_tasks(app_dir: str) -> None:
+def prune_stale_tasks(app_dir: str, locked: bool = False) -> None:
     """
     Usage:
 
@@ -181,19 +326,39 @@ def prune_stale_tasks(app_dir: str) -> None:
     - ``app_dir``:
         - Type: str
         - What: The root directory of the CAVE application
+
+    Optional:
+
+    - ``locked``:
+        - Type: bool
+        - What: Whether the registry lock is already held
+        - Default: False
     """
-    registry_path = get_task_registry_path(app_dir)
-    data = _read_registry_unlocked(registry_path)
-    modified = False
-    for task in data.get("tasks", []):
-        if task.get("status") in ("queued", "running"):
-            pid = task.get("pid", 0)
-            if pid > 0 and not is_process_alive(pid):
-                task["status"] = "failed"
-                task["ended_at"] = time.time()
-                modified = True
-    if modified:
-        _write_registry_unlocked(registry_path, data)
+
+    def _do_prune() -> None:
+        registry_path = get_task_registry_path(app_dir)
+        data = _read_registry_unlocked(registry_path)
+        modified = False
+        now = time.time()
+        for task in data.get("tasks", []):
+            if task.get("status") in ("queued", "running"):
+                pid = task.get("pid", 0)
+                if pid > 0 and not is_process_alive(pid):
+                    task["status"] = "failed"
+                    task["ended_at"] = now
+                    modified = True
+                elif pid <= 0 and (now - (task.get("created_at") or 0)) >= 30.0:
+                    task["status"] = "failed"
+                    task["ended_at"] = now
+                    modified = True
+        if modified:
+            _write_registry_unlocked(registry_path, data)
+
+    if locked:
+        _do_prune()
+    else:
+        with TaskRegistryLock(app_dir):
+            _do_prune()
 
 
 def register_task(
@@ -246,37 +411,46 @@ def register_task(
         - Type: dict[str, Any]
         - What: The registered task dictionary
     """
-    registry_path = get_task_registry_path(app_dir)
-    prune_stale_tasks(app_dir)
-    data = _read_registry_unlocked(registry_path)
+    with TaskRegistryLock(app_dir):
+        registry_path = get_task_registry_path(app_dir)
+        prune_stale_tasks(app_dir, locked=True)
+        data = _read_registry_unlocked(registry_path)
 
-    task_id = data.get("next_id", 1)
-    data["next_id"] = task_id + 1
+        task_id = data.get("next_id", 1)
+        data["next_id"] = task_id + 1
 
-    task = {
-        "id": task_id,
-        "app_name": app_name,
-        "command": command,
-        "args": args or [],
-        "extra_env": extra_env or {},
-        "exec_command": exec_command or ([command] + (args or [])),
-        "pid": os.getpid(),
-        "status": "queued",
-        "created_at": time.time(),
-        "started_at": None,
-        "ended_at": None,
-        "exit_code": None,
-    }
+        # Remove any stale log file for this task ID
+        log_path = get_task_log_path(app_dir, task_id)
+        if os.path.exists(log_path):
+            try:
+                os.remove(log_path)
+            except Exception:
+                pass
 
-    tasks = data.get("tasks", [])
-    tasks.append(task)
-    # Retain at most the last 50 tasks
-    if len(tasks) > 50:
-        tasks = tasks[-50:]
-    data["tasks"] = tasks
+        task = {
+            "id": task_id,
+            "app_name": app_name,
+            "command": command,
+            "args": args or [],
+            "extra_env": extra_env or {},
+            "exec_command": exec_command or ([command] + (args or [])),
+            "pid": 0,
+            "status": "queued",
+            "created_at": time.time(),
+            "started_at": None,
+            "ended_at": None,
+            "exit_code": None,
+        }
 
-    _write_registry_unlocked(registry_path, data)
-    return task
+        tasks = data.get("tasks", [])
+        tasks.append(task)
+        # Retain at most the last 50 tasks
+        if len(tasks) > 50:
+            tasks = tasks[-50:]
+        data["tasks"] = tasks
+
+        _write_registry_unlocked(registry_path, data)
+        return task
 
 
 def update_task_pid(app_dir: str, task_id: int, pid: int) -> None:
@@ -299,13 +473,87 @@ def update_task_pid(app_dir: str, task_id: int, pid: int) -> None:
         - Type: int
         - What: OS process ID of the task runner
     """
-    registry_path = get_task_registry_path(app_dir)
-    data = _read_registry_unlocked(registry_path)
-    for task in data.get("tasks", []):
-        if task.get("id") == task_id:
-            task["pid"] = pid
-            break
-    _write_registry_unlocked(registry_path, data)
+    with TaskRegistryLock(app_dir):
+        registry_path = get_task_registry_path(app_dir)
+        data = _read_registry_unlocked(registry_path)
+        for task in data.get("tasks", []):
+            if task.get("id") == task_id:
+                task["pid"] = pid
+                break
+        _write_registry_unlocked(registry_path, data)
+
+
+def get_task_log_dir(app_dir: str) -> str:
+    """
+    Usage:
+
+    - Resolves the directory path used to store task log files
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``log_dir``:
+        - Type: str
+        - What: Absolute path to the directory containing task log files
+    """
+    common_dir = get_git_common_dir(app_dir)
+    if (
+        common_dir
+        and os.path.isdir(common_dir)
+        and os.access(common_dir, os.W_OK)
+    ):
+        log_dir = os.path.join(common_dir, "cave_tasks")
+    elif common_dir:
+        project_root = str(Path(common_dir).parent.resolve())
+        project_hash = hashlib.sha256(project_root.encode("utf-8")).hexdigest()[
+            :16
+        ]
+        log_dir = os.path.join(get_cache_dir(), "tasks", project_hash)
+    else:
+        project_root = str(Path(app_dir).resolve())
+        project_hash = hashlib.sha256(project_root.encode("utf-8")).hexdigest()[
+            :16
+        ]
+        log_dir = os.path.join(get_cache_dir(), "tasks", project_hash)
+    os.makedirs(log_dir, exist_ok=True)
+    return log_dir
+
+
+def clean_all_task_logs(app_dir: str) -> int:
+    """
+    Usage:
+
+    - Removes all task log files from disk for a CAVE project
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``count``:
+        - Type: int
+        - What: Number of log files deleted
+    """
+    log_dir = get_task_log_dir(app_dir)
+    if not os.path.isdir(log_dir):
+        return 0
+    count = 0
+    for entry in os.listdir(log_dir):
+        if entry.startswith("task_") and entry.endswith(".log"):
+            try:
+                os.remove(os.path.join(log_dir, entry))
+                count += 1
+            except Exception:
+                pass
+    return count
 
 
 def get_task_log_path(app_dir: str, task_id: int) -> str:
@@ -330,26 +578,7 @@ def get_task_log_path(app_dir: str, task_id: int) -> str:
         - Type: str
         - What: Absolute path to the task log file
     """
-    common_dir = get_git_common_dir(app_dir)
-    if (
-        common_dir
-        and os.path.isdir(common_dir)
-        and os.access(common_dir, os.W_OK)
-    ):
-        log_dir = os.path.join(common_dir, "cave_tasks")
-    elif common_dir:
-        project_root = str(Path(common_dir).parent.resolve())
-        project_hash = hashlib.sha256(project_root.encode("utf-8")).hexdigest()[
-            :16
-        ]
-        log_dir = os.path.join(get_cache_dir(), "tasks", project_hash)
-    else:
-        project_root = str(Path(app_dir).resolve())
-        project_hash = hashlib.sha256(project_root.encode("utf-8")).hexdigest()[
-            :16
-        ]
-        log_dir = os.path.join(get_cache_dir(), "tasks", project_hash)
-    os.makedirs(log_dir, exist_ok=True)
+    log_dir = get_task_log_dir(app_dir)
     return os.path.join(log_dir, f"task_{task_id}.log")
 
 
@@ -371,25 +600,26 @@ def clean_completed_tasks(app_dir: str) -> int:
         - Type: int
         - What: Number of cleaned tasks
     """
-    registry_path = get_task_registry_path(app_dir)
-    data = _read_registry_unlocked(registry_path)
-    retained = []
-    removed_count = 0
-    for t in data.get("tasks", []):
-        if t.get("status") in ("queued", "running"):
-            retained.append(t)
-        else:
-            removed_count += 1
-            log_path = get_task_log_path(app_dir, t.get("id", 0))
-            try:
-                if os.path.exists(log_path):
-                    os.remove(log_path)
-            except Exception:
-                pass
-    if removed_count > 0:
-        data["tasks"] = retained
-        _write_registry_unlocked(registry_path, data)
-    return removed_count
+    with TaskRegistryLock(app_dir):
+        registry_path = get_task_registry_path(app_dir)
+        data = _read_registry_unlocked(registry_path)
+        retained = []
+        removed_count = 0
+        for t in data.get("tasks", []):
+            if t.get("status") in ("queued", "running"):
+                retained.append(t)
+            else:
+                removed_count += 1
+                log_path = get_task_log_path(app_dir, t.get("id", 0))
+                try:
+                    if os.path.exists(log_path):
+                        os.remove(log_path)
+                except Exception:
+                    pass
+        if removed_count > 0:
+            data["tasks"] = retained
+            _write_registry_unlocked(registry_path, data)
+        return removed_count
 
 
 def update_task_status(
@@ -424,19 +654,20 @@ def update_task_status(
         - What: Process exit code if completed or failed
         - Default: None
     """
-    registry_path = get_task_registry_path(app_dir)
-    data = _read_registry_unlocked(registry_path)
-    for task in data.get("tasks", []):
-        if task.get("id") == task_id:
-            task["status"] = status
-            if status == "running" and not task.get("started_at"):
-                task["started_at"] = time.time()
-            elif status in ("completed", "cancelled", "failed"):
-                task["ended_at"] = time.time()
-                if exit_code is not None:
-                    task["exit_code"] = exit_code
-            break
-    _write_registry_unlocked(registry_path, data)
+    with TaskRegistryLock(app_dir):
+        registry_path = get_task_registry_path(app_dir)
+        data = _read_registry_unlocked(registry_path)
+        for task in data.get("tasks", []):
+            if task.get("id") == task_id:
+                task["status"] = status
+                if status == "running" and not task.get("started_at"):
+                    task["started_at"] = time.time()
+                elif status in ("completed", "cancelled", "failed"):
+                    task["ended_at"] = time.time()
+                    if exit_code is not None:
+                        task["exit_code"] = exit_code
+                break
+        _write_registry_unlocked(registry_path, data)
 
 
 def get_task(app_dir: str, task_id: int) -> dict[str, Any] | None:
@@ -519,30 +750,31 @@ def cancel_task(app_dir: str, app_name: str, task_id: int) -> bool:
         - Type: bool
         - What: True if task was found and marked cancelled, False otherwise
     """
-    task = get_task(app_dir, task_id)
-    if not task:
-        return False
+    with TaskRegistryLock(app_dir):
+        task = get_task(app_dir, task_id)
+        if not task:
+            return False
 
-    status = task.get("status")
-    if status in ("completed", "cancelled", "failed"):
-        return False
+        status = task.get("status")
+        if status in ("completed", "cancelled", "failed"):
+            return False
 
-    update_task_status(app_dir, task_id, "cancelled", exit_code=130)
+        update_task_status(app_dir, task_id, "cancelled", exit_code=130)
 
-    # Terminate background runner process if alive
-    pid = task.get("pid", 0)
-    if pid > 0 and pid != os.getpid() and is_process_alive(pid):
-        try:
-            os.kill(pid, 15)
-        except OSError:
-            pass
+        # Terminate background runner process if alive
+        pid = task.get("pid", 0)
+        if pid > 0 and pid != os.getpid() and is_process_alive(pid):
+            try:
+                os.kill(pid, 15)
+            except OSError:
+                pass
 
-    # If the task was actively running, terminate container execution cleanly
-    if status == "running":
-        run(["docker", "rm", "-f", f"{app_name}_task_django"])
-        run(["docker", "rm", "-f", f"{app_name}_test_django"])
+        # If the task was actively running, terminate container execution cleanly
+        if status == "running":
+            run(["docker", "rm", "-f", f"{app_name}_task_django"])
+            run(["docker", "rm", "-f", f"{app_name}_test_django"])
 
-    return True
+        return True
 
 
 def cancel_all_tasks(app_dir: str, app_name: str) -> int:
@@ -567,39 +799,40 @@ def cancel_all_tasks(app_dir: str, app_name: str) -> int:
         - Type: int
         - What: Number of tasks that were cancelled
     """
-    tasks = list_tasks(app_dir)
-    cancelled_count = 0
-    had_running = False
+    with TaskRegistryLock(app_dir):
+        tasks = list_tasks(app_dir)
+        cancelled_count = 0
+        had_running = False
 
-    for task in tasks:
-        if task.get("status") in ("queued", "running"):
-            if task.get("status") == "running":
-                had_running = True
-            update_task_status(
-                app_dir, task.get("id"), "cancelled", exit_code=130
-            )
-            cancelled_count += 1
+        for task in tasks:
+            if task.get("status") in ("queued", "running"):
+                if task.get("status") == "running":
+                    had_running = True
+                update_task_status(
+                    app_dir, task.get("id"), "cancelled", exit_code=130
+                )
+                cancelled_count += 1
 
-    cancel_path = get_task_cancel_path(app_dir)
-    os.makedirs(os.path.dirname(cancel_path), exist_ok=True)
-    try:
-        with open(cancel_path, "w", encoding="utf-8") as f:
-            json.dump({"cancelled_at": time.time()}, f)
-    except Exception:
-        pass
+        cancel_path = get_task_cancel_path(app_dir)
+        os.makedirs(os.path.dirname(cancel_path), exist_ok=True)
+        try:
+            with open(cancel_path, "w", encoding="utf-8") as f:
+                json.dump({"cancelled_at": time.time()}, f)
+        except Exception:
+            pass
 
-    if had_running or cancelled_count > 0:
-        run(["docker", "rm", "-f", f"{app_name}_task_django"])
-        run(["docker", "rm", "-f", f"{app_name}_test_django"])
+        if had_running or cancelled_count > 0:
+            run(["docker", "rm", "-f", f"{app_name}_task_django"])
+            run(["docker", "rm", "-f", f"{app_name}_test_django"])
 
-    return cancelled_count
+        return cancelled_count
 
 
 def reset_task_registry(app_dir: str) -> None:
     """
     Usage:
 
-    - Resets the task registry and ID counter back to 1
+    - Resets the task registry and ID counter back to 1 and cleans all logs
 
     Requires:
 
@@ -607,8 +840,10 @@ def reset_task_registry(app_dir: str) -> None:
         - Type: str
         - What: The root directory of the CAVE application
     """
-    registry_path = get_task_registry_path(app_dir)
-    _write_registry_unlocked(registry_path, {"next_id": 1, "tasks": []})
+    with TaskRegistryLock(app_dir):
+        clean_all_task_logs(app_dir)
+        registry_path = get_task_registry_path(app_dir)
+        _write_registry_unlocked(registry_path, {"next_id": 1, "tasks": []})
 
 
 class TaskQueueLock:
@@ -655,6 +890,7 @@ class TaskQueueLock:
         command_args: list[str] | None = None,
         timeout: float | None = None,
         task_id: int | None = None,
+        register: bool = True,
     ) -> None:
         self.app_dir = app_dir
         self.app_name = app_name
@@ -670,13 +906,18 @@ class TaskQueueLock:
         if task_id is not None:
             self.task_id = task_id
             self.task = get_task(app_dir, task_id) or {}
-        else:
+        elif register:
             self.task = register_task(
                 app_dir, app_name, command, self.command_args
             )
             self.task_id = self.task["id"]
+        else:
+            self.task = None
+            self.task_id = None
 
     def _is_cancelled(self) -> bool:
+        if self.task_id is None:
+            return False
         task = get_task(self.app_dir, self.task_id)
         if task and task.get("status") == "cancelled":
             return True
@@ -735,18 +976,22 @@ class TaskQueueLock:
                     f"Task #{self.task_id} was canceled"
                 )
             self._acquired = True
-            update_task_status(self.app_dir, self.task_id, "running")
+            if self.task_id is not None:
+                update_task_status(self.app_dir, self.task_id, "running")
             return
 
         self._was_queued = True
         project_name = get_project_name(self.app_dir) or self.app_name
-        label = (
-            f"Waiting for running task to finish [Task #{self.task_id}] "
-            f"({project_name})"
-        )
+        if self.task_id is not None:
+            label = (
+                f"Waiting for running task to finish [Task #{self.task_id}] "
+                f"({project_name})"
+            )
+        else:
+            label = f"Waiting for running task to finish ({project_name})"
         step_start(label)
         logger.debug(
-            f"Task #{self.task_id} for '{self.app_name}' queued on lock {self.lock_path}"
+            f"Lock request on {self.lock_path} for '{self.app_name}' queued"
         )
 
         start_time = time.time()
@@ -760,7 +1005,10 @@ class TaskQueueLock:
                             f"Task #{self.task_id} was canceled"
                         )
                     self._acquired = True
-                    update_task_status(self.app_dir, self.task_id, "running")
+                    if self.task_id is not None:
+                        update_task_status(
+                            self.app_dir, self.task_id, "running"
+                        )
                     break
 
                 if self._is_cancelled():
@@ -783,9 +1031,10 @@ class TaskQueueLock:
                 time.sleep(0.2)
         except KeyboardInterrupt:
             step_fail(label, "Canceled by user")
-            update_task_status(
-                self.app_dir, self.task_id, "cancelled", exit_code=130
-            )
+            if self.task_id is not None:
+                update_task_status(
+                    self.app_dir, self.task_id, "cancelled", exit_code=130
+                )
             self.release()
             sys.exit(130)
 
@@ -826,6 +1075,9 @@ class TaskQueueLock:
         exc_tb: TracebackType | None,
     ) -> None:
         try:
+            if self.task_id is None:
+                return
+
             if exc_type is not None:
                 if issubclass(exc_type, TaskQueueCancelledError):
                     update_task_status(

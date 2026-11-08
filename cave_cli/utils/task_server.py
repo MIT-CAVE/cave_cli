@@ -780,7 +780,11 @@ def run_task_idle_watcher(
         - Type: int
         - What: Minutes of inactivity before teardown
     """
-    from cave_cli.utils.task_queue import TaskQueueLock, is_process_alive
+    from cave_cli.utils.task_queue import (
+        TaskQueueLock,
+        is_process_alive,
+        list_tasks,
+    )
 
     timeout_seconds = keep_alive_minutes * 60
     while True:
@@ -790,8 +794,16 @@ def run_task_idle_watcher(
 
         last_active = get_last_task_activity(app_dir, app_name)
         if last_active > 0 and (time.time() - last_active) >= timeout_seconds:
-            # Check if a task is currently queued or executing
-            lock = TaskQueueLock(app_dir, app_name, timeout=1.0)
+            # Check if any tasks are currently queued or executing
+            active_tasks = [
+                t
+                for t in list_tasks(app_dir)
+                if t.get("status") in ("queued", "running")
+            ]
+            if active_tasks:
+                continue
+
+            lock = TaskQueueLock(app_dir, app_name, timeout=1.0, register=False)
             try:
                 lock.acquire()
                 last_active_locked = get_last_task_activity(app_dir, app_name)

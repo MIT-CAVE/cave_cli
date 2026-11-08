@@ -382,3 +382,31 @@ class TestTaskAttachLogic:
         code = attach_to_task(fake_app[0], fake_app[1], task_id=None)
         assert code == 130
         mock_cancel_task.assert_called_once_with(fake_app[0], fake_app[1], 4)
+
+
+class TestScheduleTaskLogic:
+    @patch("cave_cli.commands.task.attach_to_task", return_value=0)
+    @patch("cave_cli.commands.task.spawn_task_runner", return_value=12345)
+    @patch("cave_cli.commands.task.update_task_pid")
+    @patch("cave_cli.commands.task.register_task")
+    def test_schedule_task_updates_runner_pid(
+        self,
+        mock_register,
+        mock_update_pid,
+        mock_spawn,
+        mock_attach,
+        fake_app,
+    ):
+        from cave_cli.commands.task import schedule_task
+
+        mock_register.return_value = {"id": 7, "command": "prettify"}
+        code = schedule_task(
+            app_dir=fake_app[0],
+            app_name=fake_app[1],
+            command=["utils/prettify.py"],
+            detached=False,
+        )
+        assert code == 0
+        mock_spawn.assert_called_once_with(fake_app[0], fake_app[1], 7, None)
+        mock_update_pid.assert_called_once_with(fake_app[0], 7, 12345)
+        mock_attach.assert_called_once_with(fake_app[0], fake_app[1], 7)

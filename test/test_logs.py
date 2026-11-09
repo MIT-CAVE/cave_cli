@@ -9,6 +9,7 @@ import pytest
 
 from cave_cli.commands.logs import logs
 from cave_cli.utils.docker import stream_container_logs
+from cave_cli.utils.log_parser import LogParser
 from cave_cli.utils.task_queue import (
     get_run_log_path,
     get_task_log_path,
@@ -23,6 +24,74 @@ def fake_app(tmp_path: Path):
     return str(app_dir), "sample_app"
 
 
+class TestLogParser:
+    def test_strip_outer_prefixes(self):
+        parser = LogParser()
+        assert parser.strip_outer_prefixes("INFO: INFO: hello") == "hello"
+        assert (
+            parser.strip_outer_prefixes("INFO:   File 'test.py'")
+            == "  File 'test.py'"
+        )
+        assert (
+            parser.strip_outer_prefixes("INFO: error: ['panes', 'data']")
+            == "error: ['panes', 'data']"
+        )
+
+    def test_parse_user_snippet(self):
+        snippet = """INFO: INFO:     172.18.0.1:43294 - "GET /cave/auth/login/ HTTP/1.1" 200 OK
+INFO: WS RECEIVE  mutate_session
+INFO: Console Log: `myCommand` has been triggered!
+INFO: error: ['panes', 'data', 'examplePropsPane', 'props', 'audioExample', 'variant']
+INFO: \tInvalid value(s) selected: ['audio']. Accepted Values are ['picture', 'video']
+INFO: The `test` button has been pressed by the user!
+INFO: Traceback (most recent call last):
+INFO:   File "/app/cave_core/utils/wrapping.py", line 103, in wrap
+INFO:     fn(request)
+INFO:     ~~^^^^^^^^^
+INFO:   File "/app/cave_api/examples/kitchen_sink.py", line 2452, in execute_command
+INFO:     raise Exception("Test Exception!")
+INFO: Exception: Test Exception!
+INFO: WS RECEIVE  session_management"""
+
+        parser = LogParser()
+        parsed = [parser.parse_line(line) for line in snippet.splitlines()]
+
+        # 1. Access log -> DEBUG (noise)
+        assert parsed[0].level == "DEBUG"
+        assert parsed[0].is_noise is True
+
+        # 2. WS RECEIVE -> DEBUG (noise)
+        assert parsed[1].level == "DEBUG"
+        assert parsed[1].is_noise is True
+
+        # 3. Console log -> INFO
+        assert parsed[2].level == "INFO"
+        assert parsed[2].is_noise is False
+        assert (
+            "Console Log: `myCommand` has been triggered!" in parsed[2].message
+        )
+
+        # 4 & 5. Soft validation error -> ERROR
+        assert parsed[3].level == "ERROR"
+        assert parsed[3].is_error is True
+        assert parsed[4].level == "ERROR"
+        assert parsed[4].is_error is True
+
+        # 6. User button press -> INFO
+        assert parsed[5].level == "INFO"
+
+        # 7-13. Traceback block -> all ERROR
+        for entry in parsed[6:13]:
+            assert (
+                entry.level == "ERROR"
+            ), f"Line '{entry.message}' should be ERROR"
+            assert entry.is_error is True
+
+        # 14. WS RECEIVE after traceback -> DEBUG (noise)
+        assert parsed[13].level == "DEBUG"
+        assert parsed[13].is_noise is True
+
+
 class TestLogsCommand:
     @patch("cave_cli.commands.logs.get_app")
     def test_logs_path_flag(self, mock_get_app, fake_app, capsys):
@@ -31,6 +100,9 @@ class TestLogsCommand:
             path=True,
             task=None,
             errors=False,
+            warnings=False,
+            all=False,
+            raw=False,
             follow=False,
             clear=False,
             lines=None,
@@ -52,6 +124,9 @@ class TestLogsCommand:
             path=False,
             task=None,
             errors=False,
+            warnings=False,
+            all=False,
+            raw=True,
             follow=False,
             clear=False,
             lines=None,
@@ -72,6 +147,9 @@ class TestLogsCommand:
             path=False,
             task=None,
             errors=False,
+            warnings=False,
+            all=False,
+            raw=True,
             follow=False,
             clear=False,
             lines=2,
@@ -86,20 +164,31 @@ class TestLogsCommand:
         log_path = get_run_log_path(fake_app[0])
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         with open(log_path, "w", encoding="utf-8") as f:
-            f.write("INFO: healthy\nERROR: bad error\nDEBUG: detail\n")
+            f.write(
+                "INFO: healthy\n"
+                "INFO: error: ['panes', 'data']\n"
+                "INFO: \tInvalid value(s)\n"
+                "DEBUG: detail\n"
+            )
 
         args = argparse.Namespace(
             path=False,
             task=None,
             errors=True,
+            warnings=False,
+            all=False,
+            raw=False,
             follow=False,
             clear=False,
             lines=None,
+            no_color=True,
         )
         logs(args)
         out, _ = capsys.readouterr()
-        assert "ERROR: bad error\n" == out
-        assert "INFO: healthy" not in out
+        assert "ERROR: error: ['panes', 'data']\n" in out
+        assert "ERROR: \tInvalid value(s)\n" in out
+        assert "healthy" not in out
+        assert "detail" not in out
 
     @patch("cave_cli.commands.logs.get_app")
     def test_logs_clear(self, mock_get_app, fake_app):
@@ -113,6 +202,9 @@ class TestLogsCommand:
             path=False,
             task=None,
             errors=False,
+            warnings=False,
+            all=False,
+            raw=False,
             follow=False,
             clear=True,
             lines=None,
@@ -133,6 +225,9 @@ class TestLogsCommand:
             path=False,
             task=t["id"],
             errors=False,
+            warnings=False,
+            all=False,
+            raw=True,
             follow=False,
             clear=False,
             lines=None,
@@ -150,11 +245,13 @@ class TestLogsCommand:
         with open(t2_log, "w", encoding="utf-8") as f:
             f.write("Latest task output\n")
 
-        # task=0 indicates latest task
         args = argparse.Namespace(
             path=False,
             task=0,
             errors=False,
+            warnings=False,
+            all=False,
+            raw=True,
             follow=False,
             clear=False,
             lines=None,
@@ -193,10 +290,10 @@ class TestLogStreamingBuffer:
         # Should have rotated and preserved only the last 4 lines: 7, 8, 9, 10
         assert len(saved) == 4
         assert saved == [
-            "log line 7",
-            "log line 8",
-            "log line 9",
-            "log line 10",
+            "INFO: log line 7",
+            "INFO: log line 8",
+            "INFO: log line 9",
+            "INFO: log line 10",
         ]
 
     def test_follow_file_live_streaming(self, tmp_path: Path):
@@ -207,19 +304,18 @@ class TestLogStreamingBuffer:
         log_file.write_text("initial 1\ninitial 2\n", encoding="utf-8")
 
         streamed = []
-        stop_evt = threading.Event()
 
         def mock_stdout_write(s: str) -> int:
             streamed.append(s)
             return len(s)
 
         with patch("sys.stdout.write", side_effect=mock_stdout_write):
-            # Start following from end of file
             follow_thread = threading.Thread(
                 target=_follow_file,
                 kwargs={
                     "path": str(log_file),
                     "start_pos": log_file.stat().st_size,
+                    "raw_mode": True,
                 },
                 daemon=True,
             )
@@ -232,7 +328,7 @@ class TestLogStreamingBuffer:
                 f.flush()
 
             time.sleep(0.2)
-            assert "live line 1\n" in streamed
+            assert any("live line 1" in s for s in streamed)
 
             # Append another line
             with open(log_file, "a", encoding="utf-8") as f:
@@ -240,7 +336,7 @@ class TestLogStreamingBuffer:
                 f.flush()
 
             time.sleep(0.2)
-            assert "live line 2\n" in streamed
+            assert any("live line 2" in s for s in streamed)
 
     def test_follow_file_handles_file_rotation(self, tmp_path: Path):
         import time
@@ -261,6 +357,7 @@ class TestLogStreamingBuffer:
                 kwargs={
                     "path": str(log_file),
                     "start_pos": log_file.stat().st_size,
+                    "raw_mode": True,
                 },
                 daemon=True,
             )

@@ -403,6 +403,10 @@ def stream_container_logs(
         except Exception:
             log_file = None
 
+    from cave_cli.utils.log_parser import LogParser
+
+    log_parser = LogParser()
+
     process = subprocess.Popen(
         ["docker", "logs", "-f", "--since", "0s", container_name],
         stdout=subprocess.PIPE,
@@ -419,7 +423,9 @@ def stream_container_logs(
             log_queue.put(stripped)
             if log_file is not None:
                 try:
-                    log_file.write(stripped + "\n")
+                    parsed = log_parser.parse_line(stripped)
+                    formatted = log_parser.format_line(parsed, color=False)
+                    log_file.write(formatted + "\n")
                     log_file.flush()
                     lines_since_trim += 1
                     # Trim periodically if the file grows significantly beyond max_log_lines

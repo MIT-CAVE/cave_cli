@@ -3,6 +3,7 @@ import os
 import sys
 import time
 
+from cave_cli.utils.log_parser import LogParser, ParsedLogLine
 from cave_cli.utils.logger import logger
 from cave_cli.utils.task_queue import (
     get_run_log_path,
@@ -15,7 +16,11 @@ from cave_cli.utils.validate import get_app
 
 def _follow_file(
     path: str,
-    filter_errors: bool = False,
+    errors_only: bool = False,
+    include_warnings: bool = False,
+    show_all: bool = False,
+    raw_mode: bool = False,
+    color: bool = True,
     start_pos: int | None = None,
     task_id: int | None = None,
     app_dir: str | None = None,
@@ -33,10 +38,30 @@ def _follow_file(
 
     Optional:
 
-    - ``filter_errors``:
+    - ``errors_only``:
         - Type: bool
         - What: Whether to output only error and traceback lines
         - Default: False
+
+    - ``include_warnings``:
+        - Type: bool
+        - What: Whether to include warning lines
+        - Default: False
+
+    - ``show_all``:
+        - Type: bool
+        - What: Whether to show all lines including verbose debug noise
+        - Default: False
+
+    - ``raw_mode``:
+        - Type: bool
+        - What: Whether to output raw lines without level formatting
+        - Default: False
+
+    - ``color``:
+        - Type: bool
+        - What: Whether to apply ANSI colors
+        - Default: True
 
     - ``start_pos``:
         - Type: int | None
@@ -56,6 +81,7 @@ def _follow_file(
     while not os.path.exists(path):
         time.sleep(0.2)
 
+    parser = LogParser()
     current_f = None
     try:
         current_f = open(path, "r", encoding="utf-8", errors="replace")
@@ -68,18 +94,27 @@ def _follow_file(
         else:
             current_f.seek(0, os.SEEK_END)
 
+        def _output_line(raw_line: str) -> None:
+            if raw_mode:
+                sys.stdout.write(raw_line)
+                sys.stdout.flush()
+                return
+
+            entry = parser.parse_line(raw_line.rstrip())
+            if parser.should_display(
+                entry,
+                errors_only=errors_only,
+                include_warnings=include_warnings,
+                show_all=show_all,
+            ):
+                formatted = parser.format_line(entry, color=color)
+                sys.stdout.write(formatted + "\n")
+                sys.stdout.flush()
+
         while True:
             line = current_f.readline()
             if line:
-                if filter_errors:
-                    is_err = any(
-                        k in line
-                        for k in ("ERROR", "CRITICAL", "Traceback", "Exception")
-                    )
-                    if not is_err:
-                        continue
-                sys.stdout.write(line)
-                sys.stdout.flush()
+                _output_line(line)
                 continue
 
             # No new line available right now. Check if task completed.
@@ -91,17 +126,7 @@ def _follow_file(
                     "cancelled",
                 ):
                     for rest in current_f:
-                        if not filter_errors or any(
-                            k in rest
-                            for k in (
-                                "ERROR",
-                                "CRITICAL",
-                                "Traceback",
-                                "Exception",
-                            )
-                        ):
-                            sys.stdout.write(rest)
-                    sys.stdout.flush()
+                        _output_line(rest)
                     break
 
             time.sleep(0.1)
@@ -114,17 +139,7 @@ def _follow_file(
                     or disk_stat.st_dev != current_dev
                 ):
                     for rest in current_f:
-                        if not filter_errors or any(
-                            k in rest
-                            for k in (
-                                "ERROR",
-                                "CRITICAL",
-                                "Traceback",
-                                "Exception",
-                            )
-                        ):
-                            sys.stdout.write(rest)
-                    sys.stdout.flush()
+                        _output_line(rest)
                     current_f.close()
                     current_f = open(
                         path, "r", encoding="utf-8", errors="replace"
@@ -162,10 +177,14 @@ def logs(args: argparse.Namespace) -> None:
 
     task_id_arg = getattr(args, "task", None)
     filter_errors = getattr(args, "errors", False)
+    include_warnings = getattr(args, "warnings", False)
+    show_all = getattr(args, "all", False)
+    raw_mode = getattr(args, "raw", False)
     show_path_only = getattr(args, "path", False)
     follow = getattr(args, "follow", False)
     clear = getattr(args, "clear", False)
     lines_count = getattr(args, "lines", None)
+    color = sys.stdout.isatty() and not getattr(args, "no_color", False)
 
     # Determine target log file
     if task_id_arg is not None:
@@ -230,26 +249,30 @@ def logs(args: argparse.Namespace) -> None:
         logger.error(f"Failed to read log file: {e}")
         sys.exit(1)
 
-    if filter_errors:
-        display_lines = [
-            l
-            for l in lines
-            if any(
-                k in l for k in ("ERROR", "CRITICAL", "Traceback", "Exception")
-            )
-        ]
-        if not display_lines and not follow:
-            logger.info(f"No errors found in {label} logs.")
-            return
-    else:
-        display_lines = lines
-
-    if lines_count is not None:
-        if lines_count > 0:
-            display_lines = display_lines[-lines_count:]
+    parser = LogParser()
+    display_lines: list[str] = []
+    for l in lines:
+        if raw_mode:
+            display_lines.append(l)
         else:
-            display_lines = []
-    elif follow:
+            entry = parser.parse_line(l.rstrip())
+            if parser.should_display(
+                entry,
+                errors_only=filter_errors,
+                include_warnings=include_warnings,
+                show_all=show_all,
+            ):
+                display_lines.append(
+                    parser.format_line(entry, color=color) + "\n"
+                )
+
+    if filter_errors and not display_lines and not follow:
+        logger.info(f"No errors found in {label} logs.")
+        return
+
+    if lines_count is not None and lines_count > 0:
+        display_lines = display_lines[-lines_count:]
+    elif follow and lines_count is None:
         display_lines = display_lines[-50:]
 
     for l in display_lines:
@@ -259,7 +282,11 @@ def logs(args: argparse.Namespace) -> None:
     if follow:
         _follow_file(
             path=log_path,
-            filter_errors=filter_errors,
+            errors_only=filter_errors,
+            include_warnings=include_warnings,
+            show_all=show_all,
+            raw_mode=raw_mode,
+            color=color,
             start_pos=start_pos,
             task_id=target_id,
             app_dir=app_dir,

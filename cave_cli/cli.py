@@ -677,6 +677,26 @@ def main():
         help="Filter output to only show errors and exceptions",
     )
     p_logs.add_argument(
+        "-w",
+        "--warnings",
+        action="store_true",
+        default=False,
+        help="Include warning messages along with errors",
+    )
+    p_logs.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        default=False,
+        help="Show all log lines including verbose websocket and HTTP access logs",
+    )
+    p_logs.add_argument(
+        "--raw",
+        action="store_true",
+        default=False,
+        help="Output raw unprocessed container log lines without normalization",
+    )
+    p_logs.add_argument(
         "-p",
         "--path",
         action="store_true",

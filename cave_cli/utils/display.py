@@ -138,6 +138,8 @@ ERROR = "error"
 STOPPING = "stopping"
 
 
+from cave_cli.utils.log_parser import LogParser
+
 # ── Data structures ────────────────────────────────────────────────────────
 
 
@@ -169,18 +171,30 @@ class LogLine:
         - Type: bool
         - What: Whether this line belongs in the Validation Issues panel.
         - Default: False
+
+    - ``level``:
+        - Type: str
+        - What: Normalized severity level (ERROR, WARN, INFO, DEBUG).
+        - Default: "INFO"
+
+    - ``message``:
+        - Type: str
+        - What: Clean message without outer level prefixes.
+        - Default: ""
     """
 
     timestamp: str
     text: str
     raw: str = ""
     is_validation: bool = False
+    level: str = "INFO"
+    message: str = ""
 
 
 # ── Log filtering ──────────────────────────────────────────────────────────
 
 _LEVEL_PREFIX_RE = re.compile(
-    r"^(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL):[ \t]*", re.IGNORECASE
+    r"^(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL):[ \t]*"
 )
 
 # Uvicorn's own formatter prepends a level prefix to every message (e.g.
@@ -235,6 +249,7 @@ _VALIDATION_PATTERNS: tuple[str, ...] = (
     "Traceback (most recent call last)",
     "An error occurred",
     "Exception:",
+    "error:",
     "warning:",
     "Unknown Fields:",
     "ValidationError",
@@ -580,17 +595,22 @@ class DashboardRenderer:
 
             for entry in visible_logs:
                 ts = f"{DIM}{entry.timestamp}{RESET}"
-                # Use raw text if available in show_all mode, otherwise stripped text
-                display_text = entry.raw if entry.raw else entry.text
-
-                # If it's a validation issue, ensure it shows as ERROR: in show_all mode
-                if entry.is_validation and _LEVEL_PREFIX_RE.match(display_text):
-                    display_text = _LEVEL_PREFIX_RE.sub(
-                        "ERROR: ", display_text, count=1
-                    )
+                level = entry.level or "INFO"
+                level_prefix = f"{level}:"
+                display_msg = (
+                    entry.message if entry.message else entry.text
+                ).expandtabs()
+                display_text = f"{level_prefix} {display_msg}"
 
                 text = self._truncate(display_text, cols - 14)
-                color = RED if entry.is_validation else ""
+                if level == "ERROR":
+                    color = RED
+                elif level == "WARN":
+                    color = YELLOW
+                elif level == "DEBUG":
+                    color = DIM
+                else:
+                    color = ""
                 lines.append(f"  {ts}  {color}{text}{RESET}")
 
             # Fill remaining space to keep footer at bottom
@@ -636,21 +656,32 @@ class DashboardRenderer:
             for entry in visible_logs:
                 ts = f"{DIM}{entry.timestamp}{RESET}"
                 text = self._truncate(entry.text, cols - 14)
-                lines.append(f"  {ts}  {text}")
+                color = YELLOW if entry.level == "WARN" else ""
+                lines.append(f"  {ts}  {color}{text}{RESET}")
             lines.append(f"  {'─' * bar_width}")
 
-            # ── Errors ────────────────────────────────────────────────────────
+            # ── Errors / Warnings ─────────────────────────────────────────────
             if has_validation:
                 lines.append("")
-                count_str = f"{validation_count} error{'s' if validation_count != 1 else ''}"
+                has_errors = any(e.level == "ERROR" for e in shown_errors)
+                if has_errors:
+                    label = "error" if validation_count == 1 else "errors"
+                    title_color = RED
+                    title_text = "Errors"
+                else:
+                    label = "warning" if validation_count == 1 else "warnings"
+                    title_color = YELLOW
+                    title_text = "Validation Warnings"
+                count_str = f"{validation_count} {label}"
                 lines.append(
-                    f"  {BOLD}Errors{RESET}  {RED}({count_str}){RESET}"
+                    f"  {BOLD}{title_text}{RESET}  {title_color}({count_str}){RESET}"
                 )
                 lines.append(f"  {'─' * bar_width}")
                 for entry in shown_errors:
                     ts = f"{DIM}{entry.timestamp}{RESET}"
                     text = self._truncate(entry.text, cols - 14)
-                    lines.append(f"  {ts}  {RED}{text}{RESET}")
+                    color = YELLOW if entry.level == "WARN" else RED
+                    lines.append(f"  {ts}  {color}{text}{RESET}")
                 lines.append(f"  {'─' * bar_width}")
 
         # ── Footer ─────────────────────────────────────────────────────────
@@ -720,7 +751,11 @@ class RunDashboard:
         # Initial log entry
         ts = time.strftime("%H:%M:%S")
         initial_entry = LogLine(
-            timestamp=ts, text="App Loading", raw="INFO: App Loading"
+            timestamp=ts,
+            text="App Loading",
+            raw="INFO: App Loading",
+            level="INFO",
+            message="App Loading",
         )
         self._log_lines: list[LogLine] = [initial_entry]
         self._all_log_lines: list[LogLine] = [initial_entry]
@@ -733,6 +768,7 @@ class RunDashboard:
         self._log_queue: queue.Queue[str | None] = queue.Queue()
         self._renderer = DashboardRenderer()
         self._filter = LogFilter()
+        self._parser: LogParser = LogParser()
         self._stop_event = stop_event or threading.Event()
         self._display_thread: threading.Thread | None = None
 
@@ -790,6 +826,7 @@ class RunDashboard:
             self._scroll_offset = max(0, self._scroll_offset - amount)
 
     def _process_line(self, raw: str) -> None:
+        parsed = self._parser.parse_line(raw)
         stripped = self._filter.strip_level_prefix(raw).expandtabs()
         ts = time.strftime("%H:%M:%S")
 
@@ -821,6 +858,8 @@ class RunDashboard:
                         timestamp=ts,
                         text="App Reloading",
                         raw="INFO: App Reloading",
+                        level="INFO",
+                        message="App Reloading",
                     )
                     add_minimal(reloading_entry)
                     add_all(reloading_entry)
@@ -828,7 +867,11 @@ class RunDashboard:
                         self._scroll_offset += 1
                 elif new_status == READY:
                     ready_entry = LogLine(
-                        timestamp=ts, text="App Ready", raw="INFO: App Ready"
+                        timestamp=ts,
+                        text="App Ready",
+                        raw="INFO: App Ready",
+                        level="INFO",
+                        message="App Ready",
                     )
                     add_minimal(ready_entry)
                     add_all(ready_entry)
@@ -842,11 +885,20 @@ class RunDashboard:
         elif ws_ev == "disconnect":
             self._ws_clients = max(0, self._ws_clients - 1)
 
-        is_validation = self._filter.is_validation_issue(raw, stripped)
-        is_noise = self._filter.is_noise(stripped)
+        is_validation = (
+            parsed.is_error
+            or parsed.is_warning
+            or self._filter.is_validation_issue(raw, stripped)
+        )
+        is_noise = parsed.is_noise or self._filter.is_noise(stripped)
 
         entry = LogLine(
-            timestamp=ts, text=stripped, raw=raw, is_validation=is_validation
+            timestamp=ts,
+            text=stripped,
+            raw=raw,
+            is_validation=is_validation,
+            level=parsed.level,
+            message=parsed.message,
         )
         add_all(entry)
         if self._show_all and self._scroll_offset > 0:
@@ -854,7 +906,9 @@ class RunDashboard:
 
         if is_validation:
             is_indented = bool(stripped) and stripped[0] in (" ", "\t")
-            if is_indented or self._last_was_validation:
+            if (
+                is_indented or self._last_was_validation
+            ) and not parsed.is_block_start:
                 # Continuation of the current error block
                 self._current_error_block.append(entry)
                 if len(self._current_error_block) > self._max_logs:

@@ -29,7 +29,9 @@ from cave_cli.utils.task_queue import (
 def fake_app_dir(tmp_path: Path):
     app_dir = tmp_path / "sample_app"
     app_dir.mkdir()
-    return str(app_dir)
+    path_str = str(app_dir)
+    reset_task_registry(path_str)
+    return path_str
 
 
 class TestTaskQueueRegistry:

@@ -335,11 +335,13 @@ def stream_container_logs(
     container_name: str,
     log_queue: "queue.Queue[str | None]",
     stop_event: "threading.Event",
+    log_file_path: str | None = None,
+    max_log_lines: int = 500,
 ) -> None:
     """
     Usage:
 
-    - Streams logs from a running container into a queue.
+    - Streams logs from a running container into a queue and optional rotating file.
 
     Requires:
 
@@ -355,14 +357,51 @@ def stream_container_logs(
         - Type: threading.Event
         - What: When set, causes the streamer to terminate promptly.
 
+    Optional:
+
+    - ``log_file_path``:
+        - Type: str | None
+        - What: File path to save the rotating tail of container log lines
+        - Default: None
+
+    - ``max_log_lines``:
+        - Type: int
+        - What: Maximum number of recent log lines to maintain in log_file_path
+        - Default: 500
+
     Notes:
 
     - Designed to run as a daemon thread.
     - Always puts a None sentinel into the queue before returning so the
       display loop can detect container exit.
     """
+    import os
     import queue as _queue
+    import subprocess
     import threading as _threading
+
+    log_file = None
+    lines_since_trim = 0
+    if log_file_path and max_log_lines > 0:
+        try:
+            os.makedirs(
+                os.path.dirname(os.path.abspath(log_file_path)), exist_ok=True
+            )
+            # Prune previous session's logs if they exceed max_log_lines
+            if os.path.exists(log_file_path):
+                try:
+                    with open(
+                        log_file_path, "r", encoding="utf-8", errors="replace"
+                    ) as f:
+                        prior_lines = f.readlines()
+                    if len(prior_lines) > max_log_lines:
+                        with open(log_file_path, "w", encoding="utf-8") as f:
+                            f.writelines(prior_lines[-max_log_lines:])
+                except Exception:
+                    pass
+            log_file = open(log_file_path, "a", encoding="utf-8", buffering=1)
+        except Exception:
+            log_file = None
 
     process = subprocess.Popen(
         ["docker", "logs", "-f", "--since", "0s", container_name],
@@ -376,8 +415,61 @@ def stream_container_logs(
         for line in process.stdout:
             if stop_event.is_set():
                 break
-            log_queue.put(line.rstrip())
+            stripped = line.rstrip()
+            log_queue.put(stripped)
+            if log_file is not None:
+                try:
+                    log_file.write(stripped + "\n")
+                    log_file.flush()
+                    lines_since_trim += 1
+                    # Trim periodically if the file grows significantly beyond max_log_lines
+                    if lines_since_trim >= max_log_lines * 2:
+                        log_file.close()
+                        try:
+                            with open(
+                                log_file_path,
+                                "r",
+                                encoding="utf-8",
+                                errors="replace",
+                            ) as f:
+                                all_lines = f.readlines()
+                            if len(all_lines) > max_log_lines:
+                                tmp_p = f"{log_file_path}.tmp"
+                                with open(tmp_p, "w", encoding="utf-8") as f:
+                                    f.writelines(all_lines[-max_log_lines:])
+                                os.replace(tmp_p, log_file_path)
+                        except Exception:
+                            pass
+                        log_file = open(
+                            log_file_path, "a", encoding="utf-8", buffering=1
+                        )
+                        lines_since_trim = 0
+                except Exception:
+                    pass
     finally:
+        if log_file is not None:
+            try:
+                log_file.flush()
+                log_file.close()
+            except Exception:
+                pass
+        if (
+            log_file_path
+            and max_log_lines > 0
+            and os.path.exists(log_file_path)
+        ):
+            try:
+                with open(
+                    log_file_path, "r", encoding="utf-8", errors="replace"
+                ) as f:
+                    final_lines = f.readlines()
+                if len(final_lines) > max_log_lines:
+                    tmp_p = f"{log_file_path}.tmp"
+                    with open(tmp_p, "w", encoding="utf-8") as f:
+                        f.writelines(final_lines[-max_log_lines:])
+                    os.replace(tmp_p, log_file_path)
+            except Exception:
+                pass
         process.terminate()
         try:
             process.wait(timeout=3)

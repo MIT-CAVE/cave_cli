@@ -200,6 +200,22 @@ def run_cave(
     parsed = parse_ip_port(ip_port_arg) if ip_port_arg else None
     django_container = f"{app_name}_django"
 
+    from cave_cli.utils.task_queue import (
+        get_run_log_limit,
+        get_run_log_path,
+    )
+
+    log_lines_arg = getattr(args, "log_lines", None)
+    log_history_arg = getattr(args, "log_history", None)
+    if log_history_arg is False or log_lines_arg == 0:
+        run_log_limit = 0
+    elif log_lines_arg is not None and log_lines_arg > 0:
+        run_log_limit = log_lines_arg
+    else:
+        run_log_limit = get_run_log_limit(app_dir)
+
+    run_log_path = get_run_log_path(app_dir) if run_log_limit > 0 else None
+
     if parsed:
         ip, port = parsed
         if not is_port_available(port):
@@ -261,6 +277,8 @@ def run_cave(
                 extra_args=extra_docker_args or None,
                 command=server_command,
                 url=url,
+                log_file_path=run_log_path,
+                max_log_lines=run_log_limit,
             )
 
         else:
@@ -312,6 +330,8 @@ def run_cave(
                 extra_args=extra_docker_args or None,
                 command=server_command,
                 url=url,
+                log_file_path=run_log_path,
+                max_log_lines=run_log_limit,
             )
 
         else:
@@ -344,6 +364,8 @@ def _run_tui(
     extra_args: list[str] | None,
     command: list[str],
     url: str,
+    log_file_path: str | None = None,
+    max_log_lines: int = 500,
 ) -> None:
     """
     Usage:
@@ -389,7 +411,13 @@ def _run_tui(
 
     log_thread = threading.Thread(
         target=stream_container_logs,
-        args=(django_container, dashboard.get_queue(), stop_event),
+        args=(
+            django_container,
+            dashboard.get_queue(),
+            stop_event,
+            log_file_path,
+            max_log_lines,
+        ),
         daemon=True,
     )
 

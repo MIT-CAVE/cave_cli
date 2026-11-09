@@ -315,6 +315,136 @@ def _write_registry_unlocked(path: str, data: dict[str, Any]) -> None:
                 pass
 
 
+DEFAULT_TASK_HISTORY_LIMIT: int = 50
+DEFAULT_RUN_LOG_LIMIT: int = 500
+
+
+def get_task_history_limit(app_dir: str | None = None) -> int:
+    """
+    Usage:
+
+    - Resolves the task history retention limit from environment or configuration
+
+    Optional:
+
+    - ``app_dir``:
+        - Type: str | None
+        - What: Root directory of CAVE app
+        - Default: None
+
+    Returns:
+
+    - ``limit``:
+        - Type: int
+        - What: Maximum number of task history records and logs to retain
+    """
+    env_val = os.environ.get("CAVE_TASK_HISTORY_LIMIT") or os.environ.get(
+        "TASK_HISTORY_LIMIT"
+    )
+    if env_val and env_val.isdigit():
+        return max(1, int(env_val))
+
+    if app_dir:
+        env_file = os.path.join(app_dir, ".env")
+        if os.path.isfile(env_file):
+            try:
+                from cave_cli.utils.env import parse_env
+
+                parsed = parse_env(env_file)
+                val = parsed.get("CAVE_TASK_HISTORY_LIMIT") or parsed.get(
+                    "TASK_HISTORY_LIMIT"
+                )
+                if val and str(val).isdigit():
+                    return max(1, int(val))
+            except Exception:
+                pass
+
+    try:
+        from cave_cli.utils.cache import get_setting
+
+        setting_val = get_setting("task_history_limit")
+        if setting_val and str(setting_val).isdigit():
+            return max(1, int(setting_val))
+    except Exception:
+        pass
+
+    return DEFAULT_TASK_HISTORY_LIMIT
+
+
+def get_run_log_limit(app_dir: str | None = None) -> int:
+    """
+    Usage:
+
+    - Resolves the live server run log line limit from environment or configuration
+
+    Optional:
+
+    - ``app_dir``:
+        - Type: str | None
+        - What: Root directory of CAVE app
+        - Default: None
+
+    Returns:
+
+    - ``limit``:
+        - Type: int
+        - What: Maximum number of server log lines to maintain in run.log
+    """
+    env_val = os.environ.get("CAVE_RUN_LOG_LIMIT") or os.environ.get(
+        "RUN_LOG_LIMIT"
+    )
+    if env_val and env_val.isdigit():
+        return max(1, int(env_val))
+
+    if app_dir:
+        env_file = os.path.join(app_dir, ".env")
+        if os.path.isfile(env_file):
+            try:
+                from cave_cli.utils.env import parse_env
+
+                parsed = parse_env(env_file)
+                val = parsed.get("CAVE_RUN_LOG_LIMIT") or parsed.get(
+                    "RUN_LOG_LIMIT"
+                )
+                if val and str(val).isdigit():
+                    return max(1, int(val))
+            except Exception:
+                pass
+
+    try:
+        from cave_cli.utils.cache import get_setting
+
+        setting_val = get_setting("run_log_limit")
+        if setting_val and str(setting_val).isdigit():
+            return max(1, int(setting_val))
+    except Exception:
+        pass
+
+    return DEFAULT_RUN_LOG_LIMIT
+
+
+def get_run_log_path(app_dir: str) -> str:
+    """
+    Usage:
+
+    - Resolves the log file path for live cave run server logs
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Returns:
+
+    - ``path``:
+        - Type: str
+        - What: Absolute path to the run.log file
+    """
+    log_dir = get_task_log_dir(app_dir)
+    return os.path.join(log_dir, "run.log")
+
+
 def prune_stale_tasks(app_dir: str, locked: bool = False) -> None:
     """
     Usage:
@@ -334,9 +464,15 @@ def prune_stale_tasks(app_dir: str, locked: bool = False) -> None:
         - What: Whether the registry lock is already held
         - Default: False
     """
+    registry_path = get_task_registry_path(app_dir)
+    data = _read_registry_unlocked(registry_path)
+    has_active = any(
+        t.get("status") in ("queued", "running") for t in data.get("tasks", [])
+    )
+    if not has_active:
+        return
 
     def _do_prune() -> None:
-        registry_path = get_task_registry_path(app_dir)
         data = _read_registry_unlocked(registry_path)
         modified = False
         now = time.time()
@@ -359,6 +495,90 @@ def prune_stale_tasks(app_dir: str, locked: bool = False) -> None:
     else:
         with TaskRegistryLock(app_dir):
             _do_prune()
+
+
+def prune_task_history(
+    app_dir: str, limit: int | None = None, locked: bool = False
+) -> int:
+    """
+    Usage:
+
+    - Prunes completed tasks exceeding the retention limit and deletes their log files
+
+    Requires:
+
+    - ``app_dir``:
+        - Type: str
+        - What: The root directory of the CAVE application
+
+    Optional:
+
+    - ``limit``:
+        - Type: int | None
+        - What: Maximum completed tasks to keep (defaults to configured history limit)
+        - Default: None
+
+    - ``locked``:
+        - Type: bool
+        - What: Whether the registry lock is already held
+        - Default: False
+
+    Returns:
+
+    - ``removed_count``:
+        - Type: int
+        - What: Number of tasks pruned
+    """
+    max_history = (
+        limit if limit is not None else get_task_history_limit(app_dir)
+    )
+
+    def _do_prune() -> int:
+        registry_path = get_task_registry_path(app_dir)
+        data = _read_registry_unlocked(registry_path)
+        tasks = data.get("tasks", [])
+        if not tasks:
+            return 0
+
+        active_tasks = [
+            t for t in tasks if t.get("status") in ("queued", "running")
+        ]
+        completed_tasks = [
+            t for t in tasks if t.get("status") not in ("queued", "running")
+        ]
+
+        if len(completed_tasks) <= max_history:
+            return 0
+
+        to_prune = (
+            completed_tasks[:-max_history]
+            if max_history > 0
+            else completed_tasks
+        )
+        to_keep_completed = (
+            completed_tasks[-max_history:] if max_history > 0 else []
+        )
+
+        for t in to_prune:
+            log_path = get_task_log_path(app_dir, t.get("id", 0))
+            try:
+                if os.path.exists(log_path):
+                    os.remove(log_path)
+            except Exception:
+                pass
+
+        keep_ids = {t["id"] for t in active_tasks} | {
+            t["id"] for t in to_keep_completed
+        }
+        retained = [t for t in tasks if t.get("id") in keep_ids]
+        data["tasks"] = retained
+        _write_registry_unlocked(registry_path, data)
+        return len(to_prune)
+
+    if locked:
+        return _do_prune()
+    with TaskRegistryLock(app_dir):
+        return _do_prune()
 
 
 def register_task(
@@ -444,12 +664,10 @@ def register_task(
 
         tasks = data.get("tasks", [])
         tasks.append(task)
-        # Retain at most the last 50 tasks
-        if len(tasks) > 50:
-            tasks = tasks[-50:]
         data["tasks"] = tasks
 
         _write_registry_unlocked(registry_path, data)
+        prune_task_history(app_dir, locked=True)
         return task
 
 
@@ -582,11 +800,11 @@ def get_task_log_path(app_dir: str, task_id: int) -> str:
     return os.path.join(log_dir, f"task_{task_id}.log")
 
 
-def clean_completed_tasks(app_dir: str) -> int:
+def clean_completed_tasks(app_dir: str, keep_last_n: int = 0) -> int:
     """
     Usage:
 
-    - Removes finished tasks and their log files when task server is stopped
+    - Removes completed tasks and their log files, optionally retaining the last N
 
     Requires:
 
@@ -594,32 +812,20 @@ def clean_completed_tasks(app_dir: str) -> int:
         - Type: str
         - What: The root directory of the CAVE application
 
+    Optional:
+
+    - ``keep_last_n``:
+        - Type: int
+        - What: Number of recent completed tasks to retain (default: 0 to clean all)
+        - Default: 0
+
     Returns:
 
     - ``removed_count``:
         - Type: int
         - What: Number of cleaned tasks
     """
-    with TaskRegistryLock(app_dir):
-        registry_path = get_task_registry_path(app_dir)
-        data = _read_registry_unlocked(registry_path)
-        retained = []
-        removed_count = 0
-        for t in data.get("tasks", []):
-            if t.get("status") in ("queued", "running"):
-                retained.append(t)
-            else:
-                removed_count += 1
-                log_path = get_task_log_path(app_dir, t.get("id", 0))
-                try:
-                    if os.path.exists(log_path):
-                        os.remove(log_path)
-                except Exception:
-                    pass
-        if removed_count > 0:
-            data["tasks"] = retained
-            _write_registry_unlocked(registry_path, data)
-        return removed_count
+    return prune_task_history(app_dir, limit=keep_last_n)
 
 
 def update_task_status(
@@ -700,17 +906,24 @@ def get_task(app_dir: str, task_id: int) -> dict[str, Any] | None:
     return None
 
 
-def list_tasks(app_dir: str) -> list[dict[str, Any]]:
+def list_tasks(app_dir: str, limit: int | None = None) -> list[dict[str, Any]]:
     """
     Usage:
 
-    - Lists all recorded tasks for a CAVE project
+    - Lists recorded tasks for a CAVE project, optionally limited to the most recent N
 
     Requires:
 
     - ``app_dir``:
         - Type: str
         - What: The root directory of the CAVE application
+
+    Optional:
+
+    - ``limit``:
+        - Type: int | None
+        - What: Maximum number of recent tasks to return
+        - Default: None (returns all recorded tasks up to history limit)
 
     Returns:
 
@@ -721,7 +934,10 @@ def list_tasks(app_dir: str) -> list[dict[str, Any]]:
     prune_stale_tasks(app_dir)
     registry_path = get_task_registry_path(app_dir)
     data = _read_registry_unlocked(registry_path)
-    return data.get("tasks", [])
+    tasks = data.get("tasks", [])
+    if limit is not None and limit > 0:
+        return tasks[-limit:]
+    return tasks
 
 
 def cancel_task(app_dir: str, app_name: str, task_id: int) -> bool:

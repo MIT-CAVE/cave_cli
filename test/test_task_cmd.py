@@ -147,6 +147,38 @@ class TestTaskCommand:
         mock_list_tasks.assert_called_once_with(fake_app[0])
 
     @patch("cave_cli.commands.task.get_app")
+    @patch("cave_cli.commands.task.list_tasks")
+    def test_task_list_all_with_limit(
+        self, mock_list_tasks, mock_get_app, fake_app
+    ):
+        mock_get_app.return_value = fake_app
+        mock_list_tasks.return_value = [
+            {"id": 1, "command": "test", "args": [], "status": "completed"}
+        ]
+        args = argparse.Namespace(
+            list=False,
+            list_all=True,
+            limit=5,
+            kill_id=None,
+            kill_all=False,
+            remaining=[],
+        )
+        task(args)
+        mock_list_tasks.assert_called_once_with(fake_app[0], limit=5)
+
+    @patch("cave_cli.commands.task.get_app")
+    @patch("cave_cli.commands.task.clean_completed_tasks")
+    def test_task_clean(self, mock_clean_completed, mock_get_app, fake_app):
+        mock_get_app.return_value = fake_app
+        mock_clean_completed.return_value = 2
+        args = argparse.Namespace(
+            action="clean",
+            remaining=[],
+        )
+        task(args)
+        mock_clean_completed.assert_called_once_with(fake_app[0], keep_last_n=0)
+
+    @patch("cave_cli.commands.task.get_app")
     @patch("cave_cli.commands.task.schedule_task", return_value=0)
     def test_task_start_subcommand(self, mock_schedule, mock_get_app, fake_app):
         mock_get_app.return_value = fake_app

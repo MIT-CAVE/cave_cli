@@ -105,6 +105,8 @@ def normalize_task_args(args: list[str]) -> list[str]:
         "cancel",
         "kill-all",
         "cancel-all",
+        "clean",
+        "clear",
         "reset",
         "stop",
         "kill-server",
@@ -118,6 +120,7 @@ def normalize_task_args(args: list[str]) -> list[str]:
         "-k",
         "--kill",
         "--kill-all",
+        "--clean",
         "--reset",
         "--stop",
         "-h",
@@ -131,7 +134,13 @@ def normalize_task_args(args: list[str]) -> list[str]:
 
     # Find the position of the first non-option argument (skipping options and their arguments)
     skip_next = False
-    options_with_value = {"--loglevel", "--ll", "--docker-args"}
+    options_with_value = {
+        "--loglevel",
+        "--ll",
+        "--docker-args",
+        "-n",
+        "--limit",
+    }
     for i, a in enumerate(after_task):
         if skip_next:
             skip_next = False
@@ -239,6 +248,19 @@ def main():
         action="store_true",
         default=False,
         help="Show raw container output instead of the TUI dashboard (also enabled by --verbose)",
+    )
+    p_run.add_argument(
+        "--log-history",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable or disable writing rotating server logs to run.log",
+    )
+    p_run.add_argument(
+        "--log-lines",
+        type=int,
+        default=None,
+        metavar="LINES",
+        help="Maximum lines of server logs to maintain in run.log (default: 500)",
     )
 
     # ------------------------------------------------------------------ #
@@ -400,6 +422,20 @@ def main():
         help="List all tasks including completed, failed, and cancelled",
     )
     p_task.add_argument(
+        "-n",
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Limit number of tasks displayed",
+    )
+    p_task.add_argument(
+        "--clean",
+        action="store_true",
+        default=False,
+        help="Clean all completed task logs and remove completed tasks from registry",
+    )
+    p_task.add_argument(
         "-a",
         "--attach",
         nargs="?",
@@ -509,6 +545,14 @@ def main():
         default=argparse.SUPPRESS,
         help="List all tasks including completed, failed, and cancelled",
     )
+    p_task_list.add_argument(
+        "-n",
+        "--limit",
+        type=int,
+        default=argparse.SUPPRESS,
+        metavar="N",
+        help="Limit number of tasks displayed",
+    )
 
     # task list-all
     p_task_list_all = task_subparsers.add_parser(
@@ -518,6 +562,23 @@ def main():
         description="Display all recorded tasks in the project registry.",
     )
     add_global_args(p_task_list_all)
+    p_task_list_all.add_argument(
+        "-n",
+        "--limit",
+        type=int,
+        default=argparse.SUPPRESS,
+        metavar="N",
+        help="Limit number of tasks displayed",
+    )
+
+    # task clean
+    p_task_clean = task_subparsers.add_parser(
+        "clean",
+        aliases=["clear"],
+        help="Clean completed task logs and remove completed tasks from registry",
+        description="Delete all completed task logs and remove them from the project registry.",
+    )
+    add_global_args(p_task_clean)
 
     # task attach
     p_task_attach = task_subparsers.add_parser(
@@ -581,6 +642,63 @@ def main():
         default=argparse.SUPPRESS,
         metavar="ARGS",
         help="Additional arguments to pass to docker run",
+    )
+
+    # ------------------------------------------------------------------ #
+    # logs / log                                                           #
+    # ------------------------------------------------------------------ #
+    p_logs = subparsers.add_parser(
+        "logs",
+        aliases=["log"],
+        help="Inspect, follow, or locate server run logs or task execution logs",
+        description="Inspect, follow, or locate live server logs or background task logs.",
+    )
+    add_global_args(p_logs)
+    p_logs.add_argument(
+        "-n",
+        "--lines",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of lines to show from the end (defaults to all available)",
+    )
+    p_logs.add_argument(
+        "-f",
+        "--follow",
+        action="store_true",
+        default=False,
+        help="Follow log output in real time",
+    )
+    p_logs.add_argument(
+        "-e",
+        "--errors",
+        action="store_true",
+        default=False,
+        help="Filter output to only show errors and exceptions",
+    )
+    p_logs.add_argument(
+        "-p",
+        "--path",
+        action="store_true",
+        default=False,
+        help="Print the absolute path to the log file and exit",
+    )
+    p_logs.add_argument(
+        "-c",
+        "--clear",
+        action="store_true",
+        default=False,
+        help="Clear the target log file",
+    )
+    p_logs.add_argument(
+        "-t",
+        "--task",
+        nargs="?",
+        type=int,
+        const=0,
+        default=None,
+        metavar="ID",
+        help="Inspect task log instead of server logs (defaults to latest task if ID omitted)",
     )
 
     # ------------------------------------------------------------------ #
@@ -812,6 +930,7 @@ def main():
         "start": "run",
         "reset-db": "reset",
         "lv": "list-versions",
+        "log": "logs",
     }
     args.command = _COMMAND_ALIASES.get(args.command, args.command)
 
@@ -891,6 +1010,11 @@ def main():
 
         check_all()
         task(args)
+
+    elif args.command == "logs":
+        from cave_cli.commands.logs import logs
+
+        logs(args)
 
     elif args.command == "prettify":
         from cave_cli.commands.doctor import check_all

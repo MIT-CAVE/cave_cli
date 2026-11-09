@@ -735,6 +735,8 @@ def task(args: argparse.Namespace) -> None:
         kill_id = getattr(args, "task_id", None)
     elif task_action in ("kill-all", "cancel-all"):
         action = "kill-all"
+    elif task_action in ("clean", "clear"):
+        action = "clean"
     elif task_action == "reset":
         action = "reset"
 
@@ -744,6 +746,8 @@ def task(args: argparse.Namespace) -> None:
             action = "list-all"
         elif getattr(args, "list", False):
             action = "list"
+        elif getattr(args, "clean", False):
+            action = "clean"
         elif getattr(args, "kill_all", False):
             action = "kill-all"
         elif getattr(args, "reset", False):
@@ -762,6 +766,8 @@ def task(args: argparse.Namespace) -> None:
             action = "list-all"
         elif first in ("list", "ls", "l"):
             action = "list"
+        elif first in ("clean", "clear"):
+            action = "clean"
         elif first in ("attach", "join", "log", "logs"):
             action = "attach"
             if len(remaining) > 1 and remaining[1].isdigit():
@@ -790,21 +796,30 @@ def task(args: argparse.Namespace) -> None:
         task_cmd = remaining
 
     if action == "list-all":
-        if not is_task_server_running(app_name):
-            clean_completed_tasks(app_dir)
-        tasks = list_tasks(app_dir)
+        limit = getattr(args, "limit", None)
+        tasks = (
+            list_tasks(app_dir, limit=limit)
+            if limit is not None
+            else list_tasks(app_dir)
+        )
         _print_tasks_table(tasks, app_name, only_active=False)
         return
 
     if action == "list":
-        if not is_task_server_running(app_name):
-            clean_completed_tasks(app_dir)
+        limit = getattr(args, "limit", None)
         tasks = [
             t
             for t in list_tasks(app_dir)
             if t.get("status") in ("queued", "running")
         ]
+        if limit is not None and limit > 0:
+            tasks = tasks[-limit:]
         _print_tasks_table(tasks, app_name, only_active=True)
+        return
+
+    if action == "clean":
+        removed = clean_completed_tasks(app_dir, keep_last_n=0)
+        logger.success(f"Cleaned {removed} completed task(s) for '{app_name}'.")
         return
 
     if action == "attach":
@@ -847,10 +862,8 @@ def task(args: argparse.Namespace) -> None:
     if action == "stop":
         if is_task_server_running(app_name):
             stop_task_server(app_name, app_dir=app_dir)
-            clean_completed_tasks(app_dir)
             logger.success(f"Task server stopped for '{app_name}'.")
         else:
-            clean_completed_tasks(app_dir)
             logger.info(f"Task server for '{app_name}' is already stopped.")
         return
 
@@ -870,11 +883,12 @@ def task(args: argparse.Namespace) -> None:
         return
 
     # Default action if no flags/subcommands: list active tasks
-    if not is_task_server_running(app_name):
-        clean_completed_tasks(app_dir)
+    limit = getattr(args, "limit", None)
     tasks = [
         t
         for t in list_tasks(app_dir)
         if t.get("status") in ("queued", "running")
     ]
+    if limit is not None and limit > 0:
+        tasks = tasks[-limit:]
     _print_tasks_table(tasks, app_name, only_active=True)

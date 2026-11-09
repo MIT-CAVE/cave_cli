@@ -475,9 +475,9 @@ def stop_task_server(app_name: str, app_dir: str | None = None) -> None:
     run_and_log(["docker", "network", "rm", f"cave-net-test:{app_name}"])
 
     if app_dir:
-        from cave_cli.utils.task_queue import clean_completed_tasks
+        from cave_cli.utils.task_queue import prune_task_history
 
-        clean_completed_tasks(app_dir)
+        prune_task_history(app_dir)
 
 
 def reset_task_server(

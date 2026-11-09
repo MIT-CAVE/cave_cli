@@ -229,3 +229,49 @@ class TestTaskQueueLock:
         tasks = list_tasks(fake_app_dir)
         assert len(tasks) == 1
         assert tasks[0]["id"] == t2["id"]
+
+    def test_task_history_retention(self, fake_app_dir):
+        from cave_cli.utils.task_queue import prune_task_history
+
+        log_paths = {}
+        for i in range(1, 11):
+            t = register_task(fake_app_dir, "sample_app", f"cmd_{i}", [])
+            update_task_status(fake_app_dir, t["id"], "completed", exit_code=0)
+            lp = get_task_log_path(fake_app_dir, t["id"])
+            Path(lp).write_text(f"log {i}", encoding="utf-8")
+            log_paths[i] = lp
+
+        pruned = prune_task_history(fake_app_dir, limit=3)
+        assert pruned == 7
+
+        remaining = list_tasks(fake_app_dir)
+        assert len(remaining) == 3
+        assert [t["id"] for t in remaining] == [8, 9, 10]
+
+        # Old logs deleted, recent logs kept
+        for i in range(1, 8):
+            assert not os.path.exists(log_paths[i])
+        for i in range(8, 11):
+            assert os.path.exists(log_paths[i])
+
+    def test_get_limits_and_paths(self, fake_app_dir, monkeypatch):
+        from cave_cli.utils.task_queue import (
+            DEFAULT_RUN_LOG_LIMIT,
+            DEFAULT_TASK_HISTORY_LIMIT,
+            get_run_log_limit,
+            get_run_log_path,
+            get_task_history_limit,
+        )
+
+        assert (
+            get_task_history_limit(fake_app_dir) == DEFAULT_TASK_HISTORY_LIMIT
+        )
+        assert get_run_log_limit(fake_app_dir) == DEFAULT_RUN_LOG_LIMIT
+
+        monkeypatch.setenv("CAVE_TASK_HISTORY_LIMIT", "25")
+        monkeypatch.setenv("CAVE_RUN_LOG_LIMIT", "120")
+        assert get_task_history_limit(fake_app_dir) == 25
+        assert get_run_log_limit(fake_app_dir) == 120
+
+        run_log = get_run_log_path(fake_app_dir)
+        assert run_log.endswith("run.log")

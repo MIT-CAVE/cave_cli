@@ -234,6 +234,22 @@ def main():
         help="Additional arguments to pass to docker run",
     )
     p_run.add_argument(
+        "-d",
+        "--detached",
+        dest="detached",
+        action="store_true",
+        default=False,
+        help="Run app in detached background mode",
+    )
+    p_run.add_argument(
+        "-a",
+        "--attach",
+        dest="attach",
+        action="store_true",
+        default=False,
+        help="Attach to a running CAVE app",
+    )
+    p_run.add_argument(
         "-it",
         "-interactive",
         "--interactive",

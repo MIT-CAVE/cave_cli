@@ -337,6 +337,7 @@ def stream_container_logs(
     stop_event: "threading.Event",
     log_file_path: str | None = None,
     max_log_lines: int = 500,
+    tail: int | str | None = None,
 ) -> None:
     """
     Usage:
@@ -368,6 +369,11 @@ def stream_container_logs(
         - Type: int
         - What: Maximum number of recent log lines to maintain in log_file_path
         - Default: 500
+
+    - ``tail``:
+        - Type: int | str | None
+        - What: Number of recent log lines to show initially, or None to stream from now
+        - Default: None
 
     Notes:
 
@@ -407,14 +413,32 @@ def stream_container_logs(
 
     log_parser = LogParser()
 
+    cmd = ["docker", "logs", "-f"]
+    if tail is not None:
+        cmd.extend(["--tail", str(tail)])
+    else:
+        cmd.extend(["--since", "0s"])
+    cmd.append(container_name)
+
     process = subprocess.Popen(
-        ["docker", "logs", "-f", "--since", "0s", container_name],
+        cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
         errors="replace",
     )
+
+    def _watch_stop() -> None:
+        stop_event.wait()
+        try:
+            process.terminate()
+        except Exception:
+            pass
+
+    watcher = _threading.Thread(target=_watch_stop, daemon=True)
+    watcher.start()
+
     try:
         for line in process.stdout:
             if stop_event.is_set():

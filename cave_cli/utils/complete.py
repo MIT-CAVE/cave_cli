@@ -210,12 +210,19 @@ def get_completions(words: list[str], cword: int) -> list[str]:
 
     if subcmd in ("run", "start"):
         return [
+            "-d",
+            "--detached",
+            "-a",
+            "--attach",
             "--entrypoint",
             "--docker-args",
             "-it",
             "-interactive",
             "--interactive",
             "--all",
+            "--log-history",
+            "--no-log-history",
+            "--log-lines",
         ] + global_flags
 
     if subcmd in ("reset", "reset-db"):

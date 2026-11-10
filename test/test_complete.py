@@ -74,6 +74,13 @@ class TestCompleteUtils:
         assert "--keep-alive" not in candidates
         assert "--reset" not in candidates
 
+    def test_get_completions_run(self):
+        candidates = get_completions(["cave", "run", ""], 2)
+        assert "-d" in candidates
+        assert "--detached" in candidates
+        assert "-a" in candidates
+        assert "--attach" in candidates
+
     def test_get_completions_task(self):
         candidates = get_completions(["cave", "task", ""], 2)
         assert "list" in candidates

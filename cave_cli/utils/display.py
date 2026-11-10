@@ -1,3 +1,4 @@
+import os
 import queue
 import re
 import shutil
@@ -137,10 +138,82 @@ READY = "ready"
 ERROR = "error"
 STOPPING = "stopping"
 
+# ── Display mode constants ─────────────────────────────────────────────────
+
+MODE_LIFECYCLE = "lifecycle"
+MODE_STANDARD = "standard"
+MODE_ALL = "all"
+MODE_VERBOSE = "verbose"
+
 
 from cave_cli.utils.log_parser import LogParser
 
 # ── Data structures ────────────────────────────────────────────────────────
+
+
+@dataclass
+class StackComponent:
+    """
+    Usage:
+
+    - Represents an orchestrated component in the CAVE Docker stack.
+
+    Requires:
+
+    - ``name``:
+        - Type: str
+        - What: Name of component (e.g. "App Server", "Database").
+
+    - ``image``:
+        - Type: str
+        - What: Docker image name.
+
+    - ``container``:
+        - Type: str
+        - What: Docker container or network identifier.
+
+    Optional:
+
+    - ``status``:
+        - Type: str
+        - What: Current component status (e.g. "Pending", "Starting", "Ready").
+        - Default: "Pending"
+    """
+
+    name: str
+    image: str
+    container: str
+    status: str = "Pending"
+
+
+@dataclass
+class LifecycleEvent:
+    """
+    Usage:
+
+    - Represents a single lifecycle milestone during startup or teardown.
+
+    Requires:
+
+    - ``timestamp``:
+        - Type: str
+        - What: HH:MM:SS timestamp.
+
+    - ``text``:
+        - Type: str
+        - What: Description of the event.
+
+    Optional:
+
+    - ``status``:
+        - Type: str
+        - What: Status badge ("ok", "pending", "warn", "error", "info").
+        - Default: "ok"
+    """
+
+    timestamp: str
+    text: str
+    status: str = "ok"
 
 
 @dataclass
@@ -504,6 +577,9 @@ class DashboardRenderer:
         current_error_block: list[LogLine],
         show_all: bool = False,
         scroll_offset: int = 0,
+        mode: str = MODE_STANDARD,
+        components: list[StackComponent] | None = None,
+        lifecycle_events: list[LifecycleEvent] | None = None,
     ) -> None:
         """
         Usage:
@@ -540,6 +616,8 @@ class DashboardRenderer:
             - Type: list[LogLine]
             - What: Lines of the most recent error event (shown in panel body).
 
+        Optional:
+
         - ``show_all``:
             - Type: bool
             - What: If True, renders all logs without filtering or panels.
@@ -549,6 +627,21 @@ class DashboardRenderer:
             - Type: int
             - What: Number of lines to scroll up from the bottom in show_all mode.
             - Default: 0
+
+        - ``mode``:
+            - Type: str
+            - What: Display mode (MODE_STANDARD, MODE_ALL, or MODE_LIFECYCLE).
+            - Default: MODE_STANDARD
+
+        - ``components``:
+            - Type: list[StackComponent] | None
+            - What: Stack components shown in Lifecycle view.
+            - Default: None
+
+        - ``lifecycle_events``:
+            - Type: list[LifecycleEvent] | None
+            - What: Lifecycle events shown in Lifecycle view.
+            - Default: None
         """
         cols, rows = shutil.get_terminal_size(fallback=(80, 24))
         bar_width = max(10, cols - 4)
@@ -565,7 +658,12 @@ class DashboardRenderer:
             if ws_clients > 0
             else ""
         )
-        mode_str = f"  │  {YELLOW}{BOLD}ALL LOGS{RESET}" if show_all else ""
+        if mode == MODE_LIFECYCLE:
+            mode_str = f"  │  {CYAN}{BOLD}LIFECYCLE{RESET}"
+        elif mode == MODE_ALL or show_all:
+            mode_str = f"  │  {YELLOW}{BOLD}ALL LOGS{RESET}"
+        else:
+            mode_str = ""
         title = (
             f"  {BOLD}{CYAN}CAVE{RESET}"
             f"  │  {BOLD}{app_name}{RESET}"
@@ -578,7 +676,98 @@ class DashboardRenderer:
         lines.append(f"  {BOLD}{'━' * bar_width}{RESET}")
         lines.append("")
 
-        if show_all:
+        if mode == MODE_LIFECYCLE:
+            # ── Stack Components Section ─────────────────────────────────────
+            lines.append(f"  {BOLD}Stack Components{RESET}")
+            lines.append(f"  {'─' * bar_width}")
+            comp_list = components or []
+            if not comp_list:
+                lines.append(f"  {DIM}No components registered{RESET}")
+            else:
+                for c in comp_list:
+                    c_status_lower = c.status.lower()
+                    if c_status_lower in (
+                        "ready",
+                        "running",
+                        "active",
+                        "done",
+                        "built",
+                    ):
+                        c_color = GREEN
+                        dot = f"{GREEN}●{RESET}"
+                    elif c_status_lower in (
+                        "starting",
+                        "building",
+                        "checking",
+                        "pending",
+                        "creating",
+                        "loading",
+                        "loading app",
+                    ):
+                        c_color = YELLOW
+                        dot = f"{YELLOW}●{RESET}"
+                    elif c_status_lower in (
+                        "stopping",
+                        "stopped",
+                        "removed",
+                        "inactive",
+                    ):
+                        c_color = DIM
+                        dot = f"{DIM}●{RESET}"
+                    else:
+                        c_color = RED
+                        dot = f"{RED}●{RESET}"
+
+                    name_str = c.name.ljust(14)
+                    image_str = self._truncate(c.image, 24).ljust(25)
+                    container_str = self._truncate(c.container, 22).ljust(23)
+                    status_badge = f"{c_color}[{c.status}]{RESET}"
+                    lines.append(
+                        f"  {dot} {BOLD}{name_str}{RESET} "
+                        f"{DIM}{image_str}{RESET} {container_str} {status_badge}"
+                    )
+            lines.append(f"  {'─' * bar_width}")
+            lines.append("")
+
+            # ── Lifecycle Timeline Section ──────────────────────────────────
+            lines.append(f"  {BOLD}Lifecycle Timeline{RESET}")
+            lines.append(f"  {'─' * bar_width}")
+
+            fixed_comp_lines = 4 + max(1, len(comp_list)) + 1
+            timeline_budget = max(
+                3,
+                budget
+                - self._HEADER_LINES
+                - self._FOOTER_LINES
+                - fixed_comp_lines,
+            )
+
+            ev_list = lifecycle_events or []
+            visible_evs = ev_list[-timeline_budget:]
+            if not visible_evs:
+                lines.append(f"  {DIM}Waiting for lifecycle events...{RESET}")
+            else:
+                for ev in visible_evs:
+                    ts = f"{DIM}{ev.timestamp}{RESET}"
+                    if ev.status == "ok":
+                        icon = f"{GREEN}✓{RESET}"
+                    elif ev.status == "pending":
+                        icon = f"{YELLOW}●{RESET}"
+                    elif ev.status == "error":
+                        icon = f"{RED}✗{RESET}"
+                    elif ev.status == "warn":
+                        icon = f"{YELLOW}!{RESET}"
+                    else:
+                        icon = f"{CYAN}i{RESET}"
+                    msg = self._truncate(ev.text, cols - 16)
+                    lines.append(f"  {ts}  {icon}  {msg}")
+            lines.append(f"  {'─' * bar_width}")
+
+            rendered_tl = max(1, len(visible_evs))
+            for _ in range(timeline_budget - rendered_tl):
+                lines.append("")
+
+        elif show_all or mode == MODE_ALL:
             # ── All Logs Mode ──────────────────────────────────────────────
             max_log_lines = max(
                 0, budget - self._HEADER_LINES - self._FOOTER_LINES
@@ -686,13 +875,13 @@ class DashboardRenderer:
 
         # ── Footer ─────────────────────────────────────────────────────────
         lines.append("")
-        if show_all:
+        if show_all or mode == MODE_ALL:
             lines.append(
-                f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle mode  │  ↑/↓ to scroll{RESET}"
+                f"  {DIM}Ctrl+C to stop  │  Esc to detach  │  Tab / Shift+Tab to cycle  │  ↑/↓ to scroll{RESET}"
             )
         else:
             lines.append(
-                f"  {DIM}Ctrl+C to stop  │  Ctrl+A to toggle output mode{RESET}"
+                f"  {DIM}Ctrl+C to stop  │  Esc to detach  │  Tab / Shift+Tab to cycle{RESET}"
             )
 
         # Write the full frame atomically: move to top-left, write each line
@@ -727,6 +916,23 @@ class RunDashboard:
         - Type: str
         - What: App access URL shown in the header.
 
+    Optional:
+
+    - ``stop_event``:
+        - Type: threading.Event | None
+        - What: Event to signal shutdown.
+        - Default: None
+
+    - ``max_logs``:
+        - Type: int
+        - What: Maximum number of log lines to keep in memory buffers.
+        - Default: 10000
+
+    - ``initial_mode``:
+        - Type: str
+        - What: Initial display mode (MODE_STANDARD, MODE_ALL, or MODE_VERBOSE).
+        - Default: MODE_STANDARD
+
     Notes:
 
     - Call ``start()`` after setting up signal handlers and starting the
@@ -734,6 +940,13 @@ class RunDashboard:
     """
 
     REFRESH_INTERVAL: float = 0.2
+    is_detached: bool = False
+    MODES: tuple[str, ...] = (
+        MODE_LIFECYCLE,
+        MODE_STANDARD,
+        MODE_ALL,
+        MODE_VERBOSE,
+    )
 
     def __init__(
         self,
@@ -741,12 +954,14 @@ class RunDashboard:
         url: str,
         stop_event: threading.Event | None = None,
         max_logs: int = 10000,
+        initial_mode: str = MODE_STANDARD,
     ) -> None:
         self._app_name = app_name
         self._url = url
         self._max_logs = max_logs
         self._status: str = LOADING
         self._ws_clients: int = 0
+        self._mode: str = initial_mode
 
         # Initial log entry
         ts = time.strftime("%H:%M:%S")
@@ -760,7 +975,16 @@ class RunDashboard:
         self._log_lines: list[LogLine] = [initial_entry]
         self._all_log_lines: list[LogLine] = [initial_entry]
 
-        self._show_all: bool = False
+        self._components: list[StackComponent] = []
+        self._lifecycle_events: list[LifecycleEvent] = []
+        self._startup_logs: list[str] = []
+        self._last_verbose_index: int = 0
+        self._initial_auto_advanced: bool = False
+        self._app_loading: bool = False
+        self._verbose_header_printed: bool = False
+        self._paused: bool = False
+        self._old_settings: object | None = None
+
         self._scroll_offset: int = 0
         self._validation_count: int = 0
         self._current_error_block: list[LogLine] = []
@@ -771,6 +995,280 @@ class RunDashboard:
         self._parser: LogParser = LogParser()
         self._stop_event = stop_event or threading.Event()
         self._display_thread: threading.Thread | None = None
+        self.is_detached: bool = False
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    @property
+    def startup_logs(self) -> list[str]:
+        return list(self._startup_logs)
+
+    @property
+    def is_active_tui(self) -> bool:
+        return (
+            self._display_thread is not None
+            and self._display_thread.is_alive()
+            and not self._paused
+        )
+
+    def set_components(self, components: list[StackComponent]) -> None:
+        """
+        Usage:
+
+        - Sets the list of stack components displayed on the Lifecycle page.
+
+        Requires:
+
+        - ``components``:
+            - Type: list[StackComponent]
+            - What: Stack components to track.
+        """
+        self._components = list(components)
+
+    def update_component(self, name: str, status: str) -> None:
+        """
+        Usage:
+
+        - Updates the status of a specific component by name.
+
+        Requires:
+
+        - ``name``:
+            - Type: str
+            - What: Component name (e.g. "Database", "App Server").
+
+        - ``status``:
+            - Type: str
+            - What: New status badge (e.g. "Starting", "Ready", "Stopped").
+        """
+        for comp in self._components:
+            if comp.name.lower() == name.lower():
+                comp.status = status
+                return
+        # If not present, create it dynamically
+        self._components.append(
+            StackComponent(name=name, image="", container="", status=status)
+        )
+
+    def add_lifecycle_event(self, text: str, status: str = "ok") -> None:
+        """
+        Usage:
+
+        - Records a new lifecycle milestone event with a timestamp.
+
+        Requires:
+
+        - ``text``:
+            - Type: str
+            - What: Event description text.
+
+        Optional:
+
+        - ``status``:
+            - Type: str
+            - What: Status badge: "ok", "pending", "warn", "error", or "info".
+            - Default: "ok"
+        """
+        ts = time.strftime("%H:%M:%S")
+        self._lifecycle_events.append(
+            LifecycleEvent(timestamp=ts, text=text, status=status)
+        )
+        if len(self._lifecycle_events) > 500:
+            self._lifecycle_events.pop(0)
+
+    def add_startup_log(self, line: str) -> None:
+        """
+        Usage:
+
+        - Records raw orchestration command or debug output line.
+
+        Requires:
+
+        - ``line``:
+            - Type: str
+            - What: Log line to buffer.
+        """
+        self._startup_logs.append(line)
+        if len(self._startup_logs) > 2000:
+            self._startup_logs.pop(0)
+
+    def infer_component_from_step(
+        self, label: str, default_status: str
+    ) -> None:
+        """
+        Usage:
+
+        - Updates component status based on step label keywords.
+
+        Requires:
+
+        - ``label``:
+            - Type: str
+            - What: Step label (e.g. "Starting database").
+
+        - ``default_status``:
+            - Type: str
+            - What: Status to apply ("Starting", "Ready", "Error").
+        """
+        l_lower = label.lower()
+        if "database" in l_lower or "db" in l_lower:
+            self.update_component("Database", default_status)
+        elif "cache" in l_lower or "redis" in l_lower:
+            self.update_component("Cache", default_status)
+        elif "loading app" in l_lower:
+            if default_status == "Starting":
+                self._app_loading = True
+                self.update_component("App Server", "Loading App")
+            else:
+                self._app_loading = False
+                self.update_component("App Server", "Ready")
+        elif "starting django" in l_lower:
+            self.update_component(
+                "App Server",
+                "Starting" if default_status == "Starting" else "Running",
+            )
+        elif "django" in l_lower or "app" in l_lower:
+            self.update_component("App Server", default_status)
+        elif "network" in l_lower:
+            self.update_component("Network", default_status)
+        elif "proxy" in l_lower or "nginx" in l_lower:
+            self.update_component("Proxy", default_status)
+
+    @property
+    def _show_all(self) -> bool:
+        return self._mode == MODE_ALL
+
+    @_show_all.setter
+    def _show_all(self, val: bool) -> None:
+        self._mode = MODE_ALL if val else MODE_STANDARD
+
+    def cycle_mode(self, forward: bool = True) -> None:
+        """
+        Usage:
+
+        - Cycles through display modes in forward or reverse order.
+
+        Optional:
+
+        - ``forward``:
+            - Type: bool
+            - What: True to cycle forward, False for reverse (Shift+Tab).
+            - Default: True
+        """
+        try:
+            curr_idx = self.MODES.index(self._mode)
+        except ValueError:
+            curr_idx = 0
+        step = 1 if forward else -1
+        next_mode = self.MODES[(curr_idx + step) % len(self.MODES)]
+        self.set_mode(next_mode)
+
+    def set_mode(self, mode: str) -> None:
+        """
+        Usage:
+
+        - Switches display mode between Lifecycle, Standard, All, and Verbose.
+
+        Requires:
+
+        - ``mode``:
+            - Type: str
+            - What: One of MODE_LIFECYCLE, MODE_STANDARD, MODE_ALL, MODE_VERBOSE.
+        """
+        if mode == self._mode:
+            return
+
+        self._mode = mode
+        self._scroll_offset = 0
+
+        if mode == MODE_VERBOSE:
+            cols, _ = shutil.get_terminal_size(fallback=(80, 24))
+            bar_width = max(10, cols - 4)
+            sys.stdout.write(
+                f"{CURSOR_HOME}{CLEAR_BELOW}"
+                f"\n  {BOLD}{CYAN}CAVE App (Verbose Mode){RESET}\n"
+                f"  {DIM}Tab / Shift+Tab to switch view  │  Esc to detach  │  Ctrl+C to stop{RESET}\n"
+                f"  {'─' * bar_width}\n"
+            )
+            self._flush_verbose_backlog(from_start=True)
+            sys.stdout.flush()
+        else:
+            sys.stdout.write(CURSOR_HIDE)
+            sys.stdout.flush()
+
+    def _flush_verbose_backlog(self, from_start: bool = False) -> None:
+        """
+        Usage:
+
+        - Flushes unprinted startup and container log lines to stdout in Verbose mode.
+
+        Optional:
+
+        - ``from_start``:
+            - Type: bool
+            - What: If True, prints all buffered logs from the beginning.
+            - Default: False
+        """
+        start_idx = 0 if from_start else self._last_verbose_index
+        if start_idx == 0 and self._startup_logs:
+            for s_line in self._startup_logs:
+                sys.stdout.write(f"  {DIM}[startup]{RESET}  {s_line}\n")
+        unprinted = self._all_log_lines[start_idx:]
+        for entry in unprinted:
+            ts = f"{DIM}{entry.timestamp}{RESET}"
+            sys.stdout.write(f"  {ts}  {entry.raw}\n")
+        self._last_verbose_index = len(self._all_log_lines)
+        sys.stdout.flush()
+
+    def pause(self) -> None:
+        """
+        Usage:
+
+        - Temporarily leaves the TUI alternate screen so interactive prompts can run.
+        """
+        self._paused = True
+        if self._mode in (MODE_LIFECYCLE, MODE_STANDARD, MODE_ALL):
+            sys.stdout.write(CURSOR_SHOW + ALT_SCREEN_EXIT)
+            sys.stdout.flush()
+        if self._old_settings is not None and not IS_WINDOWS:
+            try:
+                import termios
+
+                termios.tcsetattr(
+                    sys.stdin.fileno(), termios.TCSADRAIN, self._old_settings
+                )
+            except Exception:
+                pass
+
+    def resume(self) -> None:
+        """
+        Usage:
+
+        - Resumes the TUI alternate screen after an interactive prompt.
+        """
+        self._paused = False
+        if not IS_WINDOWS:
+            try:
+                import tty
+
+                tty.setcbreak(sys.stdin.fileno())
+            except Exception:
+                pass
+        if self._mode in (MODE_LIFECYCLE, MODE_STANDARD, MODE_ALL):
+            sys.stdout.write(ALT_SCREEN_ENTER + CURSOR_HIDE)
+            sys.stdout.flush()
+
+    def detach(self) -> None:
+        """
+        Usage:
+
+        - Signals the dashboard to detach from the running app, leaving
+          containers alive.
+        """
+        self.is_detached = True
+        self._stop_event.set()
 
     def get_queue(self) -> "queue.Queue[str | None]":
         """
@@ -798,10 +1296,9 @@ class RunDashboard:
         """
         Usage:
 
-        - Toggles between minimal and all logs output mode.
+        - Cycles through display modes.
         """
-        self._show_all = not self._show_all
-        self._scroll_offset = 0
+        self.cycle_mode()
 
     def scroll_up(self, amount: int = 1) -> None:
         """
@@ -877,6 +1374,24 @@ class RunDashboard:
                     add_all(ready_entry)
                     if self._show_all and self._scroll_offset > 0:
                         self._scroll_offset += 1
+                    if self._app_loading:
+                        self._app_loading = False
+                        self.add_lifecycle_event("Loading App", status="ok")
+                        if not self.is_active_tui:
+                            sys.stdout.write(
+                                f"\r  {GREEN}✓{RESET}  Loading App\033[K\n"
+                            )
+                            sys.stdout.flush()
+                    self.update_component("App Server", "Ready")
+                    self.add_lifecycle_event(
+                        f"App Server ready at {self._url}", status="ok"
+                    )
+                    if (
+                        self._mode == MODE_LIFECYCLE
+                        and not self._initial_auto_advanced
+                    ):
+                        self._initial_auto_advanced = True
+                        self.set_mode(MODE_STANDARD)
 
         # WebSocket client count (before noise filter so we never miss events)
         ws_ev = self._filter.ws_event(stripped)
@@ -926,6 +1441,11 @@ class RunDashboard:
             self._last_was_validation = False
             add_minimal(entry)
 
+        if self._mode == MODE_VERBOSE:
+            sys.stdout.write(f"  {DIM}{ts}{RESET}  {raw}\n")
+            sys.stdout.flush()
+            self._last_verbose_index = len(self._all_log_lines)
+
     def _display_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
@@ -938,19 +1458,25 @@ class RunDashboard:
             except queue.Empty:
                 pass
 
-            self._renderer.render(
-                app_name=self._app_name,
-                status=self._status,
-                url=self._url,
-                ws_clients=self._ws_clients,
-                log_lines=(
-                    self._all_log_lines if self._show_all else self._log_lines
-                ),
-                validation_count=self._validation_count,
-                current_error_block=self._current_error_block,
-                show_all=self._show_all,
-                scroll_offset=self._scroll_offset,
-            )
+            if self._mode in (MODE_LIFECYCLE, MODE_STANDARD, MODE_ALL):
+                self._renderer.render(
+                    app_name=self._app_name,
+                    status=self._status,
+                    url=self._url,
+                    ws_clients=self._ws_clients,
+                    log_lines=(
+                        self._all_log_lines
+                        if self._mode == MODE_ALL
+                        else self._log_lines
+                    ),
+                    validation_count=self._validation_count,
+                    current_error_block=self._current_error_block,
+                    show_all=(self._mode == MODE_ALL),
+                    scroll_offset=self._scroll_offset,
+                    mode=self._mode,
+                    components=self._components,
+                    lifecycle_events=self._lifecycle_events,
+                )
             self._stop_event.wait(self.REFRESH_INTERVAL)
 
     def _input_loop(self) -> None:
@@ -963,45 +1489,73 @@ class RunDashboard:
         while not self._stop_event.is_set():
             if msvcrt.kbhit():
                 ch = msvcrt.getch()
-                if ch == b"\x01":  # Ctrl+A
-                    self.toggle_show_all()
+                if ch in (b"\t", b"\x09", b"\x01"):  # Tab or Ctrl+A
+                    self.cycle_mode(forward=True)
+                elif ch == b"\x00":  # Special key prefix
+                    next_ch = msvcrt.getch()
+                    if next_ch == b"\x0f":  # Shift+Tab on Windows
+                        self.cycle_mode(forward=False)
+                elif ch == b"\x03":  # Ctrl+C
+                    self.set_status(STOPPING)
+                    self._stop_event.set()
+                elif ch == b"\x1b":  # ESC or ANSI sequence
+                    time.sleep(0.02)
+                    if msvcrt.kbhit():
+                        next_ch = msvcrt.getch()
+                        if next_ch in (b"[", b"O"):
+                            if msvcrt.kbhit():
+                                dir_ch = msvcrt.getch()
+                                if dir_ch == b"A":
+                                    self.scroll_up()
+                                elif dir_ch == b"B":
+                                    self.scroll_down()
+                    else:
+                        self.detach()
                 elif ch == b"\xe0":  # Special key prefix
                     next_ch = msvcrt.getch()
                     if next_ch == b"H":  # Up
                         self.scroll_up()
                     elif next_ch == b"P":  # Down
                         self.scroll_down()
-                elif ch == b"\x00":  # Alternative special key prefix
-                    msvcrt.getch()  # consume it
             time.sleep(0.1)
 
     def _input_loop_unix(self) -> None:
-        fd = sys.stdin.fileno()
         try:
-            old_settings = termios.tcgetattr(fd)
-        except (termios.error, ValueError):
+            fd = sys.stdin.fileno()
+            self._old_settings = termios.tcgetattr(fd)
+        except Exception:
             return
 
         try:
             tty.setcbreak(fd)
             while not self._stop_event.is_set():
-                if select.select([sys.stdin], [], [], 0.1)[0]:
-                    ch = sys.stdin.read(1)
-                    if ch == "\x01":  # Ctrl+A
-                        self.toggle_show_all()
-                    elif ch == "\x1b":  # ESC
-                        # Handle arrow keys (ANSI escape sequences: ESC [ A/B)
-                        if select.select([sys.stdin], [], [], 0.05)[0]:
-                            next_ch = sys.stdin.read(1)
-                            if next_ch == "[":
-                                if select.select([sys.stdin], [], [], 0.05)[0]:
-                                    direction = sys.stdin.read(1)
-                                    if direction == "A":  # Up
-                                        self.scroll_up()
-                                    elif direction == "B":  # Down
-                                        self.scroll_down()
+                if select.select([fd], [], [], 0.1)[0]:
+                    chunk = os.read(fd, 32)
+                    if not chunk:
+                        continue
+                    if chunk in (b"\t", b"\x09", b"\x01"):  # Tab or Ctrl+A
+                        self.cycle_mode(forward=True)
+                    elif chunk == b"\x03":  # Ctrl+C
+                        self.set_status(STOPPING)
+                        self._stop_event.set()
+                    elif chunk.startswith(b"\x1b"):
+                        if chunk in (b"\x1b", b"\x1b[", b"\x1bO"):
+                            if select.select([fd], [], [], 0.05)[0]:
+                                chunk += os.read(fd, 32)
+                        if chunk == b"\x1b":
+                            self.detach()
+                        elif chunk == b"\x1b[Z":  # Shift+Tab (Backtab)
+                            self.cycle_mode(forward=False)
+                        elif chunk in (b"\x1b[A", b"\x1bOA"):
+                            self.scroll_up()
+                        elif chunk in (b"\x1b[B", b"\x1bOB"):
+                            self.scroll_down()
+                        elif chunk in (b"\x1b[5~",):
+                            self.scroll_up(5)
+                        elif chunk in (b"\x1b[6~",):
+                            self.scroll_down(5)
         finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            termios.tcsetattr(fd, termios.TCSADRAIN, self._old_settings)
 
     def start(self) -> None:
         """
@@ -1016,8 +1570,28 @@ class RunDashboard:
           primary screen and gives the dashboard a clean slate with no
           cursor-jump flicker.
         """
+        global _active_dashboard
+        _active_dashboard = self
+        try:
+            from cave_cli.utils.logger import logger
+
+            logger.add_listener(self._on_logger_message)
+        except Exception:
+            pass
+
         sys.stdout.write(ALT_SCREEN_ENTER + CURSOR_HIDE)
         sys.stdout.flush()
+        if self._mode == MODE_VERBOSE:
+            cols, _ = shutil.get_terminal_size(fallback=(80, 24))
+            bar_width = max(10, cols - 4)
+            sys.stdout.write(
+                f"{CURSOR_HOME}{CLEAR_BELOW}"
+                f"\n  {BOLD}{CYAN}CAVE App (Verbose Mode){RESET}\n"
+                f"  {DIM}Tab / Shift+Tab to switch view  │  Esc to detach  │  Ctrl+C to stop{RESET}\n"
+                f"  {'─' * bar_width}\n"
+            )
+            self._flush_verbose_backlog(from_start=True)
+            sys.stdout.flush()
         self._display_thread = threading.Thread(
             target=self._display_loop, daemon=True
         )
@@ -1027,6 +1601,10 @@ class RunDashboard:
         self._display_thread.start()
         self._input_thread.start()
 
+    def _on_logger_message(self, message: str, level: str) -> None:
+        raw_msg = f"{level}: {message}" if level != "INFO" else message
+        self.add_startup_log(raw_msg)
+
     def stop(self) -> None:
         """
         Usage:
@@ -1034,17 +1612,44 @@ class RunDashboard:
         - Signals the display loop to stop, waits for it, then restores
           the primary screen buffer and cursor.
         """
+        global _active_dashboard
+        if _active_dashboard is self:
+            _active_dashboard = None
+        try:
+            from cave_cli.utils.logger import logger
+
+            logger.remove_listener(self._on_logger_message)
+        except Exception:
+            pass
+
         self._stop_event.set()
         self._log_queue.put(None)
         if self._display_thread is not None:
             self._display_thread.join(timeout=2.0)
         if hasattr(self, "_input_thread") and self._input_thread is not None:
             self._input_thread.join(timeout=2.0)
+
         sys.stdout.write(CURSOR_SHOW + ALT_SCREEN_EXIT)
+        if self._mode == MODE_VERBOSE:
+            cols, _ = shutil.get_terminal_size(fallback=(80, 24))
+            bar_width = max(10, cols - 4)
+            sys.stdout.write(
+                f"\n  {BOLD}{CYAN}CAVE App (Verbose Mode){RESET}\n"
+                f"  {'─' * bar_width}\n"
+            )
+            if self._startup_logs:
+                for s_line in self._startup_logs:
+                    sys.stdout.write(f"  {DIM}[startup]{RESET}  {s_line}\n")
+            for entry in self._all_log_lines:
+                ts = f"{DIM}{entry.timestamp}{RESET}"
+                sys.stdout.write(f"  {ts}  {entry.raw}\n")
         sys.stdout.flush()
 
 
 # ── Step-progress display (for other commands) ─────────────────────────────
+
+
+_active_dashboard: RunDashboard | None = None
 
 
 def print_key_value(key: str, value: str, key_color: str = CYAN) -> None:
@@ -1088,6 +1693,9 @@ def print_section(title: str) -> None:
         - Type: str
         - What: Section label to display.
     """
+    if _active_dashboard is not None and _active_dashboard.is_active_tui:
+        _active_dashboard.add_lifecycle_event(title, status="info")
+        return
     if _QUIET:
         return
     cols, _ = shutil.get_terminal_size(fallback=(80, 24))
@@ -1109,6 +1717,11 @@ def step_start(label: str) -> None:
         - Type: str
         - What: Description of the step being started.
     """
+    if _active_dashboard is not None:
+        _active_dashboard.add_lifecycle_event(label, status="pending")
+        _active_dashboard.infer_component_from_step(label, "Starting")
+        if _active_dashboard.is_active_tui:
+            return
     if _QUIET:
         return
     sys.stdout.write(f"  {YELLOW}●{RESET}  {label}...\033[K\r")
@@ -1127,6 +1740,11 @@ def step_done(label: str) -> None:
         - Type: str
         - What: Description of the completed step.
     """
+    if _active_dashboard is not None:
+        _active_dashboard.add_lifecycle_event(label, status="ok")
+        _active_dashboard.infer_component_from_step(label, "Ready")
+        if _active_dashboard.is_active_tui:
+            return
     if _QUIET:
         return
     sys.stdout.write(f"\r  {GREEN}✓{RESET}  {label}\033[K\n")
@@ -1153,6 +1771,12 @@ def step_fail(label: str, detail: str = "") -> None:
         - What: Multi-line detail text; last 8 lines are shown indented.
         - Default: ""
     """
+    if _active_dashboard is not None:
+        msg = f"{label}: {detail}" if detail else label
+        _active_dashboard.add_lifecycle_event(msg, status="error")
+        _active_dashboard.infer_component_from_step(label, "Error")
+        if _active_dashboard.is_active_tui:
+            return
     if _QUIET:
         return
     sys.stdout.write(f"\r  {RED}✗{RESET}  {label}\033[K\n")

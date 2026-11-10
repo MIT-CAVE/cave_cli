@@ -208,7 +208,7 @@ _ACCESS_LOG_RE = re.compile(r'"[A-Z]+ \S* HTTP/\d\.\d"')
 # WebSocket CONNECT/DISCONNECT (old Channels runserver) and SOCKET CONNECTION
 # OPENED/CLOSED (custom markers) are processed for client count but not displayed.
 _SKIP_PATTERNS: tuple[str, ...] = (
-    "WS RECEIVE  ",
+    "WS RECEIVE",
     "HTTP ",
     # Django Startup Lines
     "WebSocket ",

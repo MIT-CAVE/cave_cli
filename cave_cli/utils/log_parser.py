@@ -15,7 +15,7 @@ _VALIDATION_START_RE = re.compile(r"^error\s*:\s*(\[|\{)", re.IGNORECASE)
 _WARNING_START_RE = re.compile(r"^warning\s*:\s*(\[|\{)", re.IGNORECASE)
 
 _NOISE_PATTERNS: tuple[str, ...] = (
-    "WS RECEIVE  ",
+    "WS RECEIVE",
     "SOCKET CONNECTION OPENED",
     "SOCKET CONNECTION CLOSED",
     "connection open",

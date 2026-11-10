@@ -96,6 +96,19 @@ class TestLogFilter:
             )
             is True
         )
+        assert (
+            filter_obj.is_noise(
+                "WS RECEIVE command=mutate_session, api_command=myCommand"
+            )
+            is True
+        )
+        assert (
+            filter_obj.is_noise(
+                "WS RECEIVE command='mutate_session', api_command='myCommand'"
+            )
+            is True
+        )
+        assert filter_obj.is_noise("WS RECEIVE  mutate_session") is True
         assert filter_obj.is_noise("some actual log line") is False
 
     def test_strip_level_prefix_preserves_soft_validation(self):

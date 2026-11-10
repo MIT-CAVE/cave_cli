@@ -91,6 +91,18 @@ INFO: WS RECEIVE  session_management"""
         assert parsed[13].level == "DEBUG"
         assert parsed[13].is_noise is True
 
+    def test_ws_receive_formats(self):
+        parser = LogParser()
+        lines = [
+            "INFO: WS RECEIVE  mutate_session",
+            "INFO: WS RECEIVE command=mutate_session, api_command=myCommand",
+            "INFO: WS RECEIVE command='mutate_session', api_command='myCommand'",
+        ]
+        for line in lines:
+            parsed = parser.parse_line(line)
+            assert parsed.level == "DEBUG"
+            assert parsed.is_noise is True
+
 
 class TestLogsCommand:
     @patch("cave_cli.commands.logs.get_app")

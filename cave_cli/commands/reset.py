@@ -58,6 +58,8 @@ def reset(
         docker_args=getattr(args, "docker_args", "") or "",
         ip_port=None,
         yes=True,
+        no_tui=getattr(args, "no_tui", False),
+        raw=getattr(args, "raw", False),
         verbose=getattr(args, "verbose", False),
         loglevel=getattr(args, "loglevel", "INFO"),
     )

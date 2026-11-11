@@ -126,6 +126,10 @@ def set_quiet(quiet: bool) -> None:
 
 ALT_SCREEN_ENTER = "\033[?1049h"
 ALT_SCREEN_EXIT = "\033[?1049l"
+ALT_SCROLL_ENTER = "\033[?1007h"
+ALT_SCROLL_EXIT = "\033[?1007l"
+MOUSE_ENTER = "\033[?1000h\033[?1006h"
+MOUSE_EXIT = "\033[?1006l\033[?1000l"
 CURSOR_HOME = "\033[H"
 CLEAR_BELOW = "\033[J"
 CLEAR_EOL = "\033[K"
@@ -254,6 +258,11 @@ class LogLine:
         - Type: str
         - What: Clean message without outer level prefixes.
         - Default: ""
+
+    - ``is_traceback``:
+        - Type: bool
+        - What: Whether this line is a traceback frame or header.
+        - Default: False
     """
 
     timestamp: str
@@ -262,6 +271,7 @@ class LogLine:
     is_validation: bool = False
     level: str = "INFO"
     message: str = ""
+    is_traceback: bool = False
 
 
 # ── Log filtering ──────────────────────────────────────────────────────────
@@ -521,6 +531,44 @@ class LogFilter:
             return True
         return any(p in stripped for p in _VALIDATION_PATTERNS)
 
+    @staticmethod
+    def is_traceback(stripped: str) -> bool:
+        """
+        Usage:
+
+        - Returns True if the line is part of a Python traceback.
+
+        Requires:
+
+        - ``stripped``:
+            - Type: str
+            - What: Log line with level prefix stripped.
+
+        Returns:
+
+        - ``is_tb``:
+            - Type: bool
+            - What: True if line is a traceback frame, header, or marker.
+        """
+        s = stripped.strip()
+        if not s:
+            return False
+        if "Traceback (most recent call last)" in s:
+            return True
+        if s.startswith('File "') or s.startswith("File '"):
+            return True
+        if s.startswith("During handling of the above exception"):
+            return True
+        if s.startswith("The above exception was the direct cause"):
+            return True
+        if s == "Exception in ASGI application":
+            return True
+        if all(c in "^~ " for c in s):
+            return True
+        if stripped.startswith(" ") or stripped.startswith("\t"):
+            return True
+        return False
+
 
 # ── Dashboard renderer ─────────────────────────────────────────────────────
 
@@ -546,8 +594,12 @@ class DashboardRenderer:
     _FOOTER_LINES = 2  # blank + hint line
     _FIXED_BASE = _HEADER_LINES + _LOG_FIXED + _FOOTER_LINES  # = 9
     _VAL_FIXED = 4  # blank + label + top-rule + bottom-rule
-    _MAX_ERROR_LINES = 8  # maximum validation lines shown from current block
+    _MAX_ERROR_LINES = 5  # maximum validation/error lines shown in LOGS mode
     _MIN_LOG_LINES = 3  # guaranteed minimum log lines even with validation
+
+    @staticmethod
+    def _is_traceback_line(text: str) -> bool:
+        return LogFilter.is_traceback(text)
 
     @staticmethod
     def _status_str(status: str) -> str:
@@ -580,6 +632,10 @@ class DashboardRenderer:
         mode: str = MODE_STANDARD,
         components: list[StackComponent] | None = None,
         lifecycle_events: list[LifecycleEvent] | None = None,
+        startup_logs: list[str] | None = None,
+        prompt_message: str | None = None,
+        prompt_options: str = "[y/N]",
+        prompt_buffer: str = "",
     ) -> None:
         """
         Usage:
@@ -630,7 +686,7 @@ class DashboardRenderer:
 
         - ``mode``:
             - Type: str
-            - What: Display mode (MODE_STANDARD, MODE_ALL, or MODE_LIFECYCLE).
+            - What: Display mode (MODE_STANDARD, MODE_ALL, MODE_VERBOSE, or MODE_LIFECYCLE).
             - Default: MODE_STANDARD
 
         - ``components``:
@@ -642,12 +698,33 @@ class DashboardRenderer:
             - Type: list[LifecycleEvent] | None
             - What: Lifecycle events shown in Lifecycle view.
             - Default: None
+
+        - ``startup_logs``:
+            - Type: list[str] | None
+            - What: Startup orchestration and command log lines shown in Verbose view.
+            - Default: None
+
+        - ``prompt_message``:
+            - Type: str | None
+            - What: Message to display in the prompt area above the footer.
+            - Default: None
+
+        - ``prompt_options``:
+            - Type: str
+            - What: Bracketed prompt options text.
+            - Default: "[y/N]"
+
+        - ``prompt_buffer``:
+            - Type: str
+            - What: User-typed text currently entered into the prompt.
+            - Default: ""
         """
         cols, rows = shutil.get_terminal_size(fallback=(80, 24))
         bar_width = max(10, cols - 4)
 
         # Budget: rows - 1 ensures no trailing-newline scroll on a full screen.
         budget = rows - 1
+        prompt_lines = 3 if prompt_message else 0
 
         lines: list[str] = []
 
@@ -660,8 +737,12 @@ class DashboardRenderer:
         )
         if mode == MODE_LIFECYCLE:
             mode_str = f"  │  {CYAN}{BOLD}LIFECYCLE{RESET}"
+        elif mode == MODE_STANDARD:
+            mode_str = f"  │  {CYAN}{BOLD}LOGS{RESET}"
         elif mode == MODE_ALL or show_all:
-            mode_str = f"  │  {YELLOW}{BOLD}ALL LOGS{RESET}"
+            mode_str = f"  │  {CYAN}{BOLD}DETAILED{RESET}"
+        elif mode == MODE_VERBOSE:
+            mode_str = f"  │  {CYAN}{BOLD}VERBOSE{RESET}"
         else:
             mode_str = ""
         title = (
@@ -733,13 +814,16 @@ class DashboardRenderer:
             lines.append(f"  {BOLD}Lifecycle Timeline{RESET}")
             lines.append(f"  {'─' * bar_width}")
 
-            fixed_comp_lines = 4 + max(1, len(comp_list)) + 1
+            comp_lines = 4 + max(1, len(comp_list))
+            timeline_fixed = 3
             timeline_budget = max(
-                3,
+                1,
                 budget
                 - self._HEADER_LINES
                 - self._FOOTER_LINES
-                - fixed_comp_lines,
+                - comp_lines
+                - timeline_fixed
+                - prompt_lines,
             )
 
             ev_list = lifecycle_events or []
@@ -767,10 +851,39 @@ class DashboardRenderer:
             for _ in range(timeline_budget - rendered_tl):
                 lines.append("")
 
+        elif mode == MODE_VERBOSE:
+            # ── Verbose Mode ───────────────────────────────────────────────
+            max_log_lines = max(
+                0,
+                budget - self._HEADER_LINES - self._FOOTER_LINES - prompt_lines,
+            )
+            all_verbose: list[tuple[str, str]] = []
+            if startup_logs:
+                for s_line in startup_logs:
+                    all_verbose.append((f"{DIM}[startup]{RESET}", s_line))
+            for entry in log_lines:
+                ts = f"{DIM}{entry.timestamp}{RESET}"
+                all_verbose.append((ts, entry.raw))
+
+            max_scroll = max(0, len(all_verbose) - max_log_lines)
+            effective_scroll = min(scroll_offset, max_scroll)
+
+            end_idx = len(all_verbose) - effective_scroll
+            start_idx = max(0, end_idx - max_log_lines)
+            visible_logs = all_verbose[start_idx:end_idx]
+
+            for ts_prefix, raw_text in visible_logs:
+                text = self._truncate(raw_text.expandtabs(), cols - 14)
+                lines.append(f"  {ts_prefix}  {text}")
+
+            for _ in range(max_log_lines - len(visible_logs)):
+                lines.append("")
+
         elif show_all or mode == MODE_ALL:
             # ── All Logs Mode ──────────────────────────────────────────────
             max_log_lines = max(
-                0, budget - self._HEADER_LINES - self._FOOTER_LINES
+                0,
+                budget - self._HEADER_LINES - self._FOOTER_LINES - prompt_lines,
             )
 
             # Clamp scroll_offset so we don't scroll past the first line
@@ -807,15 +920,25 @@ class DashboardRenderer:
                 lines.append("")
         else:
             # ── Minimal Mode (Default) ─────────────────────────────────────
-            # ... (unchanged Minimal Mode logic)
-            has_validation = bool(current_error_block) or validation_count > 0
+            # Filter out traceback lines from current_error_block so only actual errors are shown
+            non_traceback_errors = [
+                e
+                for e in current_error_block
+                if not getattr(e, "is_traceback", False)
+                and not self._is_traceback_line(e.text)
+            ]
+            has_validation = bool(non_traceback_errors) or validation_count > 0
 
             # Determine how many error lines to show, shrinking if the terminal
             # is too short to guarantee _MIN_LOG_LINES of activity log.
-            desired_v = min(len(current_error_block), self._MAX_ERROR_LINES)
+            desired_v = min(len(non_traceback_errors), self._MAX_ERROR_LINES)
             if has_validation:
                 available_log = (
-                    budget - self._FIXED_BASE - self._VAL_FIXED - desired_v
+                    budget
+                    - self._FIXED_BASE
+                    - self._VAL_FIXED
+                    - desired_v
+                    - prompt_lines
                 )
                 if available_log < self._MIN_LOG_LINES:
                     desired_v = max(
@@ -823,19 +946,21 @@ class DashboardRenderer:
                         budget
                         - self._FIXED_BASE
                         - self._VAL_FIXED
-                        - self._MIN_LOG_LINES,
+                        - self._MIN_LOG_LINES
+                        - prompt_lines,
                     )
                     if desired_v == 0:
                         has_validation = False
             shown_errors = (
-                current_error_block[-desired_v:] if desired_v > 0 else []
+                non_traceback_errors[-desired_v:] if desired_v > 0 else []
             )
 
             val_section_height = (
                 self._VAL_FIXED + len(shown_errors) if has_validation else 0
             )
             max_log_lines = max(
-                0, budget - self._FIXED_BASE - val_section_height
+                0,
+                budget - self._FIXED_BASE - val_section_height - prompt_lines,
             )
             visible_logs = log_lines[-max_log_lines:]
 
@@ -852,18 +977,34 @@ class DashboardRenderer:
             # ── Errors / Warnings ─────────────────────────────────────────────
             if has_validation:
                 lines.append("")
-                has_errors = any(e.level == "ERROR" for e in shown_errors)
+                has_errors = any(
+                    e.level == "ERROR"
+                    for e in (shown_errors or current_error_block)
+                ) or not (shown_errors or current_error_block)
                 if has_errors:
                     label = "error" if validation_count == 1 else "errors"
                     title_color = RED
                     title_text = "Errors"
+                    hint_text = "(switch (tab) to DETAILED or VERBOSE logs to see tracebacks)"
                 else:
                     label = "warning" if validation_count == 1 else "warnings"
                     title_color = YELLOW
                     title_text = "Validation Warnings"
+                    hint_text = "(switch (tab) to DETAILED or VERBOSE logs to see details)"
+
                 count_str = f"{validation_count} {label}"
+                header_prefix = f"  {title_text}  ({count_str})"
+                if len(header_prefix) + len(hint_text) + 2 <= cols:
+                    hint = f"  {DIM}{hint_text}{RESET}"
+                elif (
+                    len(header_prefix) + len("(see DETAILED logs)") + 2 <= cols
+                ):
+                    hint = f"  {DIM}(see DETAILED logs){RESET}"
+                else:
+                    hint = ""
+
                 lines.append(
-                    f"  {BOLD}{title_text}{RESET}  {title_color}({count_str}){RESET}"
+                    f"  {BOLD}{title_text}{RESET}  {title_color}({count_str}){RESET}{hint}"
                 )
                 lines.append(f"  {'─' * bar_width}")
                 for entry in shown_errors:
@@ -873,9 +1014,20 @@ class DashboardRenderer:
                     lines.append(f"  {ts}  {color}{text}{RESET}")
                 lines.append(f"  {'─' * bar_width}")
 
+        # ── Prompt Overlay ─────────────────────────────────────────────────
+        if prompt_message:
+            lines.append("")
+            lines.append(f"  {YELLOW}⚠{RESET}  {BOLD}{prompt_message}{RESET}")
+            lines.append(
+                f"  {BOLD}Continue? {prompt_options} {CYAN}{prompt_buffer}{RESET}█"
+            )
+
         # ── Footer ─────────────────────────────────────────────────────────
+        while len(lines) < budget - 2:
+            lines.append("")
+
         lines.append("")
-        if show_all or mode == MODE_ALL:
+        if show_all or mode in (MODE_ALL, MODE_VERBOSE):
             lines.append(
                 f"  {DIM}Ctrl+C to stop  │  Esc to detach  │  Tab / Shift+Tab to cycle  │  ↑/↓ to scroll{RESET}"
             )
@@ -886,7 +1038,7 @@ class DashboardRenderer:
 
         # Write the full frame atomically: move to top-left, write each line
         # with CLEAR_EOL to erase leftover characters.
-        buf = CURSOR_HOME
+        buf = CURSOR_HOME + CURSOR_HIDE
         for i, line in enumerate(lines):
             buf += CLEAR_EOL + line
             if i < len(lines) - 1:
@@ -994,8 +1146,18 @@ class RunDashboard:
         self._filter = LogFilter()
         self._parser: LogParser = LogParser()
         self._stop_event = stop_event or threading.Event()
+        self._terminate_event = threading.Event()
         self._display_thread: threading.Thread | None = None
         self.is_detached: bool = False
+        self.container_exited: bool = False
+
+        self._prompt_active: bool = False
+        self._prompt_message: str = ""
+        self._prompt_options: str = "[y/N]"
+        self._prompt_buffer: str = ""
+        self._prompt_result: str = ""
+        self._prompt_event: threading.Event = threading.Event()
+        self._render_event: threading.Event = threading.Event()
 
     @property
     def mode(self) -> str:
@@ -1011,6 +1173,7 @@ class RunDashboard:
             self._display_thread is not None
             and self._display_thread.is_alive()
             and not self._paused
+            and not self._terminate_event.is_set()
         )
 
     def set_components(self, components: list[StackComponent]) -> None:
@@ -1113,7 +1276,24 @@ class RunDashboard:
             - What: Status to apply ("Starting", "Ready", "Error").
         """
         l_lower = label.lower()
-        if "database" in l_lower or "db" in l_lower:
+        if l_lower.startswith("running"):
+            self.update_component(
+                "App Server",
+                "Running" if default_status != "Ready" else "Done",
+            )
+        elif "starting database" in l_lower:
+            self.update_component("Database", default_status)
+        elif "checking database" in l_lower:
+            self.update_component(
+                "Database",
+                "Checking" if default_status == "Starting" else "Ready",
+            )
+        elif "initializing database" in l_lower:
+            self.update_component(
+                "Database",
+                "Initializing" if default_status == "Starting" else "Ready",
+            )
+        elif "database" in l_lower:
             self.update_component("Database", default_status)
         elif "cache" in l_lower or "redis" in l_lower:
             self.update_component("Cache", default_status)
@@ -1183,21 +1363,6 @@ class RunDashboard:
         self._mode = mode
         self._scroll_offset = 0
 
-        if mode == MODE_VERBOSE:
-            cols, _ = shutil.get_terminal_size(fallback=(80, 24))
-            bar_width = max(10, cols - 4)
-            sys.stdout.write(
-                f"{CURSOR_HOME}{CLEAR_BELOW}"
-                f"\n  {BOLD}{CYAN}CAVE App (Verbose Mode){RESET}\n"
-                f"  {DIM}Tab / Shift+Tab to switch view  │  Esc to detach  │  Ctrl+C to stop{RESET}\n"
-                f"  {'─' * bar_width}\n"
-            )
-            self._flush_verbose_backlog(from_start=True)
-            sys.stdout.flush()
-        else:
-            sys.stdout.write(CURSOR_HIDE)
-            sys.stdout.flush()
-
     def _flush_verbose_backlog(self, from_start: bool = False) -> None:
         """
         Usage:
@@ -1229,15 +1394,22 @@ class RunDashboard:
         - Temporarily leaves the TUI alternate screen so interactive prompts can run.
         """
         self._paused = True
-        if self._mode in (MODE_LIFECYCLE, MODE_STANDARD, MODE_ALL):
-            sys.stdout.write(CURSOR_SHOW + ALT_SCREEN_EXIT)
+        if self._mode in (
+            MODE_LIFECYCLE,
+            MODE_STANDARD,
+            MODE_ALL,
+            MODE_VERBOSE,
+        ):
+            sys.stdout.write(
+                CURSOR_SHOW + MOUSE_EXIT + ALT_SCROLL_EXIT + ALT_SCREEN_EXIT
+            )
             sys.stdout.flush()
         if self._old_settings is not None and not IS_WINDOWS:
             try:
                 import termios
 
                 termios.tcsetattr(
-                    sys.stdin.fileno(), termios.TCSADRAIN, self._old_settings
+                    sys.stdin.fileno(), termios.TCSANOW, self._old_settings
                 )
             except Exception:
                 pass
@@ -1256,9 +1428,113 @@ class RunDashboard:
                 tty.setcbreak(sys.stdin.fileno())
             except Exception:
                 pass
-        if self._mode in (MODE_LIFECYCLE, MODE_STANDARD, MODE_ALL):
-            sys.stdout.write(ALT_SCREEN_ENTER + CURSOR_HIDE)
+        if self._mode in (
+            MODE_LIFECYCLE,
+            MODE_STANDARD,
+            MODE_ALL,
+            MODE_VERBOSE,
+        ):
+            sys.stdout.write(
+                ALT_SCREEN_ENTER + ALT_SCROLL_ENTER + MOUSE_ENTER + CURSOR_HIDE
+            )
             sys.stdout.flush()
+
+    def prompt(self, message: str, options: str = "[y/N]") -> str:
+        """
+        Usage:
+
+        - Displays a prompt message in the active TUI and waits for user input.
+
+        Requires:
+
+        - ``message``:
+            - Type: str
+            - What: The prompt message to display.
+
+        Optional:
+
+        - ``options``:
+            - Type: str
+            - What: Bracketed prompt options text.
+            - Default: '[y/N]'
+
+        Returns:
+
+        - ``response``:
+            - Type: str
+            - What: The user's input string.
+        """
+        self._prompt_message = message
+        self._prompt_options = options
+        self._prompt_buffer = ""
+        self._prompt_result = ""
+        self._prompt_event.clear()
+        self._prompt_active = True
+        self._render_event.set()
+
+        self._prompt_event.wait()
+        self._prompt_active = False
+        self._render_event.set()
+        return self._prompt_result
+
+    def confirm(
+        self,
+        message: str,
+        auto_yes: bool = False,
+        continue_on_no: bool = False,
+    ) -> bool:
+        """
+        Usage:
+
+        - Displays a confirmation prompt inside the TUI and returns True/False.
+
+        Requires:
+
+        - ``message``:
+            - Type: str
+            - What: The action description to display.
+
+        Optional:
+
+        - ``auto_yes``:
+            - Type: bool
+            - What: If True, bypasses the prompt and returns True.
+            - Default: False
+
+        - ``continue_on_no``:
+            - Type: bool
+            - What: If True, a 'no' returns False; otherwise exits.
+            - Default: False
+
+        Returns:
+
+        - ``confirmed``:
+            - Type: bool
+            - What: True if confirmed, False if declined and continue_on_no is True.
+        """
+        if auto_yes:
+            return True
+
+        bracket = "[y/n]" if continue_on_no else "[y/N]"
+        raw_response = self.prompt(message, options=bracket)
+        normalized = raw_response.strip().lower()
+
+        if normalized in ("y", "yes"):
+            return True
+        if continue_on_no:
+            if normalized in ("n", "no"):
+                return False
+            self.stop()
+            from cave_cli.utils.logger import logger
+
+            logger.error("Operation canceled.")
+            sys.exit(1)
+        else:
+            self.stop()
+            from cave_cli.utils.logger import logger
+
+            logger.error("Operation canceled.")
+            sys.exit(1)
 
     def detach(self) -> None:
         """
@@ -1304,23 +1580,38 @@ class RunDashboard:
         """
         Usage:
 
-        - Scrolls up in show_all mode.
+        - Scrolls up in show_all or verbose mode.
+
+        Optional:
+
+        - ``amount``:
+            - Type: int
+            - What: Number of lines to scroll up.
+            - Default: 1
         """
-        if self._show_all:
-            # We allow it to go up to len() here, but the renderer will clamp
-            # it precisely based on the terminal height to ensure a full screen.
-            self._scroll_offset = min(
-                len(self._all_log_lines), self._scroll_offset + amount
+        if self._mode in (MODE_ALL, MODE_VERBOSE):
+            total_lines = len(self._all_log_lines) + (
+                len(self._startup_logs) if self._mode == MODE_VERBOSE else 0
             )
+            self._scroll_offset = min(total_lines, self._scroll_offset + amount)
+            self._render_event.set()
 
     def scroll_down(self, amount: int = 1) -> None:
         """
         Usage:
 
-        - Scrolls down in show_all mode.
+        - Scrolls down in show_all or verbose mode.
+
+        Optional:
+
+        - ``amount``:
+            - Type: int
+            - What: Number of lines to scroll down.
+            - Default: 1
         """
-        if self._show_all:
+        if self._mode in (MODE_ALL, MODE_VERBOSE):
             self._scroll_offset = max(0, self._scroll_offset - amount)
+            self._render_event.set()
 
     def _process_line(self, raw: str) -> None:
         parsed = self._parser.parse_line(raw)
@@ -1360,7 +1651,10 @@ class RunDashboard:
                     )
                     add_minimal(reloading_entry)
                     add_all(reloading_entry)
-                    if self._show_all and self._scroll_offset > 0:
+                    if (
+                        self._mode in (MODE_ALL, MODE_VERBOSE)
+                        and self._scroll_offset > 0
+                    ):
                         self._scroll_offset += 1
                 elif new_status == READY:
                     ready_entry = LogLine(
@@ -1372,7 +1666,10 @@ class RunDashboard:
                     )
                     add_minimal(ready_entry)
                     add_all(ready_entry)
-                    if self._show_all and self._scroll_offset > 0:
+                    if (
+                        self._mode in (MODE_ALL, MODE_VERBOSE)
+                        and self._scroll_offset > 0
+                    ):
                         self._scroll_offset += 1
                     if self._app_loading:
                         self._app_loading = False
@@ -1414,9 +1711,11 @@ class RunDashboard:
             is_validation=is_validation,
             level=parsed.level,
             message=parsed.message,
+            is_traceback=getattr(parsed, "is_traceback", False)
+            or self._filter.is_traceback(stripped),
         )
         add_all(entry)
-        if self._show_all and self._scroll_offset > 0:
+        if self._mode in (MODE_ALL, MODE_VERBOSE) and self._scroll_offset > 0:
             self._scroll_offset += 1
 
         if is_validation:
@@ -1431,7 +1730,9 @@ class RunDashboard:
             else:
                 # New error event: start a fresh block
                 self._validation_count += 1
-                self._current_error_block = [entry]
+                self._current_error_block.append(entry)
+                if len(self._current_error_block) > self._max_logs:
+                    self._current_error_block.pop(0)
             self._last_was_validation = True
         elif is_noise:
             # Noise (WS RECEIVE, static files, etc.) — drop from minimal log.
@@ -1441,24 +1742,25 @@ class RunDashboard:
             self._last_was_validation = False
             add_minimal(entry)
 
-        if self._mode == MODE_VERBOSE:
-            sys.stdout.write(f"  {DIM}{ts}{RESET}  {raw}\n")
-            sys.stdout.flush()
-            self._last_verbose_index = len(self._all_log_lines)
-
     def _display_loop(self) -> None:
-        while not self._stop_event.is_set():
+        while not self._terminate_event.is_set():
             try:
                 while True:
                     line = self._log_queue.get_nowait()
                     if line is None:
+                        self.container_exited = True
                         self._stop_event.set()
                         break
                     self._process_line(line)
             except queue.Empty:
                 pass
 
-            if self._mode in (MODE_LIFECYCLE, MODE_STANDARD, MODE_ALL):
+            if not self._paused and self._mode in (
+                MODE_LIFECYCLE,
+                MODE_STANDARD,
+                MODE_ALL,
+                MODE_VERBOSE,
+            ):
                 self._renderer.render(
                     app_name=self._app_name,
                     status=self._status,
@@ -1466,7 +1768,7 @@ class RunDashboard:
                     ws_clients=self._ws_clients,
                     log_lines=(
                         self._all_log_lines
-                        if self._mode == MODE_ALL
+                        if self._mode in (MODE_ALL, MODE_VERBOSE)
                         else self._log_lines
                     ),
                     validation_count=self._validation_count,
@@ -1476,8 +1778,15 @@ class RunDashboard:
                     mode=self._mode,
                     components=self._components,
                     lifecycle_events=self._lifecycle_events,
+                    startup_logs=self._startup_logs,
+                    prompt_message=(
+                        self._prompt_message if self._prompt_active else None
+                    ),
+                    prompt_options=self._prompt_options,
+                    prompt_buffer=self._prompt_buffer,
                 )
-            self._stop_event.wait(self.REFRESH_INTERVAL)
+            self._render_event.wait(self.REFRESH_INTERVAL)
+            self._render_event.clear()
 
     def _input_loop(self) -> None:
         if IS_WINDOWS:
@@ -1487,8 +1796,33 @@ class RunDashboard:
 
     def _input_loop_windows(self) -> None:
         while not self._stop_event.is_set():
+            if self._paused:
+                time.sleep(0.05)
+                continue
             if msvcrt.kbhit():
                 ch = msvcrt.getch()
+                if self._prompt_active:
+                    if ch == b"\x03":  # Ctrl+C
+                        self._prompt_result = ""
+                        self._prompt_event.set()
+                        self.set_status(STOPPING)
+                        self._stop_event.set()
+                    elif ch in (b"\r", b"\n"):
+                        self._prompt_result = self._prompt_buffer
+                        self._prompt_event.set()
+                    elif ch in (b"\x08", b"\x7f"):  # Backspace
+                        self._prompt_buffer = self._prompt_buffer[:-1]
+                        self._render_event.set()
+                    elif ch not in (b"\x00", b"\xe0", b"\x1b"):
+                        try:
+                            text = ch.decode("utf-8")
+                            if text.isprintable():
+                                self._prompt_buffer += text
+                                self._render_event.set()
+                        except Exception:
+                            pass
+                    continue
+
                 if ch in (b"\t", b"\x09", b"\x01"):  # Tab or Ctrl+A
                     self.cycle_mode(forward=True)
                 elif ch == b"\x00":  # Special key prefix
@@ -1509,14 +1843,29 @@ class RunDashboard:
                                     self.scroll_up()
                                 elif dir_ch == b"B":
                                     self.scroll_down()
+                                elif dir_ch == b"<":
+                                    seq = b""
+                                    while msvcrt.kbhit():
+                                        m_ch = msvcrt.getch()
+                                        seq += m_ch
+                                        if m_ch in (b"M", b"m"):
+                                            break
+                                    if seq.startswith(b"64;"):
+                                        self.scroll_up(3)
+                                    elif seq.startswith(b"65;"):
+                                        self.scroll_down(3)
                     else:
                         self.detach()
                 elif ch == b"\xe0":  # Special key prefix
                     next_ch = msvcrt.getch()
-                    if next_ch == b"H":  # Up
+                    if next_ch in (b"H", b"\x48"):  # Up
                         self.scroll_up()
-                    elif next_ch == b"P":  # Down
+                    elif next_ch in (b"P", b"\x50"):  # Down
                         self.scroll_down()
+                    elif next_ch in (b"I", b"\x49"):  # Page Up
+                        self.scroll_up(5)
+                    elif next_ch in (b"Q", b"\x51"):  # Page Down
+                        self.scroll_down(5)
             time.sleep(0.1)
 
     def _input_loop_unix(self) -> None:
@@ -1529,10 +1878,35 @@ class RunDashboard:
         try:
             tty.setcbreak(fd)
             while not self._stop_event.is_set():
+                if self._paused:
+                    time.sleep(0.05)
+                    continue
                 if select.select([fd], [], [], 0.1)[0]:
-                    chunk = os.read(fd, 32)
+                    chunk = os.read(fd, 128)
                     if not chunk:
                         continue
+                    if self._prompt_active:
+                        if chunk == b"\x03":  # Ctrl+C
+                            self._prompt_result = ""
+                            self._prompt_event.set()
+                            self.set_status(STOPPING)
+                            self._stop_event.set()
+                        elif chunk in (b"\r", b"\n"):
+                            self._prompt_result = self._prompt_buffer
+                            self._prompt_event.set()
+                        elif chunk in (b"\x7f", b"\x08"):  # Backspace
+                            self._prompt_buffer = self._prompt_buffer[:-1]
+                            self._render_event.set()
+                        elif not chunk.startswith(b"\x1b"):
+                            try:
+                                text = chunk.decode("utf-8")
+                                if text.isprintable():
+                                    self._prompt_buffer += text
+                                    self._render_event.set()
+                            except Exception:
+                                pass
+                        continue
+
                     if chunk in (b"\t", b"\x09", b"\x01"):  # Tab or Ctrl+A
                         self.cycle_mode(forward=True)
                     elif chunk == b"\x03":  # Ctrl+C
@@ -1541,7 +1915,7 @@ class RunDashboard:
                     elif chunk.startswith(b"\x1b"):
                         if chunk in (b"\x1b", b"\x1b[", b"\x1bO"):
                             if select.select([fd], [], [], 0.05)[0]:
-                                chunk += os.read(fd, 32)
+                                chunk += os.read(fd, 128)
                         if chunk == b"\x1b":
                             self.detach()
                         elif chunk == b"\x1b[Z":  # Shift+Tab (Backtab)
@@ -1550,6 +1924,20 @@ class RunDashboard:
                             self.scroll_up()
                         elif chunk in (b"\x1b[B", b"\x1bOB"):
                             self.scroll_down()
+                        elif b"\x1b[<64;" in chunk or (
+                            chunk.startswith(b"\x1b[M")
+                            and len(chunk) >= 4
+                            and chunk[3] == 0x60
+                        ):  # Mouse Wheel Up (SGR or X11)
+                            count = max(1, chunk.count(b"\x1b[<64;"))
+                            self.scroll_up(3 * count)
+                        elif b"\x1b[<65;" in chunk or (
+                            chunk.startswith(b"\x1b[M")
+                            and len(chunk) >= 4
+                            and chunk[3] == 0x61
+                        ):  # Mouse Wheel Down (SGR or X11)
+                            count = max(1, chunk.count(b"\x1b[<65;"))
+                            self.scroll_down(3 * count)
                         elif chunk in (b"\x1b[5~",):
                             self.scroll_up(5)
                         elif chunk in (b"\x1b[6~",):
@@ -1573,25 +1961,22 @@ class RunDashboard:
         global _active_dashboard
         _active_dashboard = self
         try:
+            import atexit
+
+            atexit.register(self.stop)
+        except Exception:
+            pass
+        try:
             from cave_cli.utils.logger import logger
 
             logger.add_listener(self._on_logger_message)
         except Exception:
             pass
 
-        sys.stdout.write(ALT_SCREEN_ENTER + CURSOR_HIDE)
+        sys.stdout.write(
+            ALT_SCREEN_ENTER + ALT_SCROLL_ENTER + MOUSE_ENTER + CURSOR_HIDE
+        )
         sys.stdout.flush()
-        if self._mode == MODE_VERBOSE:
-            cols, _ = shutil.get_terminal_size(fallback=(80, 24))
-            bar_width = max(10, cols - 4)
-            sys.stdout.write(
-                f"{CURSOR_HOME}{CLEAR_BELOW}"
-                f"\n  {BOLD}{CYAN}CAVE App (Verbose Mode){RESET}\n"
-                f"  {DIM}Tab / Shift+Tab to switch view  │  Esc to detach  │  Ctrl+C to stop{RESET}\n"
-                f"  {'─' * bar_width}\n"
-            )
-            self._flush_verbose_backlog(from_start=True)
-            sys.stdout.flush()
         self._display_thread = threading.Thread(
             target=self._display_loop, daemon=True
         )
@@ -1616,6 +2001,12 @@ class RunDashboard:
         if _active_dashboard is self:
             _active_dashboard = None
         try:
+            import atexit
+
+            atexit.unregister(self.stop)
+        except Exception:
+            pass
+        try:
             from cave_cli.utils.logger import logger
 
             logger.remove_listener(self._on_logger_message)
@@ -1623,13 +2014,17 @@ class RunDashboard:
             pass
 
         self._stop_event.set()
+        self._terminate_event.set()
+        self._render_event.set()
         self._log_queue.put(None)
         if self._display_thread is not None:
             self._display_thread.join(timeout=2.0)
         if hasattr(self, "_input_thread") and self._input_thread is not None:
             self._input_thread.join(timeout=2.0)
 
-        sys.stdout.write(CURSOR_SHOW + ALT_SCREEN_EXIT)
+        sys.stdout.write(
+            CURSOR_SHOW + MOUSE_EXIT + ALT_SCROLL_EXIT + ALT_SCREEN_EXIT
+        )
         if self._mode == MODE_VERBOSE:
             cols, _ = shutil.get_terminal_size(fallback=(80, 24))
             bar_width = max(10, cols - 4)
@@ -1643,6 +2038,8 @@ class RunDashboard:
             for entry in self._all_log_lines:
                 ts = f"{DIM}{entry.timestamp}{RESET}"
                 sys.stdout.write(f"  {ts}  {entry.raw}\n")
+        else:
+            sys.stdout.write(CLEAR_BELOW)
         sys.stdout.flush()
 
 
@@ -1650,6 +2047,21 @@ class RunDashboard:
 
 
 _active_dashboard: RunDashboard | None = None
+
+
+def get_active_dashboard() -> RunDashboard | None:
+    """
+    Usage:
+
+    - Returns the currently active RunDashboard instance, if any.
+
+    Returns:
+
+    - ``dashboard``:
+        - Type: RunDashboard | None
+        - What: Active RunDashboard or None.
+    """
+    return _active_dashboard
 
 
 def print_key_value(key: str, value: str, key_color: str = CYAN) -> None:

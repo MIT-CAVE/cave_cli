@@ -3,6 +3,11 @@ import pytest
 from cave_cli.utils.display import (
     ALT_SCREEN_ENTER,
     ALT_SCREEN_EXIT,
+    ALT_SCROLL_ENTER,
+    ALT_SCROLL_EXIT,
+    CLEAR_BELOW,
+    MOUSE_ENTER,
+    MOUSE_EXIT,
     MODE_ALL,
     MODE_LIFECYCLE,
     MODE_STANDARD,
@@ -305,13 +310,13 @@ class TestRunDashboard:
         dashboard = RunDashboard(app_name="app", url="http://localhost:8000")
         written.clear()
 
-        # Standard -> Verbose displays header in alternate screen without exiting to primary
+        # Standard -> Verbose transitions mode without exiting to primary
         dashboard.set_mode(MODE_VERBOSE)
+        assert dashboard.mode == MODE_VERBOSE
         assert not any(ALT_SCREEN_EXIT in s for s in written)
-        assert "Verbose Mode" in "".join(written)
 
         written.clear()
-        # Verbose -> Standard stays in alternate screen
+        # Verbose -> Standard transitions mode
         dashboard.set_mode(MODE_STANDARD)
         assert dashboard.mode == MODE_STANDARD
         assert not any(ALT_SCREEN_ENTER in s for s in written)
@@ -320,6 +325,8 @@ class TestRunDashboard:
         written.clear()
         dashboard.stop()
         assert any(ALT_SCREEN_EXIT in s for s in written)
+        assert any(ALT_SCROLL_EXIT in s for s in written)
+        assert any(CLEAR_BELOW in s for s in written)
         assert not any("Verbose Mode" in s for s in written)
 
     def test_stop_in_verbose_mode_flushes_to_terminal(self, monkeypatch):
@@ -397,6 +404,62 @@ class TestRunDashboard:
     @patch("cave_cli.utils.display.tty")
     @patch("cave_cli.utils.display.os.read")
     @patch("cave_cli.utils.display.select.select")
+    def test_input_loop_unix_mouse_wheel_sgr(
+        self, mock_select, mock_read, mock_tty, mock_termios, mock_fileno
+    ):
+        dashboard = RunDashboard(app_name="app", url="http://localhost:8000")
+        dashboard._show_all = True
+        mock_select.return_value = ([0], [], [])
+
+        chunks = [b"\x1b[<64;10;10M", b"\x1b[<65;10;10M"]
+
+        def read_wheel_then_stop(*args, **kwargs):
+            if chunks:
+                return chunks.pop(0)
+            dashboard._stop_event.set()
+            return b""
+
+        mock_read.side_effect = read_wheel_then_stop
+
+        with patch.object(dashboard, "scroll_up") as mock_up:
+            with patch.object(dashboard, "scroll_down") as mock_down:
+                dashboard._input_loop_unix()
+                mock_up.assert_called_once_with(3)
+                mock_down.assert_called_once_with(3)
+
+    @patch("cave_cli.utils.display.sys.stdin.fileno", return_value=0)
+    @patch("cave_cli.utils.display.termios")
+    @patch("cave_cli.utils.display.tty")
+    @patch("cave_cli.utils.display.os.read")
+    @patch("cave_cli.utils.display.select.select")
+    def test_input_loop_unix_mouse_wheel_x11(
+        self, mock_select, mock_read, mock_tty, mock_termios, mock_fileno
+    ):
+        dashboard = RunDashboard(app_name="app", url="http://localhost:8000")
+        dashboard._show_all = True
+        mock_select.return_value = ([0], [], [])
+
+        chunks = [b"\x1b[M\x60  ", b"\x1b[M\x61  "]
+
+        def read_wheel_then_stop(*args, **kwargs):
+            if chunks:
+                return chunks.pop(0)
+            dashboard._stop_event.set()
+            return b""
+
+        mock_read.side_effect = read_wheel_then_stop
+
+        with patch.object(dashboard, "scroll_up") as mock_up:
+            with patch.object(dashboard, "scroll_down") as mock_down:
+                dashboard._input_loop_unix()
+                mock_up.assert_called_once_with(3)
+                mock_down.assert_called_once_with(3)
+
+    @patch("cave_cli.utils.display.sys.stdin.fileno", return_value=0)
+    @patch("cave_cli.utils.display.termios")
+    @patch("cave_cli.utils.display.tty")
+    @patch("cave_cli.utils.display.os.read")
+    @patch("cave_cli.utils.display.select.select")
     def test_input_loop_unix_ctrl_c_stops_not_detaches(
         self, mock_select, mock_read, mock_tty, mock_termios, mock_fileno
     ):
@@ -412,26 +475,18 @@ class TestRunDashboard:
         assert dashboard._stop_event.is_set()
         assert dashboard.is_detached is False
 
-    def test_verbose_mode_log_streaming(self, monkeypatch):
-        written: list[str] = []
-        monkeypatch.setattr(
-            "cave_cli.utils.display.sys.stdout.write",
-            lambda s: written.append(s),
-        )
-        monkeypatch.setattr(
-            "cave_cli.utils.display.sys.stdout.flush", lambda: None
-        )
-
+    def test_verbose_mode_log_streaming(self):
         dashboard = RunDashboard(
             app_name="app",
             url="http://localhost:8000",
             initial_mode=MODE_VERBOSE,
         )
-        written.clear()
-
         dashboard._process_line("INFO: Testing verbose line streaming")
-        full_out = "".join(written)
-        assert "INFO: Testing verbose line streaming" in full_out
+        assert len(dashboard._all_log_lines) >= 2
+        assert any(
+            "Testing verbose line streaming" in e.raw
+            for e in dashboard._all_log_lines
+        )
 
     def test_process_validation_and_warning_sequence(self):
         dashboard = RunDashboard(
@@ -657,10 +712,87 @@ class TestDashboardRenderer:
         )
 
         dashboard.set_mode(MODE_VERBOSE)
+        dashboard.stop()
         full_out = "".join(written)
         assert "[startup]" in full_out
         assert "docker run -d postgres:latest" in full_out
         assert "INFO: Django booted" in full_out
+
+    def test_verbose_mode_scrolling(self, capsys):
+        renderer = DashboardRenderer()
+        logs = [
+            LogLine(
+                timestamp=f"12:00:{i:02d}",
+                text=f"line {i}",
+                raw=f"INFO: line {i}",
+            )
+            for i in range(50)
+        ]
+        startup = ["docker run 1", "docker run 2"]
+
+        # 1. Render bottom (no scroll)
+        renderer.render(
+            app_name="app",
+            status="ready",
+            url="http://localhost:8000",
+            ws_clients=0,
+            log_lines=logs,
+            validation_count=0,
+            current_error_block=[],
+            mode=MODE_VERBOSE,
+            scroll_offset=0,
+            startup_logs=startup,
+        )
+        captured = capsys.readouterr().out
+        assert "VERBOSE" in captured
+        assert "INFO: line 49" in captured
+        assert "↑/↓ to scroll" in captured
+
+        # 2. Render scrolled up by 40 lines
+        renderer.render(
+            app_name="app",
+            status="ready",
+            url="http://localhost:8000",
+            ws_clients=0,
+            log_lines=logs,
+            validation_count=0,
+            current_error_block=[],
+            mode=MODE_VERBOSE,
+            scroll_offset=40,
+            startup_logs=startup,
+        )
+        scrolled_out = capsys.readouterr().out
+        assert "[startup]" in scrolled_out
+        assert "INFO: line 0" in scrolled_out
+
+    def test_dashboard_verbose_scroll_methods(self):
+        dashboard = RunDashboard(
+            app_name="app",
+            url="http://localhost:8000",
+            initial_mode=MODE_VERBOSE,
+        )
+        for i in range(100):
+            dashboard._all_log_lines.append(
+                LogLine(
+                    timestamp="10:00:00",
+                    text=f"log {i}",
+                    raw=f"INFO: log {i}",
+                )
+            )
+        dashboard.add_startup_log("startup cmd")
+
+        assert dashboard._scroll_offset == 0
+        dashboard.scroll_up(10)
+        assert dashboard._scroll_offset == 10
+
+        dashboard.scroll_up(5)
+        assert dashboard._scroll_offset == 15
+
+        dashboard.scroll_down(7)
+        assert dashboard._scroll_offset == 8
+
+        dashboard.scroll_down(20)
+        assert dashboard._scroll_offset == 0
 
     def test_loading_app_lifecycle_flow(self):
         from cave_cli.utils import display
@@ -715,3 +847,365 @@ class TestDashboardRenderer:
             assert dashboard.mode == MODE_STANDARD
         finally:
             display._active_dashboard = None
+
+    def test_lifecycle_screen_leading_bar_fits(self, capsys):
+        import os
+        import shutil
+
+        renderer = DashboardRenderer()
+        components = [
+            StackComponent(
+                "App Server", "cave-app:app", "app_django", "Pending"
+            ),
+            StackComponent("Database", "postgres", "app_db", "Pending"),
+            StackComponent("Cache", "valkey", "app_redis", "Pending"),
+            StackComponent("Network", "bridge", "app_net", "Pending"),
+        ]
+        events = [
+            LifecycleEvent("12:00:00", f"Event {i}", "ok") for i in range(20)
+        ]
+
+        with patch(
+            "shutil.get_terminal_size", return_value=os.terminal_size((80, 24))
+        ):
+            renderer.render(
+                app_name="test_app",
+                status=LOADING,
+                url="http://localhost:8000",
+                ws_clients=0,
+                log_lines=[],
+                validation_count=0,
+                current_error_block=[],
+                mode=MODE_LIFECYCLE,
+                components=components,
+                lifecycle_events=events,
+            )
+
+        captured = capsys.readouterr().out
+        # Line count should be <= 23 (budget = rows - 1) so it never scrolls
+        lines = captured.split("\n")
+        assert len(lines) <= 23
+        # Leading bar should be present in the very first line
+        assert "━" in lines[0]
+
+    def test_prompt_rendering_and_budget(self, capsys):
+        import os
+
+        renderer = DashboardRenderer()
+        with patch(
+            "shutil.get_terminal_size", return_value=os.terminal_size((80, 24))
+        ):
+            renderer.render(
+                app_name="test_app",
+                status=LOADING,
+                url="http://localhost:8000",
+                ws_clients=0,
+                log_lines=[],
+                validation_count=0,
+                current_error_block=[],
+                mode=MODE_LIFECYCLE,
+                prompt_message="The database is not set up.",
+                prompt_options="[y/N]",
+                prompt_buffer="y",
+            )
+
+        captured = capsys.readouterr().out
+        lines = captured.split("\n")
+        assert len(lines) <= 23
+        assert "The database is not set up." in captured
+        assert "Continue? [y/N]" in captured
+        assert "\033[?25l" in captured  # Cursor hide
+
+    def test_dashboard_prompt_and_confirm(self):
+        import threading
+        from cave_cli.utils.display import RunDashboard
+
+        stop_ev = threading.Event()
+        dashboard = RunDashboard(
+            "app", "http://localhost:8000", stop_event=stop_ev
+        )
+
+        # auto_yes confirms without prompting
+        assert dashboard.confirm("Prompt?", auto_yes=True) is True
+
+        # Simulate user typing 'y' and pressing Enter
+        def user_response():
+            # Wait until prompt is active
+            while not dashboard._prompt_active:
+                pass
+            dashboard._prompt_buffer = "y"
+            dashboard._prompt_result = "y"
+            dashboard._prompt_event.set()
+
+        t = threading.Thread(target=user_response)
+        t.start()
+        res = dashboard.confirm("Initialize DB?", continue_on_no=True)
+        t.join()
+        assert res is True
+
+        # Simulate user typing 'n' and pressing Enter with continue_on_no
+        def user_no():
+            while not dashboard._prompt_active:
+                pass
+            dashboard._prompt_buffer = "n"
+            dashboard._prompt_result = "n"
+            dashboard._prompt_event.set()
+
+        t2 = threading.Thread(target=user_no)
+        t2.start()
+        res_no = dashboard.confirm("Initialize DB?", continue_on_no=True)
+        t2.join()
+        assert res_no is False
+
+    def test_all_mode_headers_present(self, capsys):
+        import os
+        from cave_cli.utils.display import (
+            GREEN,
+            BOLD,
+            CYAN,
+            YELLOW,
+            DashboardRenderer,
+            MODE_LIFECYCLE,
+            MODE_STANDARD,
+            MODE_ALL,
+            MODE_VERBOSE,
+            READY,
+        )
+
+        renderer = DashboardRenderer()
+        modes_expected = [
+            (MODE_LIFECYCLE, "LIFECYCLE", CYAN),
+            (MODE_STANDARD, "LOGS", CYAN),
+            (MODE_ALL, "DETAILED", CYAN),
+            (MODE_VERBOSE, "VERBOSE", CYAN),
+        ]
+
+        with patch(
+            "shutil.get_terminal_size", return_value=os.terminal_size((80, 24))
+        ):
+            for m, label, color in modes_expected:
+                renderer.render(
+                    app_name="test_app",
+                    status=READY,
+                    url="http://localhost:8000",
+                    ws_clients=0,
+                    log_lines=[],
+                    validation_count=0,
+                    current_error_block=[],
+                    mode=m,
+                )
+                captured = capsys.readouterr().out
+                first_line = captured.split("\n")[1]
+                assert label in first_line
+                assert f"{color}{BOLD}{label}" in first_line
+
+    def test_render_exception_filters_traceback_and_limits_to_five(
+        self, capsys
+    ):
+        import os
+
+        renderer = DashboardRenderer()
+        # 7 distinct actual error lines + traceback frames mixed in
+        entries = [
+            LogLine(
+                timestamp="10:00:00",
+                text="Traceback (most recent call last):",
+                raw="Traceback (most recent call last):",
+                level="ERROR",
+                is_validation=True,
+                is_traceback=True,
+            ),
+            LogLine(
+                timestamp="10:00:00",
+                text='  File "/app/test.py", line 12, in bad_func',
+                raw='  File "/app/test.py", line 12, in bad_func',
+                level="ERROR",
+                is_validation=True,
+                is_traceback=True,
+            ),
+            LogLine(
+                timestamp="10:00:00",
+                text="    1 / 0",
+                raw="    1 / 0",
+                level="ERROR",
+                is_validation=True,
+                is_traceback=True,
+            ),
+            LogLine(
+                timestamp="10:00:01",
+                text="Error 1: initial failure",
+                raw="ERROR: Error 1: initial failure",
+                level="ERROR",
+                is_validation=True,
+                is_traceback=False,
+            ),
+            LogLine(
+                timestamp="10:00:02",
+                text="Error 2: second failure",
+                raw="ERROR: Error 2: second failure",
+                level="ERROR",
+                is_validation=True,
+                is_traceback=False,
+            ),
+            LogLine(
+                timestamp="10:00:03",
+                text="Error 3: third failure",
+                raw="ERROR: Error 3: third failure",
+                level="ERROR",
+                is_validation=True,
+                is_traceback=False,
+            ),
+            LogLine(
+                timestamp="10:00:04",
+                text="Error 4: fourth failure",
+                raw="ERROR: Error 4: fourth failure",
+                level="ERROR",
+                is_validation=True,
+                is_traceback=False,
+            ),
+            LogLine(
+                timestamp="10:00:05",
+                text="Error 5: fifth failure",
+                raw="ERROR: Error 5: fifth failure",
+                level="ERROR",
+                is_validation=True,
+                is_traceback=False,
+            ),
+            LogLine(
+                timestamp="10:00:06",
+                text="Error 6: sixth failure",
+                raw="ERROR: Error 6: sixth failure",
+                level="ERROR",
+                is_validation=True,
+                is_traceback=False,
+            ),
+            LogLine(
+                timestamp="10:00:07",
+                text="ZeroDivisionError: division by zero",
+                raw="ZeroDivisionError: division by zero",
+                level="ERROR",
+                is_validation=True,
+                is_traceback=False,
+            ),
+        ]
+
+        with patch(
+            "shutil.get_terminal_size", return_value=os.terminal_size((100, 30))
+        ):
+            renderer.render(
+                app_name="sample",
+                status=READY,
+                url="http://localhost:8000",
+                ws_clients=0,
+                log_lines=[],
+                validation_count=7,
+                current_error_block=entries,
+                show_all=False,
+            )
+
+        captured = capsys.readouterr().out
+
+        # Header note must be present
+        assert "Errors" in captured
+        assert "(7 errors)" in captured
+        assert "switch (tab) to DETAILED or VERBOSE logs" in captured
+
+        # Traceback lines must NOT appear at all
+        assert "Traceback (most recent call last)" not in captured
+        assert 'File "/app/test.py"' not in captured
+        assert "1 / 0" not in captured
+
+        # Only the last 5 errors must appear
+        # Error 1 and Error 2 are older and should be dropped (7 - 5 = 2 dropped)
+        assert "Error 1: initial failure" not in captured
+        assert "Error 2: second failure" not in captured
+        assert "Error 3: third failure" in captured
+        assert "Error 4: fourth failure" in captured
+        assert "Error 5: fifth failure" in captured
+        assert "Error 6: sixth failure" in captured
+        assert "ZeroDivisionError: division by zero" in captured
+
+    def test_mouse_tracking_escapes(self, monkeypatch):
+        written: list[str] = []
+        monkeypatch.setattr(
+            "cave_cli.utils.display.sys.stdout.write",
+            lambda s: written.append(s),
+        )
+        dashboard = RunDashboard(app_name="app", url="http://localhost:8000")
+        with patch("threading.Thread"):
+            dashboard.start()
+        assert any(MOUSE_ENTER in s for s in written)
+
+        written.clear()
+        dashboard.pause()
+        assert any(MOUSE_EXIT in s for s in written)
+
+        written.clear()
+        dashboard.resume()
+        assert any(MOUSE_ENTER in s for s in written)
+
+        written.clear()
+        dashboard.stop()
+        assert any(MOUSE_EXIT in s for s in written)
+
+    def test_log_filter_is_traceback(self):
+        tb_lines = [
+            "Traceback (most recent call last):",
+            '  File "/app/views.py", line 45, in get',
+            "    raise ValueError('bad')",
+            "    ^^^^^^^^^^^^^^^^^^^^^^^",
+            "Exception in ASGI application",
+            "During handling of the above exception, another exception occurred:",
+            "The above exception was the direct cause of the following exception:",
+        ]
+        for line in tb_lines:
+            assert LogFilter.is_traceback(line) is True
+
+        non_tb_lines = [
+            "ZeroDivisionError: division by zero",
+            "ValueError: bad",
+            "django.core.exceptions.ValidationError: ['err']",
+            "Database connection failed",
+            "warning: ['panes']",
+        ]
+        for line in non_tb_lines:
+            assert LogFilter.is_traceback(line) is False
+
+    def test_render_logs_mode_footer_bottom_aligned(self, capsys):
+        import os
+
+        renderer = DashboardRenderer()
+        logs = [
+            LogLine(
+                timestamp="10:00:00",
+                text="App Loading",
+                raw="INFO: App Loading",
+                level="INFO",
+            ),
+            LogLine(
+                timestamp="10:00:01",
+                text="Server ready",
+                raw="INFO: Server ready",
+                level="INFO",
+            ),
+        ]
+        with patch(
+            "shutil.get_terminal_size", return_value=os.terminal_size((80, 24))
+        ):
+            renderer.render(
+                app_name="sample",
+                status=READY,
+                url="http://localhost:8000",
+                ws_clients=0,
+                log_lines=logs,
+                validation_count=0,
+                current_error_block=[],
+                mode=MODE_STANDARD,
+            )
+
+        captured = capsys.readouterr().out
+        lines = captured.split("\n")
+        # Line count should be exactly 23 (budget = rows - 1)
+        assert len(lines) == 23
+        # Footer should be on the last line (bottom-aligned)
+        assert "Ctrl+C to stop" in lines[-1]

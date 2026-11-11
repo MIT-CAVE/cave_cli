@@ -84,6 +84,52 @@ class TestRunCommand:
         assert kwargs["app_name"] == "sample_app"
         assert kwargs["url"] == "http://localhost:8000"
 
+    @patch("cave_cli.commands.run.remove_containers")
+    @patch("cave_cli.commands.run.stream_container_logs")
+    def test_run_tui_already_running_sets_ready_and_components(
+        self,
+        mock_stream,
+        mock_remove,
+    ):
+        with patch("cave_cli.commands.run.RunDashboard") as mock_dash_cls:
+            mock_dashboard = MagicMock()
+            mock_dashboard.is_detached = True
+            mock_dashboard.is_active_tui = True
+            mock_dash_cls.return_value = mock_dashboard
+
+            with patch(
+                "cave_cli.commands.run.threading.Thread"
+            ) as mock_thread_cls:
+                mock_thread = MagicMock()
+                mock_thread_cls.return_value = mock_thread
+
+                with patch(
+                    "cave_cli.commands.run.threading.Event"
+                ) as mock_event_cls:
+                    mock_event = MagicMock()
+                    mock_event.wait.return_value = None
+                    mock_event_cls.return_value = mock_event
+
+                    _run_tui(
+                        app_name="sample_app",
+                        django_container="sample_app_django",
+                        image="cave-app:sample_app",
+                        network="cave-net:sample_app",
+                        ports=[],
+                        volumes=[],
+                        env_vars={},
+                        extra_args=None,
+                        command=[],
+                        url="http://localhost:8000",
+                        already_running=True,
+                    )
+
+            from cave_cli.utils.display import READY
+
+            mock_dashboard.set_status.assert_called_with(READY)
+            mock_dashboard.set_components.assert_called_once()
+            mock_dashboard.add_lifecycle_event.assert_called_once()
+
     @patch("cave_cli.commands.run.run_detached_logged")
     @patch("cave_cli.commands.run.find_open_port", return_value=8000)
     @patch("cave_cli.commands.run.run_detached")
@@ -230,3 +276,242 @@ class TestRunCommand:
 
         stream_container_logs("test_container", q, stop_event)
         mock_proc.terminate.assert_called()
+
+    @patch("cave_cli.commands.run._stream_raw")
+    @patch("cave_cli.commands.run._run_tui")
+    @patch("cave_cli.utils.docker.get_running_apps", return_value=[])
+    @patch("cave_cli.commands.run.run_detached_logged")
+    @patch("cave_cli.commands.run.find_open_port", return_value=8000)
+    @patch("cave_cli.commands.run.run_detached")
+    @patch("cave_cli.commands.run.create_network")
+    @patch("cave_cli.commands.run.build_image")
+    @patch("cave_cli.commands.run.remove_containers")
+    def test_run_no_tui_mode(
+        self,
+        mock_remove_containers,
+        mock_build_image,
+        mock_create_network,
+        mock_run_detached,
+        mock_find_open_port,
+        mock_run_detached_logged,
+        mock_get_running_apps,
+        mock_run_tui,
+        mock_stream_raw,
+        fake_app,
+    ):
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_run_detached_logged.return_value = mock_res
+
+        args = argparse.Namespace(
+            attach=False,
+            detached=False,
+            interactive=False,
+            show_all=False,
+            no_tui=True,
+            entrypoint=None,
+            docker_args="",
+            ip_port=None,
+            log_lines=None,
+            log_history=None,
+        )
+        run_cave(fake_app[0], fake_app[1], args, skip_header=True)
+
+        # _stream_raw should be called, and _run_tui should NOT be called
+        mock_stream_raw.assert_called_once()
+        mock_run_tui.assert_not_called()
+        # remove_containers should be called at startup and on exit
+        assert mock_remove_containers.call_count == 2
+
+    @patch("cave_cli.commands.run._run_tui")
+    @patch("cave_cli.utils.docker.get_container_host_port", return_value="8000")
+    @patch("cave_cli.utils.docker.get_all_containers", return_value=[])
+    @patch(
+        "cave_cli.utils.docker.get_running_apps", return_value=["sample_app"]
+    )
+    def test_run_auto_attaches_when_already_running(
+        self,
+        mock_get_running_apps,
+        mock_get_all_containers,
+        mock_get_container_host_port,
+        mock_run_tui,
+        fake_app,
+    ):
+        args = argparse.Namespace(
+            attach=False,
+            detached=False,
+            interactive=False,
+            show_all=False,
+            entrypoint=None,
+            docker_args="",
+            ip_port=None,
+            log_lines=None,
+            log_history=None,
+        )
+        run_cave(fake_app[0], fake_app[1], args)
+        mock_run_tui.assert_called_once()
+        _, kwargs = mock_run_tui.call_args
+        assert kwargs["already_running"] is True
+        assert kwargs["app_name"] == "sample_app"
+        assert kwargs["url"] == "http://localhost:8000"
+
+    @patch("cave_cli.commands.run._stream_raw")
+    @patch("cave_cli.commands.run._run_tui")
+    @patch(
+        "cave_cli.utils.docker.get_running_apps", return_value=["sample_app"]
+    )
+    @patch("cave_cli.utils.docker.get_all_containers", return_value=[])
+    @patch("cave_cli.utils.docker.get_container_host_port", return_value="8000")
+    def test_attach_no_tui_mode(
+        self,
+        mock_port,
+        mock_containers,
+        mock_apps,
+        mock_run_tui,
+        mock_stream_raw,
+        fake_app,
+    ):
+        args = argparse.Namespace(
+            attach=True,
+            detached=False,
+            interactive=False,
+            show_all=False,
+            no_tui=True,
+            entrypoint=None,
+            docker_args="",
+            ip_port=None,
+            log_lines=None,
+            log_history=None,
+        )
+        run_cave(fake_app[0], fake_app[1], args)
+
+        mock_stream_raw.assert_called_once()
+        mock_run_tui.assert_not_called()
+
+    @patch("cave_cli.commands.run._run_tui")
+    @patch("cave_cli.commands.run.find_open_port", return_value=8000)
+    @patch("cave_cli.commands.run.run_detached")
+    @patch("cave_cli.commands.run.create_network")
+    @patch("cave_cli.commands.run.build_image")
+    @patch("cave_cli.commands.run.remove_containers")
+    def test_batch_run_skips_db_check(
+        self,
+        mock_remove,
+        mock_build,
+        mock_net,
+        mock_detached,
+        mock_port,
+        mock_tui,
+        tmp_path,
+    ):
+        app_dir = tmp_path / "batch_app"
+        app_dir.mkdir()
+        env_file = app_dir / ".env"
+        env_file.write_text("DATABASE_IMAGE=postgres:15\n", encoding="utf-8")
+
+        args = argparse.Namespace(
+            attach=False,
+            detached=False,
+            interactive=False,
+            show_all=False,
+            no_tui=False,
+            raw=False,
+            entrypoint="./utils/reset_db.sh",
+            docker_args="",
+            ip_port=None,
+            yes=True,
+            verbose=False,
+            loglevel="INFO",
+        )
+
+        with patch("cave_cli.commands.run.RunDashboard"):
+            with patch(
+                "cave_cli.utils.docker.is_container_ready"
+            ) as mock_ready:
+                run_cave(str(app_dir), "batch_app", args, skip_header=True)
+                # is_container_ready should NOT be called because is_server_run is False
+                mock_ready.assert_not_called()
+
+    @patch("cave_cli.commands.run._stream_raw")
+    @patch("cave_cli.commands.run._run_tui")
+    @patch("cave_cli.commands.run.run_detached_logged")
+    @patch("cave_cli.commands.run.find_open_port", return_value=8000)
+    @patch("cave_cli.commands.run.create_network")
+    @patch("cave_cli.commands.run.build_image")
+    @patch("cave_cli.commands.run.remove_containers")
+    def test_run_verbose_enables_raw_mode(
+        self,
+        mock_remove,
+        mock_build,
+        mock_net,
+        mock_port,
+        mock_run_detached_logged,
+        mock_run_tui,
+        mock_stream_raw,
+        fake_app,
+    ):
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_run_detached_logged.return_value = mock_res
+
+        args = argparse.Namespace(
+            attach=False,
+            detached=False,
+            interactive=False,
+            show_all=False,
+            no_tui=False,
+            raw=False,
+            entrypoint=None,
+            docker_args="",
+            ip_port=None,
+            log_lines=None,
+            log_history=None,
+            verbose=True,
+            loglevel="INFO",
+        )
+        run_cave(fake_app[0], fake_app[1], args, skip_header=True)
+
+        mock_stream_raw.assert_called_once()
+        mock_run_tui.assert_not_called()
+
+    @patch("cave_cli.commands.run._stream_raw")
+    @patch("cave_cli.commands.run._run_tui")
+    @patch("cave_cli.commands.run.run_detached_logged")
+    @patch("cave_cli.commands.run.find_open_port", return_value=8000)
+    @patch("cave_cli.commands.run.create_network")
+    @patch("cave_cli.commands.run.build_image")
+    @patch("cave_cli.commands.run.remove_containers")
+    def test_run_debug_loglevel_enables_raw_mode(
+        self,
+        mock_remove,
+        mock_build,
+        mock_net,
+        mock_port,
+        mock_run_detached_logged,
+        mock_run_tui,
+        mock_stream_raw,
+        fake_app,
+    ):
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_run_detached_logged.return_value = mock_res
+
+        args = argparse.Namespace(
+            attach=False,
+            detached=False,
+            interactive=False,
+            show_all=False,
+            no_tui=False,
+            raw=False,
+            entrypoint=None,
+            docker_args="",
+            ip_port=None,
+            log_lines=None,
+            log_history=None,
+            verbose=False,
+            loglevel="DEBUG",
+        )
+        run_cave(fake_app[0], fake_app[1], args, skip_header=True)
+
+        mock_stream_raw.assert_called_once()
+        mock_run_tui.assert_not_called()

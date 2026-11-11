@@ -112,6 +112,7 @@ def normalize_task_args(args: list[str]) -> list[str]:
         "kill-server",
         # Action flags
         "-l",
+        "-ls",
         "--list",
         "-la",
         "--list-all",
@@ -266,6 +267,15 @@ def main():
         help="Show raw container output instead of the TUI dashboard (also enabled by --verbose)",
     )
     p_run.add_argument(
+        "-r",
+        "--no-tui",
+        "--raw",
+        dest="no_tui",
+        action="store_true",
+        default=False,
+        help="Run without the TUI dashboard, streaming logs directly to the terminal",
+    )
+    p_run.add_argument(
         "--log-history",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -295,6 +305,14 @@ def main():
         default="",
         metavar="ARGS",
         help="Additional arguments to pass to docker run",
+    )
+    p_reset.add_argument(
+        "-r",
+        "--raw",
+        "--no-tui",
+        action="store_true",
+        default=False,
+        help="Run without TUI dashboard, streaming logs directly to terminal",
     )
 
     # ------------------------------------------------------------------ #
@@ -425,6 +443,7 @@ def main():
     add_global_args(p_task)
     p_task.add_argument(
         "-l",
+        "-ls",
         "--list",
         action="store_true",
         default=False,
@@ -707,6 +726,7 @@ def main():
         help="Show all log lines including verbose websocket and HTTP access logs",
     )
     p_logs.add_argument(
+        "-r",
         "--raw",
         action="store_true",
         default=False,
@@ -742,6 +762,7 @@ def main():
     # ------------------------------------------------------------------ #
     p_list = subparsers.add_parser(
         "list",
+        aliases=["ls"],
         help="List running CAVE apps",
     )
     add_global_args(p_list)
@@ -1059,7 +1080,7 @@ def main():
         check_all()
         prettify(args)
 
-    elif args.command == "list":
+    elif args.command == "list" or args.command == "ls":
         from cave_cli.commands.doctor import check_all
         from cave_cli.commands.list_cmd import list_cmd
 

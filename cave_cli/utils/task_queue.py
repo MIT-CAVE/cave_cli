@@ -316,7 +316,7 @@ def _write_registry_unlocked(path: str, data: dict[str, Any]) -> None:
 
 
 DEFAULT_TASK_HISTORY_LIMIT: int = 50
-DEFAULT_RUN_LOG_LIMIT: int = 500
+DEFAULT_RUN_LOG_LIMIT: int = 1000
 
 
 def get_task_history_limit(app_dir: str | None = None) -> int:

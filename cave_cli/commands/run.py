@@ -1,4 +1,5 @@
 import argparse
+import os
 import shlex
 import signal
 import sys
@@ -9,6 +10,7 @@ from cave_cli.utils.display import (
     MODE_LIFECYCLE,
     MODE_STANDARD,
     MODE_VERBOSE,
+    READY,
     STOPPING,
     RunDashboard,
     StackComponent,
@@ -56,6 +58,13 @@ def run_cave(
     )
     detached = getattr(args, "detached", False)
     attach = getattr(args, "attach", False)
+    no_tui = (
+        getattr(args, "no_tui", False)
+        or getattr(args, "raw", False)
+        or getattr(args, "verbose", False)
+        or (getattr(args, "loglevel", None) or "INFO").upper() == "DEBUG"
+        or os.environ.get("CAVE_NO_TUI", "").lower() in ("1", "true", "yes")
+    )
     ip_port_arg = getattr(args, "ip_port", None)
     if ip_port_arg == "attach":
         attach = True
@@ -71,7 +80,7 @@ def run_cave(
     show_all = (
         getattr(args, "show_all", False)
         or getattr(args, "verbose", False)
-        or getattr(args, "loglevel", "INFO").upper() == "DEBUG"
+        or (getattr(args, "loglevel", None) or "INFO").upper() == "DEBUG"
     )
     entrypoint = getattr(args, "entrypoint", None) or "./utils/run_server.sh"
     docker_args_str = getattr(args, "docker_args", "") or ""
@@ -80,22 +89,28 @@ def run_cave(
     extra_env = getattr(args, "extra_env", {}) or {}
     quiet = (
         getattr(args, "quiet", False)
-        or getattr(args, "loglevel", "INFO").upper() == "SILENT"
+        or (getattr(args, "loglevel", None) or "INFO").upper() == "SILENT"
     )
 
     is_server_run = entrypoint == "./utils/run_server.sh" and not interactive
+    if not attach and not detached and is_server_run:
+        from cave_cli.utils.docker import get_running_apps
+
+        if app_name in get_running_apps():
+            attach = True
+
     initial_mode = (
         MODE_VERBOSE
         if (
             getattr(args, "verbose", False)
-            or getattr(args, "loglevel", "INFO").upper() == "DEBUG"
+            or (getattr(args, "loglevel", None) or "INFO").upper() == "DEBUG"
         )
         else (
             MODE_ALL
             if getattr(args, "show_all", False)
             else (
                 MODE_LIFECYCLE
-                if (is_server_run and not attach and not detached)
+                if (not attach and not detached)
                 else MODE_STANDARD
             )
         )
@@ -145,6 +160,18 @@ def run_cave(
             run_log_limit = get_run_log_limit(app_dir)
 
         run_log_path = get_run_log_path(app_dir) if run_log_limit > 0 else None
+
+        if no_tui:
+            logger.header("CAVE App (CLI)")
+            logger.info(
+                f"Streaming logs for '{app_name}'... (Press CTRL+C to quit)"
+            )
+            _stream_raw(
+                django_container=django_container,
+                log_file_path=run_log_path,
+                max_log_lines=run_log_limit,
+            )
+            return
 
         logger.header("CAVE App")
         _run_tui(
@@ -250,8 +277,8 @@ def run_cave(
 
     run_log_path = get_run_log_path(app_dir) if run_log_limit > 0 else None
 
-    # ── Non-TUI Execution (detached / interactive) ────────────────────────
-    if detached or interactive:
+    # ── Non-TUI Execution (detached / interactive / no-tui) ───────────────
+    if detached or interactive or no_tui:
         if not skip_header:
             print_section(f"Starting {app_name}")
         remove_containers(app_name, skip_header=True)
@@ -286,7 +313,7 @@ def run_cave(
         )
         step_done("Starting cache")
 
-        if "postgres" in db_image.lower():
+        if is_server_run and "postgres" in db_image.lower():
             from cave_cli.utils.docker import (
                 is_container_ready,
                 is_db_initialized,
@@ -311,7 +338,8 @@ def run_cave(
                     step_done("Checking database")
                     confirm_action(
                         "The database for this app is not set up. "
-                        "Would you like to set it up now?"
+                        "Would you like to set it up now?",
+                        auto_yes=getattr(args, "yes", False),
                     )
                     step_start("Initializing database")
                     run_interactive(
@@ -399,6 +427,40 @@ def run_cave(
             remove_containers(app_name)
             return
 
+        if no_tui:
+            step_start("Starting Django")
+            result = run_detached_logged(
+                name=django_container,
+                image=f"cave-app:{app_name}",
+                network=network,
+                ports=django_ports,
+                volumes=django_volumes,
+                env_vars=django_env,
+                extra_args=extra_docker_args or None,
+                command=server_command,
+            )
+            if result.returncode != 0:
+                step_fail(
+                    "Starting Django", "Failed to start Django container."
+                )
+                logger.error("Failed to start Django container.")
+                remove_containers(app_name)
+                sys.exit(1)
+            step_done("Starting Django")
+            logger.header("CAVE App (CLI)")
+            if is_server_run:
+                logger.info(
+                    f"Watching for changes and running at {url}... "
+                    "(Press CTRL+C to quit)"
+                )
+            _stream_raw(
+                django_container=django_container,
+                log_file_path=run_log_path,
+                max_log_lines=run_log_limit,
+            )
+            remove_containers(app_name)
+            return
+
     # ── TUI Server Execution (with Lifecycle Start & Fallback) ────────────
     stop_event = threading.Event()
     dashboard = RunDashboard(
@@ -475,7 +537,7 @@ def run_cave(
         )
         step_done("Starting cache")
 
-        if "postgres" in db_image.lower():
+        if is_server_run and "postgres" in db_image.lower():
             from cave_cli.utils.docker import (
                 is_container_ready,
                 is_db_initialized,
@@ -504,25 +566,31 @@ def run_cave(
 
             if not is_db_initialized(db_container, db_user, db_name):
                 step_done("Checking database")
-                dashboard.pause()
-                try:
-                    confirm_action(
-                        "The database for this app is not set up. "
-                        "Would you like to set it up now?"
-                    )
-                    step_start("Initializing database")
-                    run_interactive(
-                        name=f"{app_name}_django_setup",
-                        image=f"cave-app:{app_name}",
-                        network=network,
-                        volumes=django_volumes,
-                        env_vars=django_env,
-                        command=["./utils/reset_db.sh"],
-                    )
-                    run_and_log(["docker", "rm", f"{app_name}_django_setup"])
-                    step_done("Initializing database")
-                finally:
-                    dashboard.resume()
+                confirm_action(
+                    "The database for this app is not set up. "
+                    "Would you like to set it up now?",
+                    auto_yes=getattr(args, "yes", False),
+                )
+                step_start("Initializing database")
+                run_and_log(
+                    [
+                        "docker",
+                        "run",
+                        "--rm",
+                        "--network",
+                        network,
+                        *sum([["--volume", v] for v in django_volumes], []),
+                        *sum(
+                            [["-e", f"{k}={v}"] for k, v in django_env.items()],
+                            [],
+                        ),
+                        "--name",
+                        f"{app_name}_django_setup",
+                        f"cave-app:{app_name}",
+                        "./utils/reset_db.sh",
+                    ]
+                )
+                step_done("Initializing database")
             else:
                 step_done("Checking database")
 
@@ -567,6 +635,7 @@ def run_cave(
             max_log_lines=run_log_limit,
             initial_mode=initial_mode,
             dashboard=dashboard,
+            is_server_run=is_server_run,
         )
 
     except Exception as exc:
@@ -578,6 +647,9 @@ def run_cave(
                 sys.stderr.write(f"  {line}\n")
         remove_containers(app_name, skip_header=True)
         sys.exit(1)
+    except BaseException:
+        dashboard.stop()
+        raise
 
 
 def _run_tui(
@@ -592,10 +664,11 @@ def _run_tui(
     command: list[str],
     url: str,
     log_file_path: str | None = None,
-    max_log_lines: int = 500,
+    max_log_lines: int = 1000,
     already_running: bool = False,
     initial_mode: str = MODE_STANDARD,
     dashboard: RunDashboard | None = None,
+    is_server_run: bool = True,
 ) -> None:
     """
     Usage:
@@ -654,7 +727,7 @@ def _run_tui(
     - ``max_log_lines``:
         - Type: int
         - What: Maximum log lines to store in the log file.
-        - Default: 500
+        - Default: 1000
 
     - ``already_running``:
         - Type: bool
@@ -671,6 +744,11 @@ def _run_tui(
         - What: Existing RunDashboard instance to reuse.
         - Default: None
 
+    - ``is_server_run``:
+        - Type: bool
+        - What: Whether this run is an interactive web server run.
+        - Default: True
+
     Notes:
 
     - Installs a SIGINT handler so Ctrl+C sets the stop event cleanly.
@@ -685,6 +763,38 @@ def _run_tui(
             stop_event=stop_event,
             initial_mode=initial_mode,
         )
+        if already_running:
+            dashboard.set_status(READY)
+            components = [
+                StackComponent(
+                    "App Server",
+                    image,
+                    django_container,
+                    "Ready",
+                ),
+                StackComponent(
+                    "Database",
+                    "postgres",
+                    f"{app_name}_db_host",
+                    "Ready",
+                ),
+                StackComponent(
+                    "Cache",
+                    "valkey",
+                    f"{app_name}_redis_host",
+                    "Ready",
+                ),
+                StackComponent(
+                    "Network",
+                    "bridge",
+                    network,
+                    "Active",
+                ),
+            ]
+            dashboard.set_components(components)
+            dashboard.add_lifecycle_event(
+                f"Attached to running app at {url}", status="ok"
+            )
     else:
         stop_event = dashboard._stop_event
 
@@ -717,7 +827,11 @@ def _run_tui(
             sys.exit(1)
 
         step_done("Starting Django")
-        step_start("Loading App")
+        if is_server_run:
+            step_start("Loading App")
+        else:
+            task_name = os.path.basename(command[0]) if command else "task"
+            step_start(f"Running {task_name}")
 
     tail = 200 if already_running else None
     log_thread = threading.Thread(
@@ -741,6 +855,10 @@ def _run_tui(
         stop_event.wait()
     finally:
         signal.signal(signal.SIGINT, original_sigint)
+        if not is_server_run and dashboard.container_exited:
+            task_name = os.path.basename(command[0]) if command else "task"
+            step_done(f"Running {task_name}")
+            dashboard.update_component("App Server", "Done")
         if not dashboard.is_detached:
             dashboard.set_status(STOPPING)
             if dashboard.mode != MODE_VERBOSE:
@@ -749,15 +867,13 @@ def _run_tui(
         dashboard.stop()
         log_thread.join(timeout=2.0)
         if dashboard.is_detached:
-            print(
-                f"\nDetached from '{app_name}'. Rejoin with: cave run --attach\n"
-            )
+            print(f"\nDetached from '{app_name}'. Rejoin with: cave run\n")
 
 
 def _stream_raw(
     django_container: str,
     log_file_path: str | None = None,
-    max_log_lines: int = 500,
+    max_log_lines: int = 1000,
 ) -> None:
     """
     Usage:
@@ -780,7 +896,7 @@ def _stream_raw(
     - ``max_log_lines``:
         - Type: int
         - What: Maximum log lines to store in the log file.
-        - Default: 500
+        - Default: 1000
     """
     import queue
 

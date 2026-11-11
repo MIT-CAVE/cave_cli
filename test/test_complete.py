@@ -80,6 +80,14 @@ class TestCompleteUtils:
         assert "--detached" in candidates
         assert "-a" in candidates
         assert "--attach" in candidates
+        assert "--no-tui" in candidates
+        assert "--raw" in candidates
+
+    def test_get_completions_reset(self):
+        candidates = get_completions(["cave", "reset", ""], 2)
+        assert "--docker-args" in candidates
+        assert "--no-tui" in candidates
+        assert "--raw" in candidates
 
     def test_get_completions_task(self):
         candidates = get_completions(["cave", "task", ""], 2)
@@ -92,6 +100,8 @@ class TestCompleteUtils:
         assert "stop" in candidates
         assert "start" in candidates
         assert "run" in candidates
+        assert "-l" in candidates
+        assert "-ls" in candidates
         assert "--list" in candidates
         assert "--list-all" in candidates
         assert "--attach" in candidates

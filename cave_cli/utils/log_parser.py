@@ -2,8 +2,6 @@ import re
 import sys
 from typing import NamedTuple
 
-from cave_cli.utils.display import BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW
-
 _OUTER_PREFIX_RE = re.compile(
     r"^(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL):[ \t]?"
 )
@@ -45,6 +43,7 @@ class ParsedLogLine(NamedTuple):
     is_error: bool
     is_warning: bool
     is_block_start: bool = False
+    is_traceback: bool = False
 
 
 class LogParser:
@@ -115,7 +114,11 @@ class LogParser:
         stripped = cleaned.strip()
 
         # 1. Traceback detection
-        if "Traceback (most recent call last):" in cleaned:
+        if (
+            "Traceback (most recent call last):" in cleaned
+            or "During handling of the above exception" in stripped
+            or "The above exception was the direct cause" in stripped
+        ):
             self.in_traceback = True
             self.in_validation = False
             self.in_warning = False
@@ -127,6 +130,18 @@ class LogParser:
                 is_error=True,
                 is_warning=False,
                 is_block_start=True,
+                is_traceback=True,
+            )
+
+        if stripped == "Exception in ASGI application":
+            return ParsedLogLine(
+                level="ERROR",
+                message=cleaned,
+                raw=raw,
+                is_noise=False,
+                is_error=True,
+                is_warning=False,
+                is_traceback=True,
             )
 
         if self.in_traceback:
@@ -151,6 +166,7 @@ class LogParser:
                     is_noise=False,
                     is_error=True,
                     is_warning=False,
+                    is_traceback=False,
                 )
 
             return ParsedLogLine(
@@ -160,6 +176,7 @@ class LogParser:
                 is_noise=False,
                 is_error=True,
                 is_warning=False,
+                is_traceback=True,
             )
 
         # 2. Validation error detection (cave_utils soft errors)
@@ -352,6 +369,16 @@ class LogParser:
         """
         if not color:
             return f"{entry.level}: {entry.message}"
+
+        from cave_cli.utils.display import (
+            BOLD,
+            CYAN,
+            DIM,
+            GREEN,
+            RED,
+            RESET,
+            YELLOW,
+        )
 
         if entry.level == "ERROR":
             return f"{RED}{BOLD}ERROR:{RESET} {entry.message}"

@@ -220,13 +220,16 @@ def get_completions(words: list[str], cword: int) -> list[str]:
             "-interactive",
             "--interactive",
             "--all",
+            "--no-tui",
+            "-r",
+            "--raw",
             "--log-history",
             "--no-log-history",
             "--log-lines",
         ] + global_flags
 
     if subcmd in ("reset", "reset-db"):
-        return ["--docker-args"] + global_flags
+        return ["--docker-args", "-r", "--no-tui", "--raw"] + global_flags
 
     if subcmd == "prettify":
         return ["-d", "--detached", "--docker-args"] + global_flags
@@ -234,6 +237,7 @@ def get_completions(words: list[str], cword: int) -> list[str]:
     if subcmd == "task":
         task_flags = [
             "-l",
+            "-ls",
             "--list",
             "-la",
             "--list-all",

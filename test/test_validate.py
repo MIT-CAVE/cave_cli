@@ -1,3 +1,4 @@
+from unittest.mock import MagicMock
 import pytest
 from cave_cli.utils.validate import validate_app_name
 
@@ -113,3 +114,26 @@ class TestValidateAppDir:
             "The folder 'cave_core' is missing" in err for err in logged_errors
         )
         assert any_missing_core
+
+
+class TestConfirmAction:
+    def test_auto_yes(self):
+        from cave_cli.utils.validate import confirm_action
+
+        assert confirm_action("Do something?", auto_yes=True) is True
+
+    def test_routes_to_active_dashboard(self, monkeypatch):
+        from cave_cli.utils.validate import confirm_action
+        import cave_cli.utils.display as display
+
+        mock_dashboard = MagicMock()
+        mock_dashboard.is_active_tui = True
+        mock_dashboard.confirm.return_value = True
+
+        monkeypatch.setattr(display, "_active_dashboard", mock_dashboard)
+
+        res = confirm_action("Proceed?", auto_yes=False, continue_on_no=True)
+        assert res is True
+        mock_dashboard.confirm.assert_called_once_with(
+            "Proceed?", auto_yes=False, continue_on_no=True
+        )

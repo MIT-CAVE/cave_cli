@@ -1,3 +1,4 @@
+from collections.abc import Callable
 import sys
 from cave_cli.utils.display import (
     BOLD,
@@ -34,7 +35,38 @@ class CaveLogger:
     }
 
     def __init__(self, level: str = "INFO") -> None:
+        self._listeners: list[Callable[[str, str], None]] = []
         self.set_level(level)
+
+    def add_listener(self, listener: Callable[[str, str], None]) -> None:
+        """
+        Usage:
+
+        - Adds a callback that receives every logged message regardless of level.
+
+        Requires:
+
+        - ``listener``:
+            - Type: Callable[[str, str], None]
+            - What: Callback taking (message, level).
+        """
+        if listener not in self._listeners:
+            self._listeners.append(listener)
+
+    def remove_listener(self, listener: Callable[[str, str], None]) -> None:
+        """
+        Usage:
+
+        - Removes a previously registered log listener callback.
+
+        Requires:
+
+        - ``listener``:
+            - Type: Callable[[str, str], None]
+            - What: The callback to remove.
+        """
+        if listener in self._listeners:
+            self._listeners.remove(listener)
 
     def set_level(self, level: str) -> None:
         """
@@ -58,6 +90,11 @@ class CaveLogger:
         set_quiet(level == "SILENT")
 
     def log(self, message: str, level: str) -> None:
+        for listener in list(self._listeners):
+            try:
+                listener(message, level)
+            except Exception:
+                pass
         if self.LEVELS.get(level, 0) >= self._level:
             color = ""
             if level == "ERROR":

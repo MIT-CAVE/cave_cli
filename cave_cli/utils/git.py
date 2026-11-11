@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 from cave_cli.utils.subprocess import run, run_and_log
 
 
@@ -236,3 +239,91 @@ def ls_remote_heads(url: str) -> list[str]:
             if branch:
                 branches.append(branch)
     return branches
+
+
+def get_git_common_dir(path: str | None = None) -> str | None:
+    """
+    Usage:
+
+    - Resolves the common git directory for a git repository or worktree
+
+    Optional:
+
+    - ``path``:
+        - Type: str | None
+        - What: The directory path to inspect
+        - Default: None (uses current working directory)
+
+    Returns:
+
+    - ``common_dir``:
+        - Type: str | None
+        - What: The absolute path to the common git directory, or None if not a git repository
+
+    Notes:
+
+    - For linked git worktrees, resolves to the main repository's common .git directory.
+    """
+    cmd = ["git", "rev-parse", "--git-common-dir"]
+    result = run(cmd, cwd=path, capture=True)
+    if result.returncode != 0 or not result.stdout or not result.stdout.strip():
+        return None
+    raw = result.stdout.strip()
+    if os.path.isabs(raw):
+        return str(Path(raw).resolve())
+    base = Path(path or ".").resolve()
+    return str((base / raw).resolve())
+
+
+def get_project_root(path: str | None = None) -> str | None:
+    """
+    Usage:
+
+    - Resolves the root project directory of a git repository
+
+    Optional:
+
+    - ``path``:
+        - Type: str | None
+        - What: The directory path to inspect
+        - Default: None (uses current working directory)
+
+    Returns:
+
+    - ``root``:
+        - Type: str | None
+        - What: The absolute path to the main repository root, or None if not a git repository
+
+    Notes:
+
+    - For linked git worktrees, resolves to the root directory of the main repository.
+    """
+    common_dir = get_git_common_dir(path)
+    if not common_dir:
+        return None
+    return str(Path(common_dir).parent.resolve())
+
+
+def get_project_name(path: str | None = None) -> str | None:
+    """
+    Usage:
+
+    - Resolves the project name of a git repository
+
+    Optional:
+
+    - ``path``:
+        - Type: str | None
+        - What: The directory path to inspect
+        - Default: None (uses current working directory)
+
+    Returns:
+
+    - ``name``:
+        - Type: str | None
+        - What: The base directory name of the main repository, or None if not a git repository
+    """
+    root = get_project_root(path)
+    if not root:
+        return None
+    return Path(root).name

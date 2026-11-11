@@ -142,7 +142,8 @@ cave --help
 
 | Flag | Description |
 |---|---|
-| `--all` | Show raw container output instead of the TUI dashboard |
+| `-r`, `--raw` | Show raw container output instead of the TUI dashboard |
+| `-d`, `--detached` | Run in detached background mode |
 | `-it`, `--interactive` | Run in interactive mode (drops into a bash shell) |
 | `ip:port` | Optional argument for LAN hosting (e.g. `192.168.1.1:8000`) |
 

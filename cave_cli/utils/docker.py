@@ -335,11 +335,14 @@ def stream_container_logs(
     container_name: str,
     log_queue: "queue.Queue[str | None]",
     stop_event: "threading.Event",
+    log_file_path: str | None = None,
+    max_log_lines: int = 500,
+    tail: int | str | None = None,
 ) -> None:
     """
     Usage:
 
-    - Streams logs from a running container into a queue.
+    - Streams logs from a running container into a queue and optional rotating file.
 
     Requires:
 
@@ -355,29 +358,148 @@ def stream_container_logs(
         - Type: threading.Event
         - What: When set, causes the streamer to terminate promptly.
 
+    Optional:
+
+    - ``log_file_path``:
+        - Type: str | None
+        - What: File path to save the rotating tail of container log lines
+        - Default: None
+
+    - ``max_log_lines``:
+        - Type: int
+        - What: Maximum number of recent log lines to maintain in log_file_path
+        - Default: 500
+
+    - ``tail``:
+        - Type: int | str | None
+        - What: Number of recent log lines to show initially, or None to stream from now
+        - Default: None
+
     Notes:
 
     - Designed to run as a daemon thread.
     - Always puts a None sentinel into the queue before returning so the
       display loop can detect container exit.
     """
+    import os
     import queue as _queue
+    import subprocess
     import threading as _threading
 
+    log_file = None
+    lines_since_trim = 0
+    if log_file_path and max_log_lines > 0:
+        try:
+            os.makedirs(
+                os.path.dirname(os.path.abspath(log_file_path)), exist_ok=True
+            )
+            # Prune previous session's logs if they exceed max_log_lines
+            if os.path.exists(log_file_path):
+                try:
+                    with open(
+                        log_file_path, "r", encoding="utf-8", errors="replace"
+                    ) as f:
+                        prior_lines = f.readlines()
+                    if len(prior_lines) > max_log_lines:
+                        with open(log_file_path, "w", encoding="utf-8") as f:
+                            f.writelines(prior_lines[-max_log_lines:])
+                except Exception:
+                    pass
+            log_file = open(log_file_path, "a", encoding="utf-8", buffering=1)
+        except Exception:
+            log_file = None
+
+    from cave_cli.utils.log_parser import LogParser
+
+    log_parser = LogParser()
+
+    cmd = ["docker", "logs", "-f"]
+    if tail is not None:
+        cmd.extend(["--tail", str(tail)])
+    else:
+        cmd.extend(["--since", "0s"])
+    cmd.append(container_name)
+
     process = subprocess.Popen(
-        ["docker", "logs", "-f", "--since", "0s", container_name],
+        cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
         errors="replace",
     )
+
+    def _watch_stop() -> None:
+        stop_event.wait()
+        try:
+            process.terminate()
+        except Exception:
+            pass
+
+    watcher = _threading.Thread(target=_watch_stop, daemon=True)
+    watcher.start()
+
     try:
         for line in process.stdout:
             if stop_event.is_set():
                 break
-            log_queue.put(line.rstrip())
+            stripped = line.rstrip()
+            log_queue.put(stripped)
+            if log_file is not None:
+                try:
+                    parsed = log_parser.parse_line(stripped)
+                    formatted = log_parser.format_line(parsed, color=False)
+                    log_file.write(formatted + "\n")
+                    log_file.flush()
+                    lines_since_trim += 1
+                    # Trim periodically if the file grows significantly beyond max_log_lines
+                    if lines_since_trim >= max_log_lines * 2:
+                        log_file.close()
+                        try:
+                            with open(
+                                log_file_path,
+                                "r",
+                                encoding="utf-8",
+                                errors="replace",
+                            ) as f:
+                                all_lines = f.readlines()
+                            if len(all_lines) > max_log_lines:
+                                tmp_p = f"{log_file_path}.tmp"
+                                with open(tmp_p, "w", encoding="utf-8") as f:
+                                    f.writelines(all_lines[-max_log_lines:])
+                                os.replace(tmp_p, log_file_path)
+                        except Exception:
+                            pass
+                        log_file = open(
+                            log_file_path, "a", encoding="utf-8", buffering=1
+                        )
+                        lines_since_trim = 0
+                except Exception:
+                    pass
     finally:
+        if log_file is not None:
+            try:
+                log_file.flush()
+                log_file.close()
+            except Exception:
+                pass
+        if (
+            log_file_path
+            and max_log_lines > 0
+            and os.path.exists(log_file_path)
+        ):
+            try:
+                with open(
+                    log_file_path, "r", encoding="utf-8", errors="replace"
+                ) as f:
+                    final_lines = f.readlines()
+                if len(final_lines) > max_log_lines:
+                    tmp_p = f"{log_file_path}.tmp"
+                    with open(tmp_p, "w", encoding="utf-8") as f:
+                        f.writelines(final_lines[-max_log_lines:])
+                    os.replace(tmp_p, log_file_path)
+            except Exception:
+                pass
         process.terminate()
         try:
             process.wait(timeout=3)
@@ -573,31 +695,40 @@ def get_running_apps() -> list[str]:
     if result.returncode != 0 or not result.stdout:
         return apps
     for line in result.stdout.strip().splitlines():
-        if line.endswith("_django") and not line.endswith("_test_django"):
+        if (
+            line.endswith("_django")
+            and not line.endswith("_test_django")
+            and not line.endswith("_task_django")
+        ):
             apps.append(line.replace("_django", ""))
     return apps
 
 
-def get_running_test_servers() -> list[str]:
+def get_running_task_servers() -> list[str]:
     """
     Usage:
 
-    - Lists all CAVE apps with running test servers
+    - Lists all CAVE apps with running task servers
 
     Returns:
 
     - ``apps``:
         - Type: list[str]
-        - What: App names that have an active test server
+        - What: App names that have an active task server
     """
     result = run(["docker", "ps", "--format", "{{.Names}}"])
     apps: list[str] = []
     if result.returncode != 0 or not result.stdout:
         return apps
     for line in result.stdout.strip().splitlines():
-        if line.endswith("_test_django"):
+        if line.endswith("_task_django"):
+            apps.append(line.replace("_task_django", ""))
+        elif line.endswith("_test_django"):
             apps.append(line.replace("_test_django", ""))
     return apps
+
+
+get_running_test_servers = get_running_task_servers
 
 
 def get_container_env(container: str, var: str) -> str:

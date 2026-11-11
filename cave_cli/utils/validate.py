@@ -242,6 +242,15 @@ def confirm_action(
     """
     if auto_yes:
         return True
+
+    from cave_cli.utils.display import get_active_dashboard
+
+    dashboard = get_active_dashboard()
+    if dashboard is not None and dashboard.is_active_tui:
+        return dashboard.confirm(
+            message, auto_yes=auto_yes, continue_on_no=continue_on_no
+        )
+
     bracket = "[y/n]" if continue_on_no else "[y/N]"
     suffix = "" if message.rstrip()[-1:] in (".", "?", "!") else "."
     try:

@@ -114,6 +114,7 @@ cave --help
 | `cave sync --url <url>` | Merge files from another repository into the app |
 | `cave test` | Run tests in `cave_api/tests/` |
 | `cave prettify` | Format code with autoflake and black |
+| `cave task` | Inspect, kill, and manage running tasks and task runner |
 | `cave purge <path>` | Remove an app and all its Docker resources |
 
 ### Utility Commands
@@ -141,9 +142,37 @@ cave --help
 
 | Flag | Description |
 |---|---|
-| `--all` | Show raw container output instead of the TUI dashboard |
+| `-r`, `--raw` | Show raw container output instead of the TUI dashboard |
+| `-d`, `--detached` | Run in detached background mode |
 | `-it`, `--interactive` | Run in interactive mode (drops into a bash shell) |
 | `ip:port` | Optional argument for LAN hosting (e.g. `192.168.1.1:8000`) |
+
+### `cave test` & `cave prettify` Options
+
+Both commands execute against a background persistent task runner queue, allowing tests and code formatting to run without stopping or interrupting a live application server.
+
+| Option | Description |
+|---|---|
+| `-d`, `--detached` | Run task in detached background mode |
+| `--docker-args ARGS` | Additional arguments to pass to Docker |
+
+### `cave task` Options
+
+Schedule, inspect, attach to, and cancel serialized background tasks and manage the task runner stack.
+
+| Command / Option | Description |
+|---|---|
+| `cave task list` (or `-l`, `--list`) | List current active tasks (queued and running) |
+| `cave task list-all` (or `-la`, `--list-all`) | List all tasks including completed, failed, and cancelled |
+| `cave task start <file> [args...]` | Run arbitrary file or script (e.g. `utils/prettify.py`) sequentially in task container |
+| `cave task <cmd...>` | Run arbitrary container command (e.g. `python manage.py makemigrations`) |
+| `cave task attach [id]` (or `-a`, `--attach`) | Attach to a task to follow live logs (`Esc` to detach, `Ctrl+C` to cancel) |
+| `cave task kill <id>` (or `-k <id>`, `--kill <id>`) | Cancel or terminate a specific task by its incremental ID |
+| `cave task kill-all` (or `--kill-all`) | Cancel all queued and running tasks |
+| `cave task reset` (or `--reset`) | Rebuild the task runner image and reinitialize its database |
+| `cave task stop` (or `--stop`) | Stop task runner containers and purge finished tasks |
+
+While attached or waiting in the task queue, pressing **Esc** detaches back to the terminal (leaving the task running in the background), and **Ctrl+C** cancels the task. When the task server stops or times out from inactivity, completed tasks are automatically cleaned up.
 
 ## Updating
 

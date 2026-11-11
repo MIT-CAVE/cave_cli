@@ -85,6 +85,58 @@ def get_test_files(start_dir: str | None = None) -> list[str]:
     return sorted(files)
 
 
+def get_task_candidate_files(start_dir: str | None = None) -> list[str]:
+    """
+    Usage:
+
+    - Discovers runnable script and python files in the CAVE app repository
+
+    Optional:
+
+    - ``start_dir``:
+        - Type: str | None
+        - What: Directory to start searching for the CAVE app from
+        - Default: None (current working directory)
+
+    Returns:
+
+    - ``files``:
+        - Type: list[str]
+        - What: List of relative file paths for runnable scripts
+    """
+    app_dir = find_app_dir_safe(start_dir)
+    if not app_dir:
+        return []
+
+    root = Path(app_dir)
+    ignore_dirs = {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".nox",
+        "site-packages",
+        "node_modules",
+    }
+    results: list[str] = []
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in ignore_dirs and not d.startswith(".")
+        ]
+        rel_dir = os.path.relpath(dirpath, str(root))
+        for f in filenames:
+            if f.endswith((".py", ".sh")):
+                if rel_dir == ".":
+                    results.append(f)
+                else:
+                    results.append(os.path.join(rel_dir, f))
+
+    return sorted(results)
+
+
 def get_completions(words: list[str], cword: int) -> list[str]:
     """
     Usage:
@@ -117,6 +169,7 @@ def get_completions(words: list[str], cword: int) -> list[str]:
         "sync",
         "test",
         "prettify",
+        "task",
         "list",
         "kill",
         "purge",
@@ -151,34 +204,85 @@ def get_completions(words: list[str], cword: int) -> list[str]:
     subcmd = words[1]
 
     if subcmd == "test":
-        test_flags = [
-            "--keep-alive",
-            "--reset",
-            "-c",
-            "--cancel",
-            "-k",
-            "--kill-server",
-            "--docker-args",
-        ] + global_flags
-        test_subcommands = ["cancel", "kill-server"]
+        test_flags = ["-d", "--detached", "--docker-args"] + global_flags
         test_files = get_test_files()
-        return test_files + test_subcommands + test_flags
+        return test_files + test_flags
 
     if subcmd in ("run", "start"):
         return [
+            "-d",
+            "--detached",
+            "-a",
+            "--attach",
             "--entrypoint",
             "--docker-args",
             "-it",
             "-interactive",
             "--interactive",
             "--all",
+            "--no-tui",
+            "-r",
+            "--raw",
+            "--log-history",
+            "--no-log-history",
+            "--log-lines",
         ] + global_flags
 
     if subcmd in ("reset", "reset-db"):
-        return ["--docker-args"] + global_flags
+        return ["--docker-args", "-r", "--no-tui", "--raw"] + global_flags
 
     if subcmd == "prettify":
-        return ["--docker-args"] + global_flags
+        return ["-d", "--detached", "--docker-args"] + global_flags
+
+    if subcmd == "task":
+        task_flags = [
+            "-l",
+            "-ls",
+            "--list",
+            "-la",
+            "--list-all",
+            "-a",
+            "--attach",
+            "-d",
+            "--detached",
+            "-k",
+            "--kill",
+            "--kill-all",
+            "--reset",
+            "--stop",
+            "--docker-args",
+        ] + global_flags
+        task_subcommands = [
+            "list",
+            "list-all",
+            "attach",
+            "kill",
+            "kill-all",
+            "reset",
+            "stop",
+            "start",
+            "run",
+        ]
+
+        # Check if completing a task ID after kill or attach
+        prev_word = words[cword - 1] if cword > 0 else ""
+        if prev_word in ("kill", "-k", "--kill", "attach", "-a", "--attach"):
+            app_dir = find_app_dir_safe()
+            if app_dir:
+                from cave_cli.utils.task_queue import list_tasks
+
+                active_ids = [
+                    str(t["id"])
+                    for t in list_tasks(app_dir)
+                    if t.get("status") in ("queued", "running")
+                ]
+                return active_ids
+
+        candidate_files = get_task_candidate_files()
+        if prev_word in ("start", "run"):
+            return candidate_files
+
+        return task_subcommands + candidate_files + task_flags
 
     if subcmd == "list":
         return ["-a", "--all"] + global_flags
@@ -186,11 +290,11 @@ def get_completions(words: list[str], cword: int) -> list[str]:
     if subcmd == "kill":
         from cave_cli.utils.docker import (
             get_running_apps,
-            get_running_test_servers,
+            get_running_task_servers,
         )
 
-        apps = get_running_apps() + get_running_test_servers()
-        return apps + ["-a", "--all", "-t", "--test"] + global_flags
+        apps = get_running_apps() + get_running_task_servers()
+        return apps + ["-a", "--all", "-t", "--task", "--test"] + global_flags
 
     if subcmd == "theme":
         return ["dark", "light", "solarized", "monokai"] + global_flags

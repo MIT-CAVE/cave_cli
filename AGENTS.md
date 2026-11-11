@@ -28,8 +28,9 @@ cave_cli/
     reset.py               # Remove containers/volumes and rebuild from scratch
     upgrade.py             # Upgrade app files from upstream template via sync
     sync_cmd.py            # Merge files from another git repository into the app
-    test.py                # Run tests in cave_api/tests/ via Docker entrypoint
-    prettify.py            # Format code with autoflake and black via Docker entrypoint
+    test.py                # Run tests in cave_api/tests/ via persistent task server
+    prettify.py            # Format code with autoflake and black via persistent task server
+    task.py                # Inspect, kill, and manage running tasks and task runner
     list_cmd.py            # List running CAVE apps with their URLs
     kill.py                # Stop Docker containers for an app (or all apps)
     purge.py               # Remove an app directory and all its Docker resources
@@ -51,6 +52,8 @@ cave_cli/
     net.py                 # Network utilities: port availability, IP:port parsing
     subprocess.py          # Subprocess wrappers: run(), run_and_log(), version_tuple()
     sync.py                # File sync with include/exclude pattern matching
+    task_queue.py          # Task queue registry, incremental IDs, advisory file lock
+    task_server.py         # Persistent task runner stack, command execution, idle watcher
     validate.py            # App name/directory validation, app discovery, user confirmation
 test/
   test_env.py              # Tests for env.py (parse_env, set_env_value, validate_env, generate_password)
@@ -114,6 +117,7 @@ After installation, the `cave` command is available globally. In editable mode, 
 | `cave sync --url <url>` | | Merge files from another repo into the app |
 | `cave test` | | Run tests in `cave_api/tests/` |
 | `cave prettify` | | Format code with autoflake and black |
+| `cave task` | | Inspect, kill, and manage running tasks and task runner |
 | `cave list` | | List running CAVE apps |
 | `cave kill` | | Stop containers for an app |
 | `cave purge <path>` | | Remove an app and all its Docker resources |

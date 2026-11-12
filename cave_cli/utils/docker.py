@@ -11,7 +11,12 @@ from cave_cli.utils.logger import logger
 from cave_cli.utils.subprocess import run, run_and_log, version_tuple
 
 
-def build_image(app_name: str, path: str, tag: str | None = None) -> None:
+def build_image(
+    app_name: str,
+    path: str,
+    tag: str | None = None,
+    exit_on_error: bool = True,
+) -> bool:
     """
     Usage:
 
@@ -34,10 +39,21 @@ def build_image(app_name: str, path: str, tag: str | None = None) -> None:
         - What: Custom Docker image tag
         - Default: None (defaults to f"cave-app:{app_name}")
 
+    - ``exit_on_error``:
+        - Type: bool
+        - What: Whether to call sys.exit(1) on build failure
+        - Default: True
+
+    Returns:
+
+    - ``success``:
+        - Type: bool
+        - What: True if the image built successfully, False otherwise
+
     Notes:
 
     - Streams build output and checks for ERROR lines
-    - Exits with code 1 if an error is detected during the build
+    - Exits with code 1 if an error is detected during the build (when exit_on_error=True)
     """
     image_tag = tag or f"cave-app:{app_name}"
     step_start("Building Docker image")
@@ -64,13 +80,16 @@ def build_image(app_name: str, path: str, tag: str | None = None) -> None:
         logger.error(
             "An ERROR was returned during the Docker container build process."
         )
-        logger.error(
-            "Consider running your command again in verbose mode "
-            "to get more information."
-        )
-        logger.error("EG: 'cave reset --verbose' or 'cave run --verbose'")
-        sys.exit(1)
+        if exit_on_error:
+            logger.error(
+                "Consider running your command again in verbose mode "
+                "to get more information."
+            )
+            logger.error("EG: 'cave reset --verbose' or 'cave run --verbose'")
+            sys.exit(1)
+        return False
     step_done("Building Docker image")
+    return True
 
 
 def create_network(app_name: str) -> None:
@@ -800,6 +819,41 @@ def get_container_host_port(container: str) -> str:
     if result.returncode != 0 or not result.stdout:
         return ""
     return result.stdout.strip()
+
+
+def get_container_exit_code(container: str) -> int | None:
+    """
+    Usage:
+
+    - Retrieves the exit code of a stopped Docker container.
+
+    Requires:
+
+    - ``container``:
+        - Type: str
+        - What: Name or ID of the Docker container.
+
+    Returns:
+
+    - ``exit_code``:
+        - Type: int | None
+        - What: The exit code of the container, or None if it could not be determined.
+    """
+    result = run(
+        [
+            "docker",
+            "inspect",
+            "-f",
+            "{{.State.ExitCode}}",
+            container,
+        ]
+    )
+    if result.returncode != 0 or not result.stdout:
+        return None
+    try:
+        return int(result.stdout.strip())
+    except ValueError:
+        return None
 
 
 def get_all_containers(pattern: str) -> list[str]:

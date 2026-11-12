@@ -22,6 +22,7 @@ from cave_cli.utils.display import (
 from cave_cli.utils.docker import (
     build_image,
     create_network,
+    get_container_exit_code,
     remove_containers,
     run_and_log,
     run_detached,
@@ -52,7 +53,7 @@ def run_cave(
     args: argparse.Namespace,
     skip_header: bool = False,
     skip_build: bool = False,
-) -> None:
+) -> int:
     interactive = getattr(args, "interactive", False) or getattr(
         args, "it", False
     )
@@ -171,7 +172,7 @@ def run_cave(
                 log_file_path=run_log_path,
                 max_log_lines=run_log_limit,
             )
-            return
+            return 0
 
         logger.header("CAVE App")
         _run_tui(
@@ -190,7 +191,7 @@ def run_cave(
             already_running=True,
             initial_mode=initial_mode,
         )
-        return
+        return 0
 
     if interactive:
         server_command = ["bash"]
@@ -283,7 +284,13 @@ def run_cave(
             print_section(f"Starting {app_name}")
         remove_containers(app_name, skip_header=True)
         if not skip_build:
-            build_image(app_name, app_dir)
+            if not build_image(
+                app_name,
+                app_dir,
+                exit_on_error=getattr(args, "exit_on_error", True),
+            ):
+                remove_containers(app_name, skip_header=True)
+                return 1
         create_network(app_name)
 
         step_start("Starting database")
@@ -410,7 +417,7 @@ def run_cave(
                 f"App '{app_name}' running in detached mode at {url}"
             )
             logger.info("Rejoin with: cave run --attach")
-            return
+            return 0
 
         if interactive:
             logger.header("CAVE App (Interactive)")
@@ -425,10 +432,18 @@ def run_cave(
                 command=server_command,
             )
             remove_containers(app_name)
-            return
+            return 0
 
         if no_tui:
-            step_start("Starting Django")
+            task_name = (
+                os.path.basename(server_command[0])
+                if server_command
+                else "task"
+            )
+            if not is_server_run:
+                step_start(f"Running {task_name}")
+            else:
+                step_start("Starting Django")
             result = run_detached_logged(
                 name=django_container,
                 image=f"cave-app:{app_name}",
@@ -440,15 +455,23 @@ def run_cave(
                 command=server_command,
             )
             if result.returncode != 0:
-                step_fail(
-                    "Starting Django", "Failed to start Django container."
-                )
+                if not is_server_run:
+                    step_fail(
+                        f"Running {task_name}",
+                        "Failed to start Django container.",
+                    )
+                else:
+                    step_fail(
+                        "Starting Django", "Failed to start Django container."
+                    )
                 logger.error("Failed to start Django container.")
                 remove_containers(app_name)
-                sys.exit(1)
-            step_done("Starting Django")
-            logger.header("CAVE App (CLI)")
+                if getattr(args, "exit_on_error", True):
+                    sys.exit(1)
+                return 1
             if is_server_run:
+                step_done("Starting Django")
+                logger.header("CAVE App (CLI)")
                 logger.info(
                     f"Watching for changes and running at {url}... "
                     "(Press CTRL+C to quit)"
@@ -458,8 +481,24 @@ def run_cave(
                 log_file_path=run_log_path,
                 max_log_lines=run_log_limit,
             )
+            exit_code = 0
+            if not is_server_run:
+                code = get_container_exit_code(django_container)
+                if code is not None and code != 0:
+                    exit_code = code
+                    step_fail(
+                        f"Running {task_name}",
+                        f"Command failed with exit code {code}",
+                    )
+                    logger.error(
+                        f"Container '{django_container}' exited with code {code}."
+                    )
+                else:
+                    step_done(f"Running {task_name}")
             remove_containers(app_name)
-            return
+            if exit_code != 0 and getattr(args, "exit_on_error", True):
+                sys.exit(exit_code)
+            return exit_code
 
     # ── TUI Server Execution (with Lifecycle Start & Fallback) ────────────
     stop_event = threading.Event()
@@ -503,7 +542,14 @@ def run_cave(
         remove_containers(app_name, skip_header=True)
         if not skip_build:
             dashboard.update_component("App Server", "Building")
-            build_image(app_name, app_dir)
+            if not build_image(
+                app_name,
+                app_dir,
+                exit_on_error=getattr(args, "exit_on_error", True),
+            ):
+                dashboard.stop()
+                remove_containers(app_name, skip_header=True)
+                return 1
             dashboard.update_component("App Server", "Built")
 
         dashboard.update_component("Network", "Creating")
@@ -620,7 +666,7 @@ def run_cave(
             )
             step_done("Starting reverse proxy")
 
-        _run_tui(
+        return _run_tui(
             app_name=app_name,
             django_container=django_container,
             image=f"cave-app:{app_name}",
@@ -636,6 +682,7 @@ def run_cave(
             initial_mode=initial_mode,
             dashboard=dashboard,
             is_server_run=is_server_run,
+            exit_on_error=getattr(args, "exit_on_error", True),
         )
 
     except Exception as exc:
@@ -669,7 +716,8 @@ def _run_tui(
     initial_mode: str = MODE_STANDARD,
     dashboard: RunDashboard | None = None,
     is_server_run: bool = True,
-) -> None:
+    exit_on_error: bool = True,
+) -> int:
     """
     Usage:
 
@@ -748,6 +796,17 @@ def _run_tui(
         - Type: bool
         - What: Whether this run is an interactive web server run.
         - Default: True
+
+    - ``exit_on_error``:
+        - Type: bool
+        - What: Whether to call sys.exit on non-zero exit code for non-server runs.
+        - Default: True
+
+    Returns:
+
+    - ``exit_code``:
+        - Type: int
+        - What: Exit code of the container run (0 for success or server runs).
 
     Notes:
 
@@ -851,14 +910,27 @@ def _run_tui(
         dashboard.start()
     log_thread.start()
 
+    exit_code = 0
     try:
         stop_event.wait()
     finally:
         signal.signal(signal.SIGINT, original_sigint)
-        if not is_server_run and dashboard.container_exited:
+        if not is_server_run:
             task_name = os.path.basename(command[0]) if command else "task"
-            step_done(f"Running {task_name}")
-            dashboard.update_component("App Server", "Done")
+            code = get_container_exit_code(django_container)
+            if code is not None and code != 0:
+                exit_code = code
+                step_fail(
+                    f"Running {task_name}",
+                    f"Command failed with exit code {code}",
+                )
+                dashboard.update_component("App Server", f"Failed ({code})")
+                logger.error(
+                    f"Container '{django_container}' exited with code {code}."
+                )
+            elif dashboard.container_exited:
+                step_done(f"Running {task_name}")
+                dashboard.update_component("App Server", "Done")
         if not dashboard.is_detached:
             dashboard.set_status(STOPPING)
             if dashboard.mode != MODE_VERBOSE:
@@ -868,6 +940,10 @@ def _run_tui(
         log_thread.join(timeout=2.0)
         if dashboard.is_detached:
             print(f"\nDetached from '{app_name}'. Rejoin with: cave run\n")
+
+    if exit_code != 0 and exit_on_error:
+        sys.exit(exit_code)
+    return exit_code
 
 
 def _stream_raw(

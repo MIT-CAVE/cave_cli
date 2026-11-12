@@ -17,11 +17,30 @@ from cave_cli.utils.sync import sync_files
 from cave_cli.utils.validate import confirm_action, find_app_dir
 
 
-def sync_cmd(args: argparse.Namespace, do_reset: bool = True) -> None:
+def sync_cmd(args: argparse.Namespace, do_reset: bool = True) -> bool:
     """
     Usage:
 
     - Merges files from another git repository into the current CAVE app
+
+    Requires:
+
+    - ``args``:
+        - Type: argparse.Namespace
+        - What: Parsed CLI arguments
+
+    Optional:
+
+    - ``do_reset``:
+        - Type: bool
+        - What: Whether to run cave reset after syncing files
+        - Default: True
+
+    Returns:
+
+    - ``success``:
+        - Type: bool
+        - What: True if sync completed successfully, False otherwise
     """
     app_dir = find_app_dir()
     auto_yes = getattr(args, "yes", False)
@@ -37,7 +56,7 @@ def sync_cmd(args: argparse.Namespace, do_reset: bool = True) -> None:
     url = getattr(args, "url", None)
     if not url:
         logger.error("--url is required for sync")
-        return
+        return False
 
     branch = getattr(args, "branch", None)
     includes = getattr(args, "include", None) or []
@@ -60,7 +79,7 @@ def sync_cmd(args: argparse.Namespace, do_reset: bool = True) -> None:
             f"Ensure you specified a valid branch: {branch}."
         )
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return
+        return False
     step_done("Downloading repo to sync")
 
     step_start("Syncing files")
@@ -80,6 +99,9 @@ def sync_cmd(args: argparse.Namespace, do_reset: bool = True) -> None:
             verbose=getattr(args, "verbose", False),
             loglevel=getattr(args, "loglevel", "INFO"),
         )
-        reset(reset_args)
+        code = reset(reset_args)
+        if isinstance(code, int) and code != 0:
+            return False
 
     logger.success("Sync complete.")
+    return True

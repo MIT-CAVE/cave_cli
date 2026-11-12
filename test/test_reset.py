@@ -37,8 +37,9 @@ class TestResetCommand:
             app_name, skip_header=True
         )
         mock_stop_task.assert_called_once_with(app_name)
-        assert mock_remove_vol.call_count == 5
+        assert mock_remove_vol.call_count == 6
         mock_remove_vol.assert_any_call(app_name)
+        mock_remove_vol.assert_any_call(app_name, "redis_volume")
         mock_remove_vol.assert_any_call(app_name, "task_pg_volume")
         mock_remove_vol.assert_any_call(app_name, "task_redis_volume")
         mock_remove_vol.assert_any_call(app_name, "test_pg_volume")

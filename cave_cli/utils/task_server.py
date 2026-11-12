@@ -11,10 +11,12 @@ from cave_cli.utils.cache import get_cache_dir
 from cave_cli.utils.display import step_done, step_fail, step_start
 from cave_cli.utils.docker import (
     build_image,
+    get_container_logs,
     is_container_ready,
     is_db_initialized,
     run_and_log,
     run_detached,
+    start_and_verify_cache,
 )
 from cave_cli.utils.env import parse_env
 from cave_cli.utils.logger import logger
@@ -326,6 +328,10 @@ def start_task_server(
     cache_image = env_vars.get("CACHE_IMAGE", "valkey/valkey:7")
     if not cache_image:
         cache_image = "valkey/valkey:7"
+    cache_command_str = env_vars.get("CACHE_COMMAND", "--save 7200 1")
+    if not cache_command_str:
+        cache_command_str = "--save 7200 1"
+    cache_command = cache_command_str.split()
 
     # Ensure task network exists
     run_and_log(["docker", "network", "create", task_network])
@@ -351,17 +357,17 @@ def start_task_server(
 
     # Start task cache (no host port binding)
     if not is_container_running(redis_container):
-        step_start("Starting task cache")
-        run(["docker", "rm", "-f", redis_container])
-        run_detached(
-            name=redis_container,
+        if not start_and_verify_cache(
+            container_name=redis_container,
             image=cache_image,
             network=task_network,
-            volumes=[f"{redis_volume}:/data"],
+            volume_name=redis_volume,
             extra_args=extra_docker_args or None,
-            command=["--save", "7200", "1"],
-        )
-        step_done("Starting task cache")
+            command=cache_command,
+            step_label="Starting task cache",
+        ):
+            stop_task_server(app_name)
+            sys.exit(1)
 
     # Wait for task database readiness
     db_user = f"{app_name}_user"
@@ -372,10 +378,27 @@ def start_task_server(
         if is_container_ready(db_container, db_user):
             ready = True
             break
+        if not is_container_running(db_container):
+            break
         time.sleep(1)
 
     if not ready:
-        step_fail("Checking task database", "Database failed to become ready.")
+        db_logs = get_container_logs(db_container)
+        if "incompatible with server version" in db_logs.lower():
+            step_fail(
+                "Checking task database",
+                "Database data is incompatible with DATABASE_IMAGE.",
+            )
+            logger.error(
+                f"Task database volume '{pg_volume}' is incompatible with {db_image}. "
+                "Consider removing it or resetting."
+            )
+        else:
+            step_fail(
+                "Checking task database", "Database failed to become ready."
+            )
+            if db_logs.strip():
+                logger.error(f"Database container logs:\n{db_logs.strip()}")
         stop_task_server(app_name)
         sys.exit(1)
 

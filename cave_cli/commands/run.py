@@ -28,6 +28,7 @@ from cave_cli.utils.docker import (
     run_detached,
     run_detached_logged,
     run_interactive,
+    start_and_verify_cache,
     stream_container_logs,
 )
 from cave_cli.utils.env import parse_env
@@ -208,6 +209,10 @@ def run_cave(
         "DATABASE_COMMAND", "postgres -c listen_addresses=*"
     )
     cache_image = env_vars.get("CACHE_IMAGE", "")
+    cache_command_str = env_vars.get("CACHE_COMMAND", "--save 7200 1")
+    if not cache_command_str:
+        cache_command_str = "--save 7200 1"
+    cache_command = cache_command_str.split()
 
     if not db_command_str:
         db_command_str = "postgres -c listen_addresses=*"
@@ -309,20 +314,22 @@ def run_cave(
         )
         step_done("Starting database")
 
-        step_start("Starting cache")
-        run_detached(
-            name=f"{app_name}_redis_host",
+        if not start_and_verify_cache(
+            container_name=f"{app_name}_redis_host",
             image=cache_image,
             network=network,
-            volumes=[f"{app_name}_redis_volume:/data"],
+            volume_name=f"{app_name}_redis_volume",
             extra_args=extra_docker_args or None,
-            command=["--save", "7200", "1"],
-        )
-        step_done("Starting cache")
+            command=cache_command,
+        ):
+            remove_containers(app_name, skip_header=True)
+            return 1
 
         if is_server_run and "postgres" in db_image.lower():
             from cave_cli.utils.docker import (
+                get_container_logs,
                 is_container_ready,
+                is_container_running,
                 is_db_initialized,
             )
             from cave_cli.utils.validate import confirm_action
@@ -337,6 +344,8 @@ def run_cave(
             for _ in range(30):
                 if is_container_ready(db_container, db_user):
                     ready = True
+                    break
+                if not is_container_running(db_container):
                     break
                 time.sleep(1)
 
@@ -362,10 +371,26 @@ def run_cave(
                 else:
                     step_done("Checking database")
             else:
-                step_fail(
-                    "Checking database",
-                    "Database container failed to become ready.",
-                )
+                db_logs = get_container_logs(db_container)
+                if "incompatible with server version" in db_logs.lower():
+                    step_fail(
+                        "Checking database",
+                        "Database data is incompatible with DATABASE_IMAGE.",
+                    )
+                    logger.error(
+                        f"Database volume '{app_name}_pg_volume' is incompatible with {db_image}."
+                    )
+                    logger.error(
+                        "Run 'cave reset' to recreate the database volume for the new version, "
+                        "or revert DATABASE_IMAGE in '.env'."
+                    )
+                else:
+                    step_fail(
+                        "Checking database",
+                        "Database container failed to become ready.",
+                    )
+                    if db_logs.strip():
+                        logger.error(f"Database logs:\n{db_logs.strip()}")
                 remove_containers(app_name)
                 sys.exit(1)
 
@@ -572,20 +597,23 @@ def run_cave(
         )
         step_done("Starting database")
 
-        step_start("Starting cache")
-        run_detached(
-            name=f"{app_name}_redis_host",
+        if not start_and_verify_cache(
+            container_name=f"{app_name}_redis_host",
             image=cache_image,
             network=network,
-            volumes=[f"{app_name}_redis_volume:/data"],
+            volume_name=f"{app_name}_redis_volume",
             extra_args=extra_docker_args or None,
-            command=["--save", "7200", "1"],
-        )
-        step_done("Starting cache")
+            command=cache_command,
+        ):
+            dashboard.stop()
+            remove_containers(app_name, skip_header=True)
+            return 1
 
         if is_server_run and "postgres" in db_image.lower():
             from cave_cli.utils.docker import (
+                get_container_logs,
                 is_container_ready,
+                is_container_running,
                 is_db_initialized,
             )
             from cave_cli.utils.validate import confirm_action
@@ -601,14 +629,29 @@ def run_cave(
                 if is_container_ready(db_container, db_user):
                     ready = True
                     break
+                if not is_container_running(db_container):
+                    break
                 time.sleep(1)
 
             if not ready:
+                db_logs = get_container_logs(db_container)
+                if "incompatible with server version" in db_logs.lower():
+                    step_fail(
+                        "Checking database",
+                        "Database data is incompatible with DATABASE_IMAGE.",
+                    )
+                    raise RuntimeError(
+                        f"Database volume '{app_name}_pg_volume' is incompatible with {db_image}. "
+                        "Run 'cave reset' to recreate the database volume for the new version, "
+                        "or revert DATABASE_IMAGE in '.env'."
+                    )
                 step_fail(
                     "Checking database",
                     "Database container failed to become ready.",
                 )
-                raise RuntimeError("Database container failed to become ready.")
+                raise RuntimeError(
+                    f"Database container failed to become ready:\n{db_logs.strip()}"
+                )
 
             if not is_db_initialized(db_container, db_user, db_name):
                 step_done("Checking database")

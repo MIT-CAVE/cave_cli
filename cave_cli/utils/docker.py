@@ -600,6 +600,245 @@ def is_db_initialized(name: str, user: str, db: str) -> bool:
     return result.returncode == 0
 
 
+def is_container_running(name: str) -> bool:
+    """
+    Usage:
+
+    - Checks if a specific Docker container is currently running
+
+    Requires:
+
+    - ``name``:
+        - Type: str
+        - What: Container name to inspect
+
+    Returns:
+
+    - ``running``:
+        - Type: bool
+        - What: True if container exists and is running, False otherwise
+    """
+    res = run(
+        ["docker", "inspect", "-f", "{{.State.Running}}", name],
+        capture=True,
+    )
+    return res.returncode == 0 and res.stdout.strip() == "true"
+
+
+def get_container_logs(name: str, tail: int = 50) -> str:
+    """
+    Usage:
+
+    - Retrieves the tail of logs from a Docker container
+
+    Requires:
+
+    - ``name``:
+        - Type: str
+        - What: Container name to fetch logs from
+
+    Optional:
+
+    - ``tail``:
+        - Type: int
+        - What: Number of lines from the end of logs to retrieve
+        - Default: 50
+
+    Returns:
+
+    - ``logs``:
+        - Type: str
+        - What: Container log output combining stdout and stderr
+    """
+    res = run(
+        ["docker", "logs", "--tail", str(tail), name],
+        capture=True,
+    )
+    return (res.stdout or "") + (res.stderr or "")
+
+
+def is_cache_ready(name: str) -> bool:
+    """
+    Usage:
+
+    - Checks if a Redis or Valkey container is ready to accept connections
+
+    Requires:
+
+    - ``name``:
+        - Type: str
+        - What: The container name
+
+    Returns:
+
+    - ``ready``:
+        - Type: bool
+        - What: True if ready, False otherwise
+    """
+    result = run(
+        [
+            "docker",
+            "exec",
+            name,
+            "sh",
+            "-c",
+            "valkey-cli ping 2>/dev/null || redis-cli ping 2>/dev/null",
+        ],
+        capture=True,
+    )
+    if result.returncode == 0 and "PONG" in result.stdout:
+        return True
+    r1 = run(["docker", "exec", name, "valkey-cli", "ping"], capture=True)
+    if r1.returncode == 0 and "PONG" in r1.stdout:
+        return True
+    r2 = run(["docker", "exec", name, "redis-cli", "ping"], capture=True)
+    return r2.returncode == 0 and "PONG" in r2.stdout
+
+
+def start_and_verify_cache(
+    container_name: str,
+    image: str,
+    network: str,
+    volume_name: str | None = None,
+    extra_args: list[str] | None = None,
+    command: list[str] | None = None,
+    step_label: str = "Starting cache",
+    timeout: int = 10,
+) -> bool:
+    """
+    Usage:
+
+    - Starts a cache container (Redis or Valkey) and verifies it is running and ready.
+
+    Requires:
+
+    - ``container_name``:
+        - Type: str
+        - What: Name of the cache container
+
+    - ``image``:
+        - Type: str
+        - What: Docker image to run (e.g. "valkey/valkey:7", "redis:latest")
+
+    - ``network``:
+        - Type: str
+        - What: Docker network name
+
+    Optional:
+
+    - ``volume_name``:
+        - Type: str | None
+        - What: Name of the Docker volume to mount to /data
+        - Default: None
+
+    - ``extra_args``:
+        - Type: list[str] | None
+        - What: Additional Docker run arguments
+        - Default: None
+
+    - ``command``:
+        - Type: list[str] | None
+        - What: Cache server command and arguments
+        - Default: None
+
+    - ``step_label``:
+        - Type: str
+        - What: Display label for the progress step
+        - Default: "Starting cache"
+
+    - ``timeout``:
+        - Type: int
+        - What: Maximum seconds to wait for cache readiness
+        - Default: 10
+
+    Returns:
+
+    - ``success``:
+        - Type: bool
+        - What: True if cache started and is ready, False otherwise
+    """
+    import time
+
+    if step_label:
+        step_start(step_label)
+
+    volumes = [f"{volume_name}:/data"] if volume_name else None
+
+    # Remove any existing container with this name
+    run(["docker", "rm", "-f", container_name], capture=True)
+
+    run_detached(
+        name=container_name,
+        image=image,
+        network=network,
+        volumes=volumes,
+        extra_args=extra_args,
+        command=command,
+    )
+
+    rdb_error_keywords = [
+        "can't handle rdb",
+        "fatal error loading the db",
+        "bad file format reading the append only file",
+        "rdb format version",
+        "short read or oom loading db",
+    ]
+
+    start_time = time.time()
+
+    while time.time() - start_time < timeout:
+        if is_cache_ready(container_name):
+            if step_label:
+                step_done(step_label)
+            return True
+
+        if not is_container_running(container_name):
+            logs = get_container_logs(container_name)
+            lower_logs = logs.lower()
+            if any(kw in lower_logs for kw in rdb_error_keywords):
+                if step_label:
+                    step_fail(
+                        step_label,
+                        "Cache data is incompatible with CACHE_IMAGE.",
+                    )
+                logger.error(
+                    f"Cache volume '{volume_name}' is incompatible with {image}."
+                )
+                logger.error(
+                    "Run 'cave reset' to recreate the cache volume for the new version, "
+                    "or revert CACHE_IMAGE in '.env'."
+                )
+                return False
+
+            last_err = "\n".join(logs.strip().splitlines()[-5:])
+            if step_label:
+                step_fail(
+                    step_label,
+                    f"Cache container failed to start: {last_err}",
+                )
+            logger.error(
+                f"Cache container '{container_name}' exited unexpectedly:\n{logs.strip()}"
+            )
+            return False
+
+        time.sleep(0.5)
+
+    if is_container_running(container_name):
+        logger.warn(
+            f"Cache container '{container_name}' is running but ping did not respond."
+        )
+        if step_label:
+            step_done(step_label)
+        return True
+
+    logs = get_container_logs(container_name)
+    if step_label:
+        step_fail(step_label, "Cache container failed to become ready.")
+    if logs.strip():
+        logger.error(f"Cache container logs:\n{logs.strip()}")
+    return False
+
+
 def save_redis(app_name: str) -> None:
     """
     Usage:
@@ -612,8 +851,18 @@ def save_redis(app_name: str) -> None:
         - Type: str
         - What: The app name
     """
+    container = f"{app_name}_redis_host"
+    if not is_container_running(container):
+        return
     run_and_log(
-        ["docker", "exec", f"{app_name}_redis_host", "redis-cli", "save"]
+        [
+            "docker",
+            "exec",
+            container,
+            "sh",
+            "-c",
+            "valkey-cli save 2>/dev/null || redis-cli save 2>/dev/null",
+        ]
     )
 
 

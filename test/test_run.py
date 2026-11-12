@@ -130,6 +130,7 @@ class TestRunCommand:
             mock_dashboard.set_components.assert_called_once()
             mock_dashboard.add_lifecycle_event.assert_called_once()
 
+    @patch("cave_cli.commands.run.start_and_verify_cache", return_value=True)
     @patch("cave_cli.commands.run.run_detached_logged")
     @patch("cave_cli.commands.run.find_open_port", return_value=8000)
     @patch("cave_cli.commands.run.run_detached")
@@ -144,6 +145,7 @@ class TestRunCommand:
         mock_run_detached,
         mock_find_open_port,
         mock_run_detached_logged,
+        mock_start_cache,
         fake_app,
     ):
         mock_res = MagicMock()
@@ -277,6 +279,7 @@ class TestRunCommand:
         stream_container_logs("test_container", q, stop_event)
         mock_proc.terminate.assert_called()
 
+    @patch("cave_cli.commands.run.start_and_verify_cache", return_value=True)
     @patch("cave_cli.commands.run._stream_raw")
     @patch("cave_cli.commands.run._run_tui")
     @patch("cave_cli.utils.docker.get_running_apps", return_value=[])
@@ -297,6 +300,7 @@ class TestRunCommand:
         mock_get_running_apps,
         mock_run_tui,
         mock_stream_raw,
+        mock_start_cache,
         fake_app,
     ):
         mock_res = MagicMock()
@@ -432,6 +436,7 @@ class TestRunCommand:
                 # is_container_ready should NOT be called because is_server_run is False
                 mock_ready.assert_not_called()
 
+    @patch("cave_cli.commands.run.start_and_verify_cache", return_value=True)
     @patch("cave_cli.commands.run._stream_raw")
     @patch("cave_cli.commands.run._run_tui")
     @patch("cave_cli.commands.run.run_detached_logged")
@@ -448,6 +453,7 @@ class TestRunCommand:
         mock_run_detached_logged,
         mock_run_tui,
         mock_stream_raw,
+        mock_start_cache,
         fake_app,
     ):
         mock_res = MagicMock()
@@ -474,6 +480,133 @@ class TestRunCommand:
         mock_stream_raw.assert_called_once()
         mock_run_tui.assert_not_called()
 
+
+class TestDockerCacheAndHealth:
+    @patch("cave_cli.utils.docker.run")
+    def test_is_container_running(self, mock_run):
+        from cave_cli.utils.docker import is_container_running
+
+        import subprocess
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="true\n"
+        )
+        assert is_container_running("my_container") is True
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="false\n"
+        )
+        assert is_container_running("my_container") is False
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout=""
+        )
+        assert is_container_running("my_container") is False
+
+    @patch("cave_cli.utils.docker.run")
+    def test_get_container_logs(self, mock_run):
+        from cave_cli.utils.docker import get_container_logs
+
+        import subprocess
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="stdout line\n",
+            stderr="stderr line\n",
+        )
+        logs = get_container_logs("my_container")
+        assert "stdout line" in logs
+        assert "stderr line" in logs
+
+    @patch("cave_cli.utils.docker.run")
+    def test_is_cache_ready_pong(self, mock_run):
+        from cave_cli.utils.docker import is_cache_ready
+
+        import subprocess
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="PONG\n"
+        )
+        assert is_cache_ready("my_cache") is True
+
+    @patch("cave_cli.utils.docker.run")
+    def test_is_cache_ready_failure(self, mock_run):
+        from cave_cli.utils.docker import is_cache_ready
+
+        import subprocess
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="Could not connect"
+        )
+        assert is_cache_ready("my_cache") is False
+
+    @patch("cave_cli.utils.docker.is_container_running", return_value=True)
+    @patch("cave_cli.utils.docker.is_cache_ready", return_value=True)
+    @patch("cave_cli.utils.docker.run_detached")
+    @patch("cave_cli.utils.docker.run")
+    def test_start_and_verify_cache_success(
+        self, mock_run, mock_run_detached, mock_ready, mock_running
+    ):
+        from cave_cli.utils.docker import start_and_verify_cache
+
+        res = start_and_verify_cache(
+            container_name="test_redis",
+            image="valkey/valkey:7",
+            network="test-net",
+            volume_name="test_redis_volume",
+        )
+        assert res is True
+        mock_run_detached.assert_called_once()
+
+    @patch("cave_cli.utils.docker.get_container_logs")
+    @patch("cave_cli.utils.docker.is_container_running", return_value=False)
+    @patch("cave_cli.utils.docker.is_cache_ready", return_value=False)
+    @patch("cave_cli.utils.docker.run_detached")
+    @patch("cave_cli.utils.docker.run")
+    def test_start_and_verify_cache_rdb_incompatibility(
+        self,
+        mock_run,
+        mock_run_detached,
+        mock_ready,
+        mock_running,
+        mock_logs,
+    ):
+        from cave_cli.utils.docker import start_and_verify_cache
+
+        mock_logs.return_value = (
+            "# Can't handle RDB format version 80\n"
+            "# Fatal error loading the DB, check server logs. Exiting.\n"
+        )
+        res = start_and_verify_cache(
+            container_name="test_redis",
+            image="valkey/valkey:7",
+            network="test-net",
+            volume_name="test_redis_volume",
+        )
+        assert res is False
+        # Volume should NOT have been removed
+        for call_args in mock_run.call_args_list:
+            cmd = call_args[0][0]
+            assert not ("volume" in cmd and "rm" in cmd)
+
+    @patch("cave_cli.utils.docker.is_container_running", return_value=False)
+    @patch("cave_cli.utils.docker.run_and_log")
+    def test_save_redis_not_running(self, mock_run_and_log, mock_running):
+        from cave_cli.utils.docker import save_redis
+
+        save_redis("my_app")
+        mock_run_and_log.assert_not_called()
+
+    @patch("cave_cli.utils.docker.is_container_running", return_value=True)
+    @patch("cave_cli.utils.docker.run_and_log")
+    def test_save_redis_running(self, mock_run_and_log, mock_running):
+        from cave_cli.utils.docker import save_redis
+
+        save_redis("my_app")
+        mock_run_and_log.assert_called_once()
+
+    @patch("cave_cli.commands.run.start_and_verify_cache", return_value=True)
     @patch("cave_cli.commands.run._stream_raw")
     @patch("cave_cli.commands.run._run_tui")
     @patch("cave_cli.commands.run.run_detached_logged")
@@ -490,6 +623,7 @@ class TestRunCommand:
         mock_run_detached_logged,
         mock_run_tui,
         mock_stream_raw,
+        mock_start_cache,
         fake_app,
     ):
         mock_res = MagicMock()
@@ -515,3 +649,129 @@ class TestRunCommand:
 
         mock_stream_raw.assert_called_once()
         mock_run_tui.assert_not_called()
+
+
+class TestDockerCacheAndHealth:
+    @patch("cave_cli.utils.docker.run")
+    def test_is_container_running(self, mock_run):
+        from cave_cli.utils.docker import is_container_running
+
+        import subprocess
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="true\n"
+        )
+        assert is_container_running("my_container") is True
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="false\n"
+        )
+        assert is_container_running("my_container") is False
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout=""
+        )
+        assert is_container_running("my_container") is False
+
+    @patch("cave_cli.utils.docker.run")
+    def test_get_container_logs(self, mock_run):
+        from cave_cli.utils.docker import get_container_logs
+
+        import subprocess
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="stdout line\n",
+            stderr="stderr line\n",
+        )
+        logs = get_container_logs("my_container")
+        assert "stdout line" in logs
+        assert "stderr line" in logs
+
+    @patch("cave_cli.utils.docker.run")
+    def test_is_cache_ready_pong(self, mock_run):
+        from cave_cli.utils.docker import is_cache_ready
+
+        import subprocess
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="PONG\n"
+        )
+        assert is_cache_ready("my_cache") is True
+
+    @patch("cave_cli.utils.docker.run")
+    def test_is_cache_ready_failure(self, mock_run):
+        from cave_cli.utils.docker import is_cache_ready
+
+        import subprocess
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="Could not connect"
+        )
+        assert is_cache_ready("my_cache") is False
+
+    @patch("cave_cli.utils.docker.is_container_running", return_value=True)
+    @patch("cave_cli.utils.docker.is_cache_ready", return_value=True)
+    @patch("cave_cli.utils.docker.run_detached")
+    @patch("cave_cli.utils.docker.run")
+    def test_start_and_verify_cache_success(
+        self, mock_run, mock_run_detached, mock_ready, mock_running
+    ):
+        from cave_cli.utils.docker import start_and_verify_cache
+
+        res = start_and_verify_cache(
+            container_name="test_redis",
+            image="valkey/valkey:7",
+            network="test-net",
+            volume_name="test_redis_volume",
+        )
+        assert res is True
+        mock_run_detached.assert_called_once()
+
+    @patch("cave_cli.utils.docker.get_container_logs")
+    @patch("cave_cli.utils.docker.is_container_running", return_value=False)
+    @patch("cave_cli.utils.docker.is_cache_ready", return_value=False)
+    @patch("cave_cli.utils.docker.run_detached")
+    @patch("cave_cli.utils.docker.run")
+    def test_start_and_verify_cache_rdb_incompatibility(
+        self,
+        mock_run,
+        mock_run_detached,
+        mock_ready,
+        mock_running,
+        mock_logs,
+    ):
+        from cave_cli.utils.docker import start_and_verify_cache
+
+        mock_logs.return_value = (
+            "# Can't handle RDB format version 80\n"
+            "# Fatal error loading the DB, check server logs. Exiting.\n"
+        )
+        res = start_and_verify_cache(
+            container_name="test_redis",
+            image="valkey/valkey:7",
+            network="test-net",
+            volume_name="test_redis_volume",
+        )
+        assert res is False
+        # Volume should NOT have been removed
+        for call_args in mock_run.call_args_list:
+            cmd = call_args[0][0]
+            assert not ("volume" in cmd and "rm" in cmd)
+
+    @patch("cave_cli.utils.docker.is_container_running", return_value=False)
+    @patch("cave_cli.utils.docker.run_and_log")
+    def test_save_redis_not_running(self, mock_run_and_log, mock_running):
+        from cave_cli.utils.docker import save_redis
+
+        save_redis("my_app")
+        mock_run_and_log.assert_not_called()
+
+    @patch("cave_cli.utils.docker.is_container_running", return_value=True)
+    @patch("cave_cli.utils.docker.run_and_log")
+    def test_save_redis_running(self, mock_run_and_log, mock_running):
+        from cave_cli.utils.docker import save_redis
+
+        save_redis("my_app")
+        mock_run_and_log.assert_called_once()

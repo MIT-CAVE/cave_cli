@@ -77,6 +77,10 @@ def reset(
     remove_volume(app_name)
     step_done("Removing database volume")
 
+    step_start("Removing cache volume")
+    remove_volume(app_name, "redis_volume")
+    step_done("Removing cache volume")
+
     step_start("Removing task volumes")
     remove_volume(app_name, "task_pg_volume")
     remove_volume(app_name, "task_redis_volume")

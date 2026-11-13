@@ -244,6 +244,10 @@ def create_env_interactive(
 
     default_email = f"{app_name}@example.com"
     print()
+    logger.info(
+        "The admin account is used to log in to your app "
+        "and manage its users and content."
+    )
     email = prompt_cached_entry(
         name="admin_emails",
         prompt_new="Enter an admin email",
